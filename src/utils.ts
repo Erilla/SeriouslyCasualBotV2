@@ -1,5 +1,11 @@
 import { type Channel, type TextBasedChannel, PartialGroupDMChannel } from 'discord.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 const require = createRequire(import.meta.url);
 
@@ -14,9 +20,10 @@ export function asSendable(channel: Channel | null): TextBasedChannel | null {
 }
 
 /**
- * Loads a JSON file using createRequire for ESM compatibility.
- * Node16 module resolution doesn't support `import ... with { type: 'json' }`.
+ * Loads a JSON file relative to the project root.
+ * Example: loadJson('data/aboutus.json')
  */
 export function loadJson<T>(relativePath: string): T {
-    return require(relativePath) as T;
+    const fullPath = path.resolve(PROJECT_ROOT, relativePath);
+    return require(fullPath) as T;
 }

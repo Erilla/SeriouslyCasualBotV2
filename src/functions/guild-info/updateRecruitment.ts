@@ -6,8 +6,7 @@ import {
 } from 'discord.js';
 import { getChannel } from '../setup/getChannel.js';
 import { getDatabase } from '../../database/database.js';
-import { asSendable } from '../../utils.js';
-import { loadJson } from '../../utils.js';
+import { asSendable, loadJson } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 import type { OverlordRow } from '../../types/index.js';
 
@@ -19,7 +18,7 @@ interface RecruitmentData {
     }>;
 }
 
-const recruitment = loadJson<RecruitmentData>('../../data/recruitment.json');
+const recruitment = loadJson<RecruitmentData>('data/recruitment.json');
 
 /**
  * Post the Recruitment embed to the guild_info channel.

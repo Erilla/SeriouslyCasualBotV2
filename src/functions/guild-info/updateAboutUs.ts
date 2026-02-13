@@ -9,8 +9,7 @@ import {
 } from 'discord.js';
 import { getChannel } from '../setup/getChannel.js';
 import { logger } from '../../services/logger.js';
-import { asSendable } from '../../utils.js';
-import { loadJson } from '../../utils.js';
+import { asSendable, loadJson } from '../../utils.js';
 
 interface AboutUsData {
     title: string;
@@ -22,7 +21,7 @@ interface AboutUsData {
     }>;
 }
 
-const aboutUs = loadJson<AboutUsData>('../../data/aboutus.json');
+const aboutUs = loadJson<AboutUsData>('data/aboutus.json');
 
 /**
  * Post the About Us embed to the guild_info channel.

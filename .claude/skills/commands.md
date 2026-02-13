@@ -71,3 +71,10 @@ Always handle null (channel not configured) gracefully.
 import { getBooleanSetting } from '../functions/settings/getSetting.js';
 if (!getBooleanSetting('alert_signups')) return; // feature disabled
 ```
+
+## Loading JSON data files
+`loadJson()` resolves paths relative to **project root**, not the calling file:
+```ts
+import { loadJson } from '../../utils.js';
+const data = loadJson<MyType>('data/myfile.json'); // NOT '../../data/myfile.json'
+```

@@ -5,8 +5,7 @@ import {
     Colors,
 } from 'discord.js';
 import { getChannel } from '../setup/getChannel.js';
-import { asSendable } from '../../utils.js';
-import { loadJson } from '../../utils.js';
+import { asSendable, loadJson } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 
 interface ScheduleData {
@@ -16,7 +15,7 @@ interface ScheduleData {
     timeZone: string;
 }
 
-const schedule = loadJson<ScheduleData>('../../data/schedule.json');
+const schedule = loadJson<ScheduleData>('data/schedule.json');
 
 /**
  * Post the Raid Schedule embed to the guild_info channel.

@@ -6,8 +6,7 @@ import {
 } from 'discord.js';
 import { getChannel } from '../setup/getChannel.js';
 import { getDatabase } from '../../database/database.js';
-import { asSendable } from '../../utils.js';
-import { loadJson } from '../../utils.js';
+import { asSendable, loadJson } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 import { getRaidRankings, getRaidStaticData, type RaidStaticData } from '../../services/raiderio.js';
 
@@ -21,7 +20,7 @@ interface AchievementsData {
     }>;
 }
 
-const achievementsData = loadJson<AchievementsData>('../../data/achievements.json');
+const achievementsData = loadJson<AchievementsData>('data/achievements.json');
 
 // Minimum expansion ID for Raider.io API data (older ones use manual JSON data)
 const RAIDERIO_MIN_EXPANSION = 6;
