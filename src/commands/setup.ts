@@ -15,8 +15,8 @@ import { setChannel } from '../functions/setup/setChannel.js';
 import { getAllChannels } from '../functions/setup/getAllChannels.js';
 import { logger } from '../services/logger.js';
 
-/** All configurable channel/role keys and their descriptions */
-const CONFIG_KEYS: Array<{ name: string; value: string; description: string }> = [
+/** Configurable channel keys */
+const CHANNEL_KEYS: Array<{ name: string; value: string; description: string }> = [
     { name: 'guild_info', value: 'guild_info', description: 'Guild info embeds channel' },
     { name: 'applications_category', value: 'applications_category', description: 'Applications category (legacy mode)' },
     { name: 'applications_forum', value: 'applications_forum', description: 'Applications forum channel' },
@@ -28,6 +28,18 @@ const CONFIG_KEYS: Array<{ name: string; value: string; description: string }> =
     { name: 'bot_setup', value: 'bot_setup', description: 'Bot admin area' },
     { name: 'audit', value: 'audit', description: 'Audit log channel' },
 ];
+
+/** Configurable role keys */
+const ROLE_KEYS: Array<{ name: string; value: string; description: string }> = [
+    { name: 'admin_role', value: 'admin_role', description: 'Admin role for bot commands' },
+    { name: 'raider_role', value: 'raider_role', description: 'Raider role for roster members' },
+];
+
+/** All config keys for display */
+const ALL_KEYS = [...CHANNEL_KEYS, ...ROLE_KEYS];
+
+/** Set of role key values for quick lookup */
+const ROLE_KEY_SET = new Set(ROLE_KEYS.map((k) => k.value));
 
 const command: Command = {
     data: new SlashCommandBuilder()
@@ -44,7 +56,7 @@ const command: Command = {
                         .setDescription('The function to configure')
                         .setRequired(true)
                         .addChoices(
-                            ...CONFIG_KEYS.map((k) => ({ name: `${k.name} - ${k.description}`, value: k.value }))
+                            ...CHANNEL_KEYS.map((k) => ({ name: `${k.name} - ${k.description}`, value: k.value }))
                         )
                 )
                 .addChannelOption((opt) =>
@@ -61,22 +73,28 @@ const command: Command = {
         )
         .addSubcommand((sub) =>
             sub
-                .setName('get_channel')
-                .setDescription('See which channel is assigned to a function')
+                .setName('set_role')
+                .setDescription('Assign a role to a bot function')
                 .addStringOption((opt) =>
                     opt
                         .setName('key')
-                        .setDescription('The function to check')
+                        .setDescription('The function to configure')
                         .setRequired(true)
                         .addChoices(
-                            ...CONFIG_KEYS.map((k) => ({ name: `${k.name} - ${k.description}`, value: k.value }))
+                            ...ROLE_KEYS.map((k) => ({ name: `${k.name} - ${k.description}`, value: k.value }))
                         )
+                )
+                .addRoleOption((opt) =>
+                    opt
+                        .setName('role')
+                        .setDescription('The role to assign')
+                        .setRequired(true)
                 )
         )
         .addSubcommand((sub) =>
             sub
                 .setName('get_config')
-                .setDescription('View all channel assignments')
+                .setDescription('View all channel and role assignments')
         ),
 
     async execute(interaction: ChatInputCommandInteraction) {
@@ -98,28 +116,28 @@ const command: Command = {
 
             await logger.info(`[Setup] ${interaction.user.tag} set ${key} to #${channel.name} (${channel.id})`);
 
-            // Update bot status now that setup has been done
             interaction.client.user?.setActivity('SeriouslyCasual', {
                 type: ActivityType.Watching,
             });
             return;
         }
 
-        if (subcommand === 'get_channel') {
+        if (subcommand === 'set_role') {
             const key = interaction.options.getString('key', true);
-            const channelId = getChannel(key);
+            const role = interaction.options.getRole('role', true);
+            const guildId = interaction.guildId!;
 
-            if (!channelId) {
-                await interaction.reply({
-                    content: `**${key}** is not configured. Use \`/setup set_channel\` to assign it.`,
-                    flags: MessageFlags.Ephemeral,
-                });
-                return;
-            }
+            setChannel(key, role.id, guildId);
 
             await interaction.reply({
-                content: `**${key}**: <#${channelId}>`,
+                content: `**${key}** is now set to <@&${role.id}>`,
                 flags: MessageFlags.Ephemeral,
+            });
+
+            await logger.info(`[Setup] ${interaction.user.tag} set ${key} to @${role.name} (${role.id})`);
+
+            interaction.client.user?.setActivity('SeriouslyCasual', {
+                type: ActivityType.Watching,
             });
             return;
         }
@@ -128,21 +146,24 @@ const command: Command = {
             const configs = getAllChannels();
 
             const embed = new EmbedBuilder()
-                .setTitle('Bot Channel Configuration')
+                .setTitle('Bot Configuration')
                 .setColor(Colors.Blue)
                 .setTimestamp();
 
             if (configs.length === 0) {
-                embed.setDescription('No channels configured yet. Use `/setup set_channel` to get started.');
+                embed.setDescription('Nothing configured yet. Use `/setup set_channel` and `/setup set_role` to get started.');
             } else {
-                // Show all possible keys, marking unconfigured ones
                 const configMap = new Map(configs.map((c) => [c.key, c.channel_id]));
 
-                for (const key of CONFIG_KEYS) {
-                    const channelId = configMap.get(key.value);
+                for (const key of ALL_KEYS) {
+                    const id = configMap.get(key.value);
+                    let display = '*Not configured*';
+                    if (id) {
+                        display = ROLE_KEY_SET.has(key.value) ? `<@&${id}>` : `<#${id}>`;
+                    }
                     embed.addFields({
                         name: key.value,
-                        value: channelId ? `<#${channelId}>` : '*Not configured*',
+                        value: display,
                         inline: true,
                     });
                 }
