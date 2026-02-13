@@ -394,6 +394,7 @@ Complete rewrite of SeriouslyCasualBot (WoW guild management Discord bot) using 
 
 ## Workflow
 - **Commit after each task**: Before starting the next task, commit all changes from the completed task to git.
+- **Update memory after each task**: Add key patterns, decisions, and implementation details to MEMORY.md so future agents can reference them.
 
 ## Testing Strategy
 - **Unit tests**: vitest, business logic + DB operations + service parsing

@@ -8,4 +8,4 @@ dist/
 db.sqlite*
 .DS_Store
 *.log
-.claude/
+.claude/*.local.*
