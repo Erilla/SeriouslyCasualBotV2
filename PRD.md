@@ -398,7 +398,8 @@ Complete rewrite of SeriouslyCasualBot (WoW guild management Discord bot) using 
 - **Create/update skills after each task**: Add or update `.claude/skills/*.md` files documenting how to use the systems implemented. Skills should be practical reference guides for future agents.
 
 ## Testing Strategy
-- **Unit tests**: vitest, business logic + DB operations + service parsing
-- **Integration tests**: Discord.js mocks, full CRUD workflows, BullMQ jobs
-- **Live Discord tests**: LOCAL ONLY, real test server, verify messages/embeds
-- **Verification per task**: build + test + test:live + manual Discord check
+- **Build check**: `npm run build` must pass with zero errors after every task
+- **Run check**: Start the bot with `npm run dev` and verify no startup errors in console
+- **Unit tests**: `npm test` - vitest, business logic + DB operations + service parsing
+- **Live Discord tests**: LOCAL ONLY, real test server, verify commands/embeds/buttons work
+- **Verification per task**: build + run + test + manual Discord check
