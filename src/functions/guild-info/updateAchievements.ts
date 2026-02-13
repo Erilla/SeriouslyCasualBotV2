@@ -120,12 +120,20 @@ async function buildDynamicAchievements(staticData: RaidStaticData): Promise<{ r
         return a.ends.eu > b.ends.eu ? 1 : -1;
     });
 
+    // Fetch all rankings in parallel
+    const raidEntries = await Promise.all(
+        sortedRaids.map(async (raid) => ({
+            raid,
+            rankingsData: await getRaidRankings(raid.slug),
+        })),
+    );
+
     let raids = '';
     let progress = '';
     let ranking = '';
 
-    for (const raid of sortedRaids) {
-        const rankingsData = await getRaidRankings(raid.slug);
+    for (let i = 0; i < raidEntries.length; i++) {
+        const { raid, rankingsData } = raidEntries[i];
         if (!rankingsData?.raidRankings?.length) continue;
 
         // Pick the ranking entry with most bosses killed
@@ -143,8 +151,18 @@ async function buildDynamicAchievements(staticData: RaidStaticData): Promise<{ r
 
         const totalBosses = raid.encounters.length;
         const tierEndDate = raid.ends.eu;
+        const tierEnded = tierEndDate !== null && Date.parse(tierEndDate) < Date.now();
         const isCE = checkIsCuttingEdge(raid, tierEndDate, bestRanking, killedBosses, totalBosses);
-        const worldRanking = getWorldRanking(tierEndDate, bestRanking.rank, isCE);
+
+        let worldRanking: string;
+        if (!tierEnded && killedBosses < totalBosses) {
+            worldRanking = '**In Progress**';
+        } else if (!tierEnded && killedBosses === totalBosses) {
+            // Full clear on current tier - show rank but no CE yet
+            worldRanking = `WR ${bestRanking.rank}`;
+        } else {
+            worldRanking = `${isCE ? '**CE**' : '\u200b'} WR ${bestRanking.rank}`;
+        }
 
         raids = raid.name + '\n' + raids;
         progress = `${killedBosses}/${totalBosses}M` + '\n' + progress;
@@ -165,6 +183,13 @@ function checkIsCuttingEdge(
     // Fated raids didn't have CE
     if (raid.name.startsWith('Fated')) return false;
 
+    // Tier must have ended to determine CE
+    if (tierEndDate === null || Date.parse(tierEndDate) > Date.now()) return false;
+
+    // Must have killed all bosses
+    if (killedBosses < totalBosses) return false;
+
+    // Last boss must have been killed before the tier ended
     const lastBossSlug = raid.encounters[raid.encounters.length - 1].slug;
     const firstDefeated = raidRanking.encountersDefeated.find(
         (e) => e.slug === lastBossSlug,
@@ -172,15 +197,5 @@ function checkIsCuttingEdge(
 
     if (!firstDefeated) return false;
 
-    return (
-        (tierEndDate !== null && Date.parse(firstDefeated) < Date.parse(tierEndDate)) ||
-        (tierEndDate === null && killedBosses === totalBosses)
-    );
-}
-
-function getWorldRanking(tierEndDate: string | null, rank: number, isCE: boolean): string {
-    if (!isCE && tierEndDate === null) {
-        return '**In Progress**';
-    }
-    return `${isCE ? '**CE**' : '\u200b'} WR ${rank}`;
+    return Date.parse(firstDefeated) < Date.parse(tierEndDate);
 }
