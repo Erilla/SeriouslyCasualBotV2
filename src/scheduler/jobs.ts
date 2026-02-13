@@ -1,5 +1,6 @@
 import { registerJob, scheduleRepeating } from './scheduler.js';
 import { logger } from '../services/logger.js';
+import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
 
 /**
  * Register all job handlers and schedule them.
@@ -21,9 +22,8 @@ export async function registerAllJobs(): Promise<void> {
     });
 
     // Task 3: Update achievements - every 30 min
-    registerJob('updateAchievements', async (_client) => {
-        // TODO: Implement in Task 3
-        await logger.debug('[Job] updateAchievements - not yet implemented');
+    registerJob('updateAchievements', async (client) => {
+        await updateAchievements(client);
     });
 
     // Task 7: Update trial logs - every 60 min

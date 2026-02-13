@@ -103,7 +103,7 @@ Complete rewrite of SeriouslyCasualBot (WoW guild management Discord bot) using 
     {
       "id": 3,
       "title": "Guild Info Embeds",
-      "status": "pending",
+      "status": "complete",
       "description": "Guild info display: JSON data files for static content, Raider.io service for dynamic achievement/ranking data, embed builders, /guildinfo and /updateachievements commands. Scheduled achievement updates every 30min via BullMQ.",
       "dependencies": [2],
       "files": [
