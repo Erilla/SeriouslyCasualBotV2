@@ -56,7 +56,7 @@ export function buildApplicationEmbedBatches(
 
     for (const embed of allEmbeds) {
         const embedSize = (embed.data.description?.length ?? 0);
-        if (currentBatchSize + embedSize > MESSAGE_CHAR_LIMIT && currentBatch.length > 1) {
+        if (currentBatch.length > 0 && currentBatchSize + embedSize > MESSAGE_CHAR_LIMIT) {
             batches.push(currentBatch);
             currentBatch = [embed];
             currentBatchSize = embedSize;
