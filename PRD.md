@@ -393,6 +393,8 @@ Complete rewrite of SeriouslyCasualBot (WoW guild management Discord bot) using 
 | audit | Audit log channel |
 
 ## Workflow
+- **Branch per task**: Create a new git branch for each task (e.g., `task-5-application-system`). Do all work for that task on its branch.
+- **PR to merge**: When the task is complete and verified, create a pull request to merge the task branch into `master`. Do not merge directly.
 - **Do NOT commit until ready**: Only commit after the task is fully tested and verified. Do not commit mid-task or before the user confirms it's working.
 - **Commit after each task**: Before starting the next task, commit all changes from the completed task to git.
 - **Update memory after each task**: Add key patterns, decisions, and implementation details to MEMORY.md so future agents can reference them.
