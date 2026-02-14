@@ -22,14 +22,6 @@ const command: Command = {
             return;
         }
 
-        if (!getBooleanSetting('alert_applications')) {
-            await interaction.reply({
-                content: 'Applications are currently closed. Please try again later.',
-                flags: MessageFlags.Ephemeral,
-            });
-            return;
-        }
-
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const error = await startApplication(interaction.user);

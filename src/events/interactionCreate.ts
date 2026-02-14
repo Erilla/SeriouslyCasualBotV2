@@ -107,13 +107,6 @@ const event: BotEvent = {
                         });
                         return;
                     }
-                    if (!getBooleanSetting('alert_applications')) {
-                        await interaction.reply({
-                            content: 'Applications are currently closed.',
-                            flags: MessageFlags.Ephemeral,
-                        });
-                        return;
-                    }
 
                     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
                     const error = await startApplication(interaction.user);
