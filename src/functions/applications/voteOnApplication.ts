@@ -82,9 +82,11 @@ export async function voteOnApplication(
 
     const votingRow = buildVotingButtons();
 
-    // Keep application content embeds, replace the last one (votes) with updated summary
+    // Keep application content embeds, replace the vote summary embed with updated one
     const existingEmbeds = interaction.message.embeds;
-    const contentEmbeds = existingEmbeds.length > 1 ? existingEmbeds.slice(0, -1) : [];
+    const lastEmbed = existingEmbeds[existingEmbeds.length - 1];
+    const lastIsVoteSummary = lastEmbed?.title === 'Application Votes';
+    const contentEmbeds = lastIsVoteSummary ? existingEmbeds.slice(0, -1) : existingEmbeds;
 
     try {
         await interaction.update({

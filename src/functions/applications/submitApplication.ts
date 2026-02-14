@@ -27,7 +27,9 @@ export async function submitApplication(client: Client, user: User): Promise<str
     const questions = getActiveQuestions();
     let answers: string[];
     try {
-        answers = JSON.parse(session.answers);
+        const parsed: unknown = JSON.parse(session.answers);
+        if (!Array.isArray(parsed)) throw new Error('answers is not an array');
+        answers = parsed as string[];
     } catch {
         db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
         return 'Your application session was corrupted. Please start a new application with `/apply`.';
@@ -54,9 +56,6 @@ export async function submitApplication(client: Client, user: User): Promise<str
         "INSERT INTO application_analytics (user_id, submitted_at) VALUES (?, datetime('now'))",
     ).run(user.id);
 
-    // Clean up session
-    db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
-
     // Create Discord resources (channel + forum post)
     const channel = await createApplicationChannel(
         client,
@@ -80,6 +79,9 @@ export async function submitApplication(client: Client, user: User): Promise<str
     db.prepare(
         'UPDATE applications SET channel_id = ?, forum_post_id = ? WHERE id = ?',
     ).run(channel?.id ?? null, forumPost?.id ?? null, appId);
+
+    // Clean up session AFTER Discord resources are created
+    db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
 
     // Warn if both Discord resources failed
     if (!channel && !forumPost) {

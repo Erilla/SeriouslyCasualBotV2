@@ -27,9 +27,9 @@ export async function createApplicationChannel(
         return null;
     }
 
-    const guild = client.guilds.cache.get(config.guildId) ?? client.guilds.cache.first();
+    const guild = client.guilds.cache.get(config.guildId);
     if (!guild) {
-        await logger.warn('[Applications] No guild available');
+        await logger.warn(`[Applications] Guild ${config.guildId} not found in cache`);
         return null;
     }
 

@@ -1,4 +1,4 @@
-import { type Client, type ForumChannel, type ThreadChannel } from 'discord.js';
+import { type Client, type ForumChannel, type ThreadChannel, ChannelType } from 'discord.js';
 import { getChannel } from '../setup/getChannel.js';
 import { getDatabase } from '../../database/database.js';
 import { logger } from '../../services/logger.js';
@@ -24,12 +24,14 @@ export async function keepAppThreadsAlive(client: Client): Promise<void> {
     if (pendingApps.length === 0) return;
 
     try {
-        const forum = await client.channels.fetch(forumId) as ForumChannel | null;
-        if (!forum) return;
+        const fetched = await client.channels.fetch(forumId);
+        if (!fetched || fetched.type !== ChannelType.GuildForum) return;
+        const forum = fetched as ForumChannel;
 
         for (const app of pendingApps) {
+            if (!app.forum_post_id) continue;
             try {
-                const thread = await forum.threads.fetch(app.forum_post_id!) as ThreadChannel | null;
+                const thread = await forum.threads.fetch(app.forum_post_id) as ThreadChannel | null;
                 if (thread && thread.archived) {
                     await thread.setArchived(false);
                     await logger.debug(`[Applications] Unarchived thread for application ${app.id}`);

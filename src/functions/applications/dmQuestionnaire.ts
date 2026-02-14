@@ -56,13 +56,20 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
 
     // Save answer (truncate to safe length for embed display)
     const MAX_ANSWER_LENGTH = 3900;
-    const answer = content.length > MAX_ANSWER_LENGTH
+    const wasTruncated = content.length > MAX_ANSWER_LENGTH;
+    const answer = wasTruncated
         ? content.slice(0, MAX_ANSWER_LENGTH) + '... (truncated)'
         : content;
 
+    if (wasTruncated) {
+        await message.reply(`Your answer was truncated to ${MAX_ANSWER_LENGTH} characters. If you need to shorten it, type \`cancel\` and start over.`);
+    }
+
     let answers: string[];
     try {
-        answers = JSON.parse(session.answers);
+        const parsed: unknown = JSON.parse(session.answers);
+        if (!Array.isArray(parsed)) throw new Error('answers is not an array');
+        answers = parsed as string[];
     } catch {
         cancelSession(message.author.id);
         await message.reply('Your application session was corrupted. Please start a new application with `/apply`.');

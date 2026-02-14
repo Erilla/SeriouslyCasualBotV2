@@ -73,7 +73,7 @@ export const TABLE_SCHEMAS: string[] = [
         user_id TEXT NOT NULL,
         channel_id TEXT,
         forum_post_id TEXT,
-        status TEXT NOT NULL DEFAULT 'pending',
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
         submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
 

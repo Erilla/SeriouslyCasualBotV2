@@ -3,6 +3,7 @@ import { getDatabase } from '../../database/database.js';
 import { createForumPost } from './createForumPost.js';
 import { addOverlordsToThread } from '../addOverlordsToThread.js';
 import { logger } from '../../services/logger.js';
+import type { ApplicationRow } from '../../types/index.js';
 
 /**
  * Copy the content from a legacy application channel and create a forum post.
@@ -33,6 +34,16 @@ export async function copyApplicationToViewer(
             return;
         }
 
+        // Check for existing pending application by this user
+        const db = getDatabase();
+        const existingApp = db
+            .prepare("SELECT id FROM applications WHERE user_id = ? AND status = 'pending'")
+            .get(applicantId) as ApplicationRow | undefined;
+        if (existingApp) {
+            await logger.debug(`[Applications] Skipping legacy channel #${channel.name} — user ${applicantId} already has a pending application`);
+            return;
+        }
+
         // Build Q&A pairs from the messages
         const questionsAndAnswers = extractQuestionsAndAnswers(sorted);
 
@@ -49,7 +60,6 @@ export async function copyApplicationToViewer(
         }
 
         // Create application record
-        const db = getDatabase();
         db.prepare(
             "INSERT INTO applications (user_id, channel_id, forum_post_id, status, submitted_at) VALUES (?, ?, ?, 'pending', datetime('now'))",
         ).run(applicantId, channel.id, forumPost?.id ?? null);
