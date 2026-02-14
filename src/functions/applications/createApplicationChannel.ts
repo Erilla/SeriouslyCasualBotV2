@@ -6,6 +6,7 @@ import {
     EmbedBuilder,
     Colors,
 } from 'discord.js';
+import { config } from '../../config.js';
 import { getChannel } from '../setup/getChannel.js';
 import { logger } from '../../services/logger.js';
 
@@ -26,7 +27,7 @@ export async function createApplicationChannel(
         return null;
     }
 
-    const guild = client.guilds.cache.first();
+    const guild = client.guilds.cache.get(config.guildId) ?? client.guilds.cache.first();
     if (!guild) {
         await logger.warn('[Applications] No guild available');
         return null;

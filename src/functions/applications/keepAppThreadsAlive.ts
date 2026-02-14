@@ -7,8 +7,12 @@ import type { ApplicationRow } from '../../types/index.js';
 /**
  * Keep active application forum threads alive by preventing auto-archive.
  * Unarchives any pending application threads that Discord has auto-archived.
+ * Also cleans up abandoned application sessions older than 2 hours.
  */
 export async function keepAppThreadsAlive(client: Client): Promise<void> {
+    // Clean up abandoned sessions (older than 2 hours)
+    cleanupAbandonedSessions();
+
     const forumId = getChannel('applications_forum');
     if (!forumId) return;
 
@@ -36,5 +40,20 @@ export async function keepAppThreadsAlive(client: Client): Promise<void> {
         }
     } catch (error) {
         await logger.error('[Applications] Error keeping threads alive', error);
+    }
+}
+
+/**
+ * Remove application sessions that have been abandoned (no activity for 2+ hours).
+ * This prevents users from being permanently blocked from reapplying.
+ */
+function cleanupAbandonedSessions(): void {
+    const db = getDatabase();
+    const result = db.prepare(
+        "DELETE FROM application_sessions WHERE status = 'in_progress' AND created_at < datetime('now', '-2 hours')",
+    ).run();
+
+    if (result.changes > 0) {
+        logger.info(`[Applications] Cleaned up ${result.changes} abandoned session(s)`).catch(() => {});
     }
 }

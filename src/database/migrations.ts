@@ -15,14 +15,13 @@ export interface Migration {
  * Never modify or remove existing migrations.
  */
 export const migrations: Migration[] = [
-    // Future migrations go here, e.g.:
-    // {
-    //     version: 1,
-    //     description: 'Add some_column to trials',
-    //     up: (db) => {
-    //         db.exec('ALTER TABLE trials ADD COLUMN some_column TEXT');
-    //     },
-    // },
+    {
+        version: 1,
+        description: 'Add created_at to application_sessions for session expiry',
+        up: (db) => {
+            db.exec("ALTER TABLE application_sessions ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
+        },
+    },
 ];
 
 /**

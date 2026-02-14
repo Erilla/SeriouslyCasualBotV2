@@ -28,13 +28,18 @@ export async function copyApplicationToViewer(
         const applicantName = extractApplicantName(channel.name);
         const applicantId = extractApplicantId(sorted);
 
+        if (!applicantId) {
+            await logger.warn(`[Applications] Could not identify applicant from legacy channel #${channel.name}, skipping`);
+            return;
+        }
+
         // Build Q&A pairs from the messages
         const questionsAndAnswers = extractQuestionsAndAnswers(sorted);
 
         // Create forum post
         const forumPost = await createForumPost(
             client,
-            applicantId ?? '0',
+            applicantId,
             applicantName,
             questionsAndAnswers,
         );
@@ -47,12 +52,12 @@ export async function copyApplicationToViewer(
         const db = getDatabase();
         db.prepare(
             "INSERT INTO applications (user_id, channel_id, forum_post_id, status, submitted_at) VALUES (?, ?, ?, 'pending', datetime('now'))",
-        ).run(applicantId ?? 'unknown', channel.id, forumPost?.id ?? null);
+        ).run(applicantId, channel.id, forumPost?.id ?? null);
 
         // Create analytics record
         db.prepare(
             "INSERT INTO application_analytics (user_id, submitted_at) VALUES (?, datetime('now'))",
-        ).run(applicantId ?? 'unknown');
+        ).run(applicantId);
 
         await logger.info(`[Applications] Copied legacy application from #${channel.name}`);
     } catch (error) {

@@ -2,7 +2,7 @@ import { type ButtonInteraction, EmbedBuilder, Colors, MessageFlags } from 'disc
 import { getDatabase } from '../../database/database.js';
 import { buildVotingButtons } from './createForumPost.js';
 import { logger } from '../../services/logger.js';
-import type { VoteEntryRow } from '../../types/index.js';
+import type { ApplicationRow, VoteEntryRow } from '../../types/index.js';
 
 const VOTE_LABELS: Record<string, string> = {
     for: 'For',
@@ -33,6 +33,15 @@ export async function voteOnApplication(
     const forumPostId = interaction.channelId;
     const userId = interaction.user.id;
     const db = getDatabase();
+
+    // Prevent applicants from voting on their own application
+    const app = db
+        .prepare('SELECT * FROM applications WHERE forum_post_id = ?')
+        .get(forumPostId) as ApplicationRow | undefined;
+    if (app && app.user_id === userId) {
+        await interaction.reply({ content: 'You cannot vote on your own application.', flags: MessageFlags.Ephemeral });
+        return;
+    }
 
     // Upsert vote
     db.prepare(

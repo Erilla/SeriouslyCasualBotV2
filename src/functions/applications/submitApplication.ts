@@ -9,7 +9,7 @@ import type { ApplicationSessionRow } from '../../types/index.js';
 
 /**
  * Submit a completed application.
- * Creates the application channel, forum post, and database records.
+ * Creates the DB record first, then Discord resources, then updates the record.
  * Returns an error message string on failure, or null on success.
  */
 export async function submitApplication(client: Client, user: User): Promise<string | null> {
@@ -25,7 +25,13 @@ export async function submitApplication(client: Client, user: User): Promise<str
     }
 
     const questions = getActiveQuestions();
-    const answers: string[] = JSON.parse(session.answers);
+    let answers: string[];
+    try {
+        answers = JSON.parse(session.answers);
+    } catch {
+        db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
+        return 'Your application session was corrupted. Please start a new application with `/apply`.';
+    }
 
     if (answers.length < questions.length) {
         return 'Your application is not yet complete. Please answer all questions.';
@@ -37,7 +43,24 @@ export async function submitApplication(client: Client, user: User): Promise<str
         answer: answers[i] ?? 'No answer provided',
     }));
 
-    // Create application channel
+    // Create application record FIRST to ensure DB consistency
+    db.prepare(
+        "INSERT INTO applications (user_id, status, submitted_at) VALUES (?, 'pending', datetime('now'))",
+    ).run(user.id);
+
+    const appRecord = db
+        .prepare('SELECT id FROM applications WHERE user_id = ? ORDER BY id DESC LIMIT 1')
+        .get(user.id) as { id: number };
+
+    // Create analytics record
+    db.prepare(
+        "INSERT INTO application_analytics (user_id, submitted_at) VALUES (?, datetime('now'))",
+    ).run(user.id);
+
+    // Clean up session
+    db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
+
+    // Create Discord resources (channel + forum post)
     const channel = await createApplicationChannel(
         client,
         user.id,
@@ -45,7 +68,6 @@ export async function submitApplication(client: Client, user: User): Promise<str
         questionsAndAnswers,
     );
 
-    // Create forum post
     const forumPost = await createForumPost(
         client,
         user.id,
@@ -53,28 +75,14 @@ export async function submitApplication(client: Client, user: User): Promise<str
         questionsAndAnswers,
     );
 
-    // Add overlords to the forum thread
     if (forumPost) {
         await addOverlordsToThread(forumPost);
     }
 
-    // Create application record
+    // Update application record with Discord resource IDs
     db.prepare(
-        'INSERT INTO applications (user_id, channel_id, forum_post_id, status, submitted_at) VALUES (?, ?, ?, ?, datetime(\'now\'))',
-    ).run(
-        user.id,
-        channel?.id ?? null,
-        forumPost?.id ?? null,
-        'pending',
-    );
-
-    // Create analytics record
-    db.prepare(
-        'INSERT INTO application_analytics (user_id, submitted_at) VALUES (?, datetime(\'now\'))',
-    ).run(user.id);
-
-    // Clean up session
-    db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
+        'UPDATE applications SET channel_id = ?, forum_post_id = ? WHERE id = ?',
+    ).run(channel?.id ?? null, forumPost?.id ?? null, appRecord.id);
 
     // DM applicant with confirmation
     try {

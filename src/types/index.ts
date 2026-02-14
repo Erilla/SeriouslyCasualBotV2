@@ -114,6 +114,7 @@ export interface ApplicationSessionRow {
     answers: string;
     channel_id: string | null;
     forum_post_id: string | null;
+    created_at: string;
 }
 
 export interface ApplicationVoteRow {

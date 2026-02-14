@@ -49,7 +49,15 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
     }
 
     // Save answer
-    const answers: string[] = JSON.parse(session.answers);
+    let answers: string[];
+    try {
+        answers = JSON.parse(session.answers);
+    } catch {
+        cancelSession(message.author.id);
+        await message.reply('Your application session was corrupted. Please start a new application with `/apply`.');
+        await logger.error(`[Applications] Corrupted session data for ${message.author.id}`);
+        return true;
+    }
     answers.push(content);
     const nextQuestion = session.current_question + 1;
 

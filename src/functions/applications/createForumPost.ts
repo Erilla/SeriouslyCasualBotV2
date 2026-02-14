@@ -2,6 +2,7 @@ import {
     type Client,
     type ForumChannel,
     type ThreadChannel,
+    ChannelType,
     EmbedBuilder,
     Colors,
     ActionRowBuilder,
@@ -36,11 +37,12 @@ export async function createForumPost(
     }
 
     try {
-        const forum = await client.channels.fetch(forumId) as ForumChannel | null;
-        if (!forum || !('threads' in forum)) {
-            await logger.warn('[Applications] applications_forum is not a forum channel');
+        const fetched = await client.channels.fetch(forumId);
+        if (!fetched || fetched.type !== ChannelType.GuildForum) {
+            await logger.warn(`[Applications] applications_forum (${forumId}) is not a forum channel`);
             return null;
         }
+        const forum = fetched as ForumChannel;
 
         // Ensure forum tags exist
         await ensureForumTags(forum);

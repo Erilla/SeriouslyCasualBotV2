@@ -39,33 +39,32 @@ export async function startApplication(user: User): Promise<string | null> {
     ).run(user.id);
 
     // Send first question via DM
+    const embed = new EmbedBuilder()
+        .setTitle('SeriouslyCasual Application')
+        .setDescription(
+            'Welcome! You\'re about to apply to **SeriouslyCasual**.\n\n' +
+            'I\'ll ask you a series of questions one at a time. Simply reply with your answer.\n\n' +
+            'You can type `cancel` at any time to cancel your application.',
+        )
+        .setColor(Colors.Blue);
+
+    const questionEmbed = new EmbedBuilder()
+        .setTitle(`Question 1 of ${questions.length}`)
+        .setDescription(questions[0].question_text)
+        .setColor(Colors.Gold)
+        .setFooter({ text: 'Reply with your answer in this DM' });
+
     try {
-        const embed = new EmbedBuilder()
-            .setTitle('SeriouslyCasual Application')
-            .setDescription(
-                'Welcome! You\'re about to apply to **SeriouslyCasual**.\n\n' +
-                'I\'ll ask you a series of questions one at a time. Simply reply with your answer.\n\n' +
-                'You can type `cancel` at any time to cancel your application.',
-            )
-            .setColor(Colors.Blue);
-
-        const questionEmbed = new EmbedBuilder()
-            .setTitle(`Question 1 of ${questions.length}`)
-            .setDescription(questions[0].question_text)
-            .setColor(Colors.Gold)
-            .setFooter({ text: 'Reply with your answer in this DM' });
-
-        await user.send({ embeds: [embed] });
-        await user.send({ embeds: [questionEmbed] });
-
-        await logger.info(`[Applications] Started application session for ${user.tag}`);
-        return null;
+        await user.send({ embeds: [embed, questionEmbed] });
     } catch (error) {
         // Clean up session if DM fails
         db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
         await logger.warn(`[Applications] Failed to DM ${user.tag}: ${error}`);
         return 'I couldn\'t send you a DM. Please make sure your DMs are open and try again.';
     }
+
+    await logger.info(`[Applications] Started application session for ${user.tag}`);
+    return null;
 }
 
 /**
