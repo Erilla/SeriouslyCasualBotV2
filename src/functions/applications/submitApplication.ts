@@ -44,13 +44,10 @@ export async function submitApplication(client: Client, user: User): Promise<str
     }));
 
     // Create application record FIRST to ensure DB consistency
-    db.prepare(
+    const insertResult = db.prepare(
         "INSERT INTO applications (user_id, status, submitted_at) VALUES (?, 'pending', datetime('now'))",
     ).run(user.id);
-
-    const appRecord = db
-        .prepare('SELECT id FROM applications WHERE user_id = ? ORDER BY id DESC LIMIT 1')
-        .get(user.id) as { id: number };
+    const appId = Number(insertResult.lastInsertRowid);
 
     // Create analytics record
     db.prepare(
@@ -82,14 +79,19 @@ export async function submitApplication(client: Client, user: User): Promise<str
     // Update application record with Discord resource IDs
     db.prepare(
         'UPDATE applications SET channel_id = ?, forum_post_id = ? WHERE id = ?',
-    ).run(channel?.id ?? null, forumPost?.id ?? null, appRecord.id);
+    ).run(channel?.id ?? null, forumPost?.id ?? null, appId);
+
+    // Warn if both Discord resources failed
+    if (!channel && !forumPost) {
+        await logger.error(`[Applications] Both channel and forum post creation failed for ${user.tag}`);
+    }
 
     // DM applicant with confirmation
     try {
-        await user.send(
-            'Your application has been submitted! An officer will review it soon. ' +
-            (channel ? `You can also chat in <#${channel.id}>.` : ''),
-        );
+        let msg = 'Your application has been submitted! An officer will review it soon.';
+        if (channel) msg += ` You can also chat in <#${channel.id}>.`;
+        if (!channel && !forumPost) msg += ' Note: there was an issue posting your application. An admin has been notified.';
+        await user.send(msg);
     } catch {
         await logger.warn(`[Applications] Failed to DM confirmation to ${user.tag}`);
     }

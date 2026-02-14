@@ -41,6 +41,12 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
         return true;
     }
 
+    // Reject empty messages or attachment-only messages
+    if (!content) {
+        await message.reply('Please reply with a text answer. Attachments and images are not accepted.');
+        return true;
+    }
+
     const questions = getActiveQuestions();
     if (questions.length === 0) {
         cancelSession(message.author.id);
@@ -48,7 +54,12 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
         return true;
     }
 
-    // Save answer
+    // Save answer (truncate to safe length for embed display)
+    const MAX_ANSWER_LENGTH = 3900;
+    const answer = content.length > MAX_ANSWER_LENGTH
+        ? content.slice(0, MAX_ANSWER_LENGTH) + '... (truncated)'
+        : content;
+
     let answers: string[];
     try {
         answers = JSON.parse(session.answers);
@@ -58,7 +69,7 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
         await logger.error(`[Applications] Corrupted session data for ${message.author.id}`);
         return true;
     }
-    answers.push(content);
+    answers.push(answer);
     const nextQuestion = session.current_question + 1;
 
     const db = getDatabase();
@@ -70,7 +81,13 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
             'UPDATE application_sessions SET answers = ?, current_question = ? WHERE user_id = ?',
         ).run(JSON.stringify(answers), nextQuestion, message.author.id);
 
-        await sendConfirmation(message.author, questions.map((q) => q.question_text), answers);
+        try {
+            await sendConfirmation(message.author, questions.map((q) => q.question_text), answers);
+        } catch (error) {
+            cancelSession(message.author.id);
+            await message.reply('Failed to send your application summary. Your session has been cancelled. Please try again with `/apply`.');
+            await logger.warn(`[Applications] Failed to send confirmation to ${message.author.tag}: ${error}`);
+        }
         return true;
     }
 

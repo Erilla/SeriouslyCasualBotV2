@@ -160,7 +160,7 @@ const event: BotEvent = {
 
                 await logger.debug(`Button clicked: ${customId}`);
             } catch (error) {
-                await logger.error('Error handling button interaction', error);
+                await logger.error(`Error handling button: ${interaction.customId}`, error);
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral });
                 }

@@ -82,17 +82,17 @@ export async function voteOnApplication(
 
     const votingRow = buildVotingButtons();
 
+    // Keep application content embeds, replace the last one (votes) with updated summary
+    const existingEmbeds = interaction.message.embeds;
+    const contentEmbeds = existingEmbeds.length > 1 ? existingEmbeds.slice(0, -1) : [];
+
     try {
         await interaction.update({
-            embeds: [...(interaction.message.embeds.slice(0, -1)), embed],
+            embeds: [...contentEmbeds, embed],
             components: [votingRow],
         });
-    } catch {
-        // If the original message has many embeds, just update with the vote embed
-        await interaction.update({
-            embeds: [embed],
-            components: [votingRow],
-        });
+    } catch (error) {
+        await logger.warn(`[Applications] Failed to update vote message: ${error}`);
     }
 
     await logger.debug(`[Applications] ${interaction.user.tag} voted ${voteType} on ${forumPostId}`);
