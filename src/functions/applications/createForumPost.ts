@@ -69,14 +69,14 @@ export async function createForumPost(
             appliedTags: activeTag ? [activeTag.id] : [],
         });
 
+        // Register the voting message in the DB immediately (buttons are already live)
+        const db = getDatabase();
+        db.prepare('INSERT INTO application_votes (forum_post_id) VALUES (?)').run(thread.id);
+
         // Send overflow batches as follow-up messages
         for (let i = 1; i < batches.length; i++) {
             await thread.send({ embeds: batches[i] });
         }
-
-        // Register the voting message in the DB
-        const db = getDatabase();
-        db.prepare('INSERT INTO application_votes (forum_post_id) VALUES (?)').run(thread.id);
 
         await logger.info(`[Applications] Created forum post for ${applicantName}`);
         return thread;
