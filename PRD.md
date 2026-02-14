@@ -131,7 +131,7 @@ Complete rewrite of SeriouslyCasualBot (WoW guild management Discord bot) using 
     {
       "id": 4,
       "title": "Raider Management",
-      "status": "pending",
+      "status": "complete",
       "description": "Roster sync via Raider.io, overlord (guild leadership) management, ignored characters, M+ reports, Great Vault tracking. 12 /raiders subcommands. Scheduled sync and weekly reports.",
       "dependencies": [2, 3],
       "files": [

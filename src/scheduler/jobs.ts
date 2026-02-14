@@ -1,6 +1,8 @@
 import { registerJob, scheduleRepeating } from './scheduler.js';
 import { logger } from '../services/logger.js';
 import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
+import { syncRaiders } from '../functions/raids/syncRaiders.js';
+import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythicPlusDone.js';
 
 /**
  * Register all job handlers and schedule them.
@@ -51,9 +53,8 @@ export async function registerAllJobs(): Promise<void> {
     });
 
     // Task 4: Sync raiders from Raider.io - every 10 min
-    registerJob('syncRaiders', async (_client) => {
-        // TODO: Implement in Task 4
-        await logger.debug('[Job] syncRaiders - not yet implemented');
+    registerJob('syncRaiders', async (client) => {
+        await syncRaiders(client);
     });
 
     // --- Cron Jobs ---
@@ -65,9 +66,8 @@ export async function registerAllJobs(): Promise<void> {
     });
 
     // Task 4: Weekly M+/vault reports - noon Wednesday
-    registerJob('weeklyReports', async (_client) => {
-        // TODO: Implement in Task 4
-        await logger.debug('[Job] weeklyReports - not yet implemented');
+    registerJob('weeklyReports', async (client) => {
+        await alertHighestMythicPlusDone(client);
     });
 
     // Task 10: Update EPGP priority post - every 10 min

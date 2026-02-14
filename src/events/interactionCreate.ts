@@ -1,7 +1,16 @@
-import { type Interaction, MessageFlags } from 'discord.js';
+import {
+    type Interaction,
+    MessageFlags,
+    ActionRowBuilder,
+    UserSelectMenuBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+} from 'discord.js';
 import type { BotClient, BotEvent } from '../types/index.js';
 import { logger } from '../services/logger.js';
 import { auditLog } from '../services/auditLog.js';
+import { updateRaiderDiscordUser, unmatchRaider } from '../functions/raids/updateRaiderDiscordUser.js';
+import { ignoreCharacter } from '../functions/raids/ignoreCharacter.js';
 
 const event: BotEvent = {
     name: 'interactionCreate',
@@ -44,8 +53,50 @@ const event: BotEvent = {
 
         // --- Button Interactions ---
         if (interaction.isButton()) {
-            // TODO: Route button interactions (Task 5+)
-            await logger.debug(`Button clicked: ${interaction.customId}`);
+            try {
+                const customId = interaction.customId;
+
+                // Ignore missing character button (from raider sync alerts)
+                if (customId.startsWith('ignore_missing_character:')) {
+                    const characterName = customId.split(':')[1];
+                    if (ignoreCharacter(characterName)) {
+                        await interaction.update({ content: `${characterName} — Ignored`, components: [] });
+                    } else {
+                        await interaction.reply({ content: `Failed to ignore ${characterName}`, flags: MessageFlags.Ephemeral });
+                    }
+                    return;
+                }
+
+                // Unmatch auto-linked raider — revert to manual match UI
+                if (customId.startsWith('unmatch_raider:')) {
+                    const characterName = customId.split(':')[1];
+                    unmatchRaider(characterName);
+
+                    const selectRow = new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+                        new UserSelectMenuBuilder()
+                            .setCustomId(`missing_user_select:${characterName}`)
+                            .setPlaceholder(`Select user for ${characterName}`)
+                            .setMinValues(1)
+                            .setMaxValues(1),
+                    );
+                    const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`ignore_missing_character:${characterName}`)
+                            .setLabel('Ignore character')
+                            .setStyle(ButtonStyle.Danger),
+                    );
+
+                    await interaction.update({
+                        content: characterName,
+                        components: [selectRow, buttonRow],
+                    });
+                    return;
+                }
+
+                await logger.debug(`Button clicked: ${customId}`);
+            } catch (error) {
+                await logger.error('Error handling button interaction', error);
+            }
             return;
         }
 
@@ -57,9 +108,31 @@ const event: BotEvent = {
         }
 
         // --- Select Menu Interactions ---
-        if (interaction.isStringSelectMenu() || interaction.isUserSelectMenu()) {
-            // TODO: Route select menu interactions (Task 4+)
-            await logger.debug(`Select menu: ${interaction.customId}`);
+        if (interaction.isUserSelectMenu()) {
+            try {
+                const customId = interaction.customId;
+
+                // User select for missing raider assignment
+                if (customId.startsWith('missing_user_select:')) {
+                    const characterName = customId.split(':')[1];
+                    const selectedUserId = interaction.values[0];
+                    if (updateRaiderDiscordUser(characterName, selectedUserId)) {
+                        await interaction.update({ content: `${characterName} — Linked to <@${selectedUserId}>`, components: [] });
+                    } else {
+                        await interaction.reply({ content: `Failed to update ${characterName}`, flags: MessageFlags.Ephemeral });
+                    }
+                    return;
+                }
+
+                await logger.debug(`User select menu: ${customId}`);
+            } catch (error) {
+                await logger.error('Error handling user select menu', error);
+            }
+            return;
+        }
+
+        if (interaction.isStringSelectMenu()) {
+            await logger.debug(`String select menu: ${interaction.customId}`);
             return;
         }
     },
