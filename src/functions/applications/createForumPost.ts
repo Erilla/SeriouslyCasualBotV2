@@ -3,14 +3,13 @@ import {
     type ForumChannel,
     type ThreadChannel,
     ChannelType,
-    EmbedBuilder,
-    Colors,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
 } from 'discord.js';
 import { getChannel } from '../setup/getChannel.js';
 import { getDatabase } from '../../database/database.js';
+import { buildApplicationEmbedBatches } from './buildApplicationEmbeds.js';
 import { logger } from '../../services/logger.js';
 
 /** Forum tag names used by the application system */
@@ -50,21 +49,30 @@ export async function createForumPost(
         // Find the Active tag
         const activeTag = forum.availableTags.find((t) => t.name === TAG_NAMES.ACTIVE);
 
-        // Build application content embeds
-        const embeds = buildApplicationEmbeds(applicantName, applicantId, questionsAndAnswers);
+        // Build application content embeds in batches (respecting 6000 char limit)
+        const batches = buildApplicationEmbedBatches(
+            `Application: ${applicantName}`,
+            `<@${applicantId}>`,
+            questionsAndAnswers,
+        );
 
         // Build voting buttons
         const votingRow = buildVotingButtons();
 
-        // Create the forum thread
+        // Create the forum thread with first batch + voting buttons
         const thread = await forum.threads.create({
             name: `${applicantName}`,
             message: {
-                embeds,
+                embeds: batches[0] ?? [],
                 components: [votingRow],
             },
             appliedTags: activeTag ? [activeTag.id] : [],
         });
+
+        // Send overflow batches as follow-up messages
+        for (let i = 1; i < batches.length; i++) {
+            await thread.send({ embeds: batches[i] });
+        }
 
         // Register the voting message in the DB
         const db = getDatabase();
@@ -97,47 +105,6 @@ async function ensureForumTags(forum: ForumChannel): Promise<void> {
     } catch (error) {
         await logger.warn(`[Applications] Failed to create forum tags: ${error}`);
     }
-}
-
-/**
- * Build embed(s) for the application content in the forum post.
- */
-function buildApplicationEmbeds(
-    applicantName: string,
-    applicantId: string,
-    questionsAndAnswers: Array<{ question: string; answer: string }>,
-): EmbedBuilder[] {
-    const header = new EmbedBuilder()
-        .setTitle(`Application: ${applicantName}`)
-        .setDescription(`Applicant: <@${applicantId}>`)
-        .setColor(Colors.Blue)
-        .setTimestamp();
-
-    const parts = questionsAndAnswers.map(
-        (qa, i) => `**Q${i + 1}: ${qa.question}**\n${qa.answer}`,
-    );
-
-    const embeds: EmbedBuilder[] = [header];
-    let currentDescription = '';
-
-    for (const part of parts) {
-        if (currentDescription.length + part.length + 4 > 4000) {
-            embeds.push(
-                new EmbedBuilder().setDescription(currentDescription).setColor(Colors.Blue),
-            );
-            currentDescription = part;
-        } else {
-            currentDescription += (currentDescription ? '\n\n' : '') + part;
-        }
-    }
-
-    if (currentDescription) {
-        embeds.push(
-            new EmbedBuilder().setDescription(currentDescription).setColor(Colors.Blue),
-        );
-    }
-
-    return embeds;
 }
 
 /**

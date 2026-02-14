@@ -3,11 +3,10 @@ import {
     type TextChannel,
     ChannelType,
     PermissionFlagsBits,
-    EmbedBuilder,
-    Colors,
 } from 'discord.js';
 import { config } from '../../config.js';
 import { getChannel } from '../setup/getChannel.js';
+import { buildApplicationEmbedBatches } from './buildApplicationEmbeds.js';
 import { logger } from '../../services/logger.js';
 
 /**
@@ -56,45 +55,15 @@ export async function createApplicationChannel(
             ],
         });
 
-        // Post the application content
-        const embed = new EmbedBuilder()
-            .setTitle(`Application from ${applicantName}`)
-            .setColor(Colors.Blue)
-            .setTimestamp();
-
-        // Build description from Q&A pairs
-        const parts = questionsAndAnswers.map(
-            (qa, i) => `**Q${i + 1}: ${qa.question}**\n${qa.answer}`,
+        // Post the application content in batches (respecting 6000 char per-message limit)
+        const batches = buildApplicationEmbedBatches(
+            `Application from ${applicantName}`,
+            null,
+            questionsAndAnswers,
         );
-
-        // Split into multiple embeds if needed (4096 char limit per embed description)
-        const embeds: EmbedBuilder[] = [];
-        let currentDescription = '';
-
-        for (const part of parts) {
-            if (currentDescription.length + part.length + 4 > 4000) {
-                const e = new EmbedBuilder().setDescription(currentDescription).setColor(Colors.Blue);
-                embeds.push(e);
-                currentDescription = part;
-            } else {
-                currentDescription += (currentDescription ? '\n\n' : '') + part;
-            }
+        for (const batch of batches) {
+            await channel.send({ embeds: batch });
         }
-
-        if (currentDescription) {
-            if (embeds.length === 0) {
-                embed.setDescription(currentDescription);
-                embeds.push(embed);
-            } else {
-                embeds.push(new EmbedBuilder().setDescription(currentDescription).setColor(Colors.Blue));
-                // Set title on first embed
-                embeds[0].setTitle(`Application from ${applicantName}`).setTimestamp();
-            }
-        } else {
-            embeds.push(embed.setDescription('No answers provided.'));
-        }
-
-        await channel.send({ embeds });
         await channel.send(`Welcome <@${applicantId}>! An officer will review your application soon.`);
 
         await logger.info(`[Applications] Created application channel #${channelName} for ${applicantName}`);
