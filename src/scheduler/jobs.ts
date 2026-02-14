@@ -3,6 +3,8 @@ import { logger } from '../services/logger.js';
 import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
 import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythicPlusDone.js';
+import { checkApplicationsLegacy } from '../functions/applications/checkApplicationsLegacy.js';
+import { keepAppThreadsAlive } from '../functions/applications/keepAppThreadsAlive.js';
 
 /**
  * Register all job handlers and schedule them.
@@ -12,15 +14,13 @@ export async function registerAllJobs(): Promise<void> {
     // --- Interval Jobs ---
 
     // Task 5: Check for new applications (legacy mode) - every 5 min
-    registerJob('checkApplications', async (_client) => {
-        // TODO: Implement in Task 5
-        await logger.debug('[Job] checkApplications - not yet implemented');
+    registerJob('checkApplications', async (client) => {
+        await checkApplicationsLegacy(client);
     });
 
     // Task 5: Keep application threads alive - every 3 min
-    registerJob('keepAppThreadsAlive', async (_client) => {
-        // TODO: Implement in Task 5
-        await logger.debug('[Job] keepAppThreadsAlive - not yet implemented');
+    registerJob('keepAppThreadsAlive', async (client) => {
+        await keepAppThreadsAlive(client);
     });
 
     // Task 3: Update achievements - every 30 min

@@ -11,6 +11,11 @@ import { logger } from '../services/logger.js';
 import { auditLog } from '../services/auditLog.js';
 import { updateRaiderDiscordUser, unmatchRaider } from '../functions/raids/updateRaiderDiscordUser.js';
 import { ignoreCharacter } from '../functions/raids/ignoreCharacter.js';
+import { getBooleanSetting } from '../functions/settings/getSetting.js';
+import { startApplication } from '../functions/applications/startApplication.js';
+import { submitApplication } from '../functions/applications/submitApplication.js';
+import { cancelSession } from '../functions/applications/dmQuestionnaire.js';
+import { voteOnApplication } from '../functions/applications/voteOnApplication.js';
 
 const event: BotEvent = {
     name: 'interactionCreate',
@@ -93,6 +98,66 @@ const event: BotEvent = {
                     return;
                 }
 
+                // "Apply Now" button
+                if (customId === 'application:apply') {
+                    if (!getBooleanSetting('use_custom_applications')) {
+                        await interaction.reply({
+                            content: 'Applications are currently handled externally.',
+                            flags: MessageFlags.Ephemeral,
+                        });
+                        return;
+                    }
+                    if (!getBooleanSetting('alert_applications')) {
+                        await interaction.reply({
+                            content: 'Applications are currently closed.',
+                            flags: MessageFlags.Ephemeral,
+                        });
+                        return;
+                    }
+
+                    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                    const error = await startApplication(interaction.user);
+                    if (error) {
+                        await interaction.editReply({ content: error });
+                    } else {
+                        await interaction.editReply({ content: 'Check your DMs! I\'ve sent you the first question.' });
+                    }
+                    return;
+                }
+
+                // Application confirm/cancel buttons (from DM confirmation)
+                if (customId === 'application:confirm') {
+                    await interaction.deferUpdate();
+                    const error = await submitApplication(interaction.client, interaction.user);
+                    if (error) {
+                        await interaction.followUp({ content: error });
+                    } else {
+                        await interaction.editReply({
+                            content: 'Your application has been submitted! An officer will review it soon.',
+                            embeds: [],
+                            components: [],
+                        });
+                    }
+                    return;
+                }
+
+                if (customId === 'application:cancel') {
+                    cancelSession(interaction.user.id);
+                    await interaction.update({
+                        content: 'Your application has been cancelled. You can start a new one with `/apply`.',
+                        embeds: [],
+                        components: [],
+                    });
+                    return;
+                }
+
+                // Application voting buttons
+                if (customId.startsWith('application_vote:')) {
+                    const voteType = customId.split(':')[1];
+                    await voteOnApplication(interaction, voteType);
+                    return;
+                }
+
                 await logger.debug(`Button clicked: ${customId}`);
             } catch (error) {
                 await logger.error('Error handling button interaction', error);
@@ -105,7 +170,7 @@ const event: BotEvent = {
 
         // --- Modal Submissions ---
         if (interaction.isModalSubmit()) {
-            // TODO: Route modal submissions (Task 5+)
+            // TODO: Route modal submissions (Task 7+)
             await logger.debug(`Modal submitted: ${interaction.customId}`);
             await interaction.reply({
                 content: 'This feature is not yet available.',
