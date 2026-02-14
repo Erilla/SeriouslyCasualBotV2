@@ -137,7 +137,7 @@ const event: BotEvent = {
                 if (customId === 'application:cancel') {
                     cancelSession(interaction.user.id);
                     await interaction.update({
-                        content: 'Your application has been cancelled. You can start a new one with `/apply`.',
+                        content: 'Your application has been cancelled. You can start a new one by clicking the Apply button.',
                         embeds: [],
                         components: [],
                     });

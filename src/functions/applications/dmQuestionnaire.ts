@@ -36,7 +36,7 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
     // Handle cancellation
     if (content.toLowerCase() === 'cancel') {
         cancelSession(message.author.id);
-        await message.reply('Your application has been cancelled. You can start a new one at any time with `/apply`.');
+        await message.reply('Your application has been cancelled. You can start a new one at any time by clicking the Apply button.');
         await logger.info(`[Applications] ${message.author.tag} cancelled their application`);
         return true;
     }
@@ -72,7 +72,7 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
         answers = parsed as string[];
     } catch {
         cancelSession(message.author.id);
-        await message.reply('Your application session was corrupted. Please start a new application with `/apply`.');
+        await message.reply('Your application session was corrupted. Please start a new application by clicking the Apply button.');
         await logger.error(`[Applications] Corrupted session data for ${message.author.id}`);
         return true;
     }
@@ -92,7 +92,7 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
             await sendConfirmation(message.author, questions.map((q) => q.question_text), answers);
         } catch (error) {
             cancelSession(message.author.id);
-            await message.reply('Failed to send your application summary. Your session has been cancelled. Please try again with `/apply`.');
+            await message.reply('Failed to send your application summary. Your session has been cancelled. Please try again by clicking the Apply button.');
             await logger.warn(`[Applications] Failed to send confirmation to ${message.author.tag}: ${error}`);
         }
         return true;

@@ -32,7 +32,7 @@ export async function submitApplication(client: Client, user: User): Promise<str
         answers = parsed as string[];
     } catch {
         db.prepare('DELETE FROM application_sessions WHERE user_id = ?').run(user.id);
-        return 'Your application session was corrupted. Please start a new application with `/apply`.';
+        return 'Your application session was corrupted. Please start a new application by clicking the Apply button.';
     }
 
     if (answers.length < questions.length) {
