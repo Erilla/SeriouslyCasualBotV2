@@ -43,6 +43,9 @@ export async function voteOnApplication(
         return;
     }
 
+    // Ensure application_votes record exists (handles orphaned forum posts)
+    db.prepare('INSERT OR IGNORE INTO application_votes (forum_post_id) VALUES (?)').run(forumPostId);
+
     // Upsert vote
     db.prepare(
         `INSERT INTO vote_entries (forum_post_id, user_id, vote_type)
