@@ -107,15 +107,16 @@ function extractApplicantId(messages: Message[]): string | null {
         }
     }
 
-    // Parse <@userId> from message content and embed descriptions
-    const mentionRegex = /<@!?(\d+)>/;
+    // Parse <@userId> from "Name of Applicant:" lines in message/embed text
+    // Only match mentions on the applicant metadata line to avoid picking up bot self-mentions
+    const applicantLineRegex = /Name of Applicant:.*<@!?(\d+)>/i;
     for (const msg of messages) {
         const textSources = [
             msg.content,
             ...msg.embeds.map((e) => e.description ?? ''),
         ];
         for (const text of textSources) {
-            const match = text.match(mentionRegex);
+            const match = text.match(applicantLineRegex);
             if (match) return match[1];
         }
     }

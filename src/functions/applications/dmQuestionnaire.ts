@@ -9,6 +9,7 @@ import {
 } from 'discord.js';
 import { getDatabase } from '../../database/database.js';
 import { getActiveQuestions } from './applicationQuestions.js';
+import { buildApplicationEmbedBatches } from './buildApplicationEmbeds.js';
 import { logger } from '../../services/logger.js';
 import type { ApplicationSessionRow } from '../../types/index.js';
 
@@ -119,59 +120,8 @@ export async function handleDmResponse(message: Message): Promise<boolean> {
  * across multiple messages if needed. Buttons go on the final message only.
  */
 async function sendConfirmation(user: User, questionTexts: string[], answers: string[]): Promise<void> {
-    const summaryParts = questionTexts.map((q, i) =>
-        `**Q${i + 1}: ${q}**\n${answers[i]}`,
-    );
-
-    // Build embeds, each staying under 4000 chars
-    const allEmbeds: EmbedBuilder[] = [];
-    let currentDescription = '';
-
-    for (const part of summaryParts) {
-        if (currentDescription.length + part.length + 4 > 4000) {
-            allEmbeds.push(
-                new EmbedBuilder()
-                    .setDescription(currentDescription)
-                    .setColor(Colors.Blue),
-            );
-            currentDescription = part;
-        } else {
-            currentDescription += (currentDescription ? '\n\n' : '') + part;
-        }
-    }
-
-    if (currentDescription) {
-        allEmbeds.push(
-            new EmbedBuilder()
-                .setDescription(currentDescription)
-                .setColor(Colors.Blue),
-        );
-    }
-
-    if (allEmbeds.length > 0) {
-        allEmbeds[0].setTitle('Application Review');
-    }
-
-    // Group embeds into messages, each staying under 5800 total chars
-    const MESSAGE_CHAR_LIMIT = 5800;
-    const messages: EmbedBuilder[][] = [];
-    let currentBatch: EmbedBuilder[] = [];
-    let currentBatchSize = 0;
-
-    for (const embed of allEmbeds) {
-        const embedSize = (embed.data.title?.length ?? 0) + (embed.data.description?.length ?? 0);
-        if (currentBatch.length > 0 && currentBatchSize + embedSize > MESSAGE_CHAR_LIMIT) {
-            messages.push(currentBatch);
-            currentBatch = [embed];
-            currentBatchSize = embedSize;
-        } else {
-            currentBatch.push(embed);
-            currentBatchSize += embedSize;
-        }
-    }
-    if (currentBatch.length > 0) {
-        messages.push(currentBatch);
-    }
+    const questionsAndAnswers = questionTexts.map((q, i) => ({ question: q, answer: answers[i] }));
+    const batches = buildApplicationEmbedBatches('Application Review', null, questionsAndAnswers);
 
     const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
@@ -184,17 +134,17 @@ async function sendConfirmation(user: User, questionTexts: string[], answers: st
             .setStyle(ButtonStyle.Danger),
     );
 
-    // Send content messages (all but last) without buttons
-    for (let i = 0; i < messages.length - 1; i++) {
-        const opts: { content?: string; embeds: EmbedBuilder[] } = { embeds: messages[i] };
+    // Send content batches (all but last) without buttons
+    for (let i = 0; i < batches.length - 1; i++) {
+        const opts: { content?: string; embeds: EmbedBuilder[] } = { embeds: batches[i] };
         if (i === 0) opts.content = 'Please review your application below:';
         await user.send(opts);
     }
 
-    // Send last message with buttons
-    const lastBatch = messages[messages.length - 1] ?? [];
+    // Send last batch with buttons
+    const lastBatch = batches[batches.length - 1] ?? [];
     await user.send({
-        content: messages.length <= 1 ? 'Please review your application below. Click **Submit Application** to send it, or **Cancel** to discard it.' : 'Click **Submit Application** to send it, or **Cancel** to discard it.',
+        content: batches.length <= 1 ? 'Please review your application below. Click **Submit Application** to send it, or **Cancel** to discard it.' : 'Click **Submit Application** to send it, or **Cancel** to discard it.',
         embeds: lastBatch,
         components: [confirmRow],
     });

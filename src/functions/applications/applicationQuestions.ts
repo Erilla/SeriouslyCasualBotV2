@@ -48,15 +48,6 @@ export function removeQuestion(questionId: number): boolean {
 }
 
 /**
- * Reactivate a previously removed question.
- */
-export function reactivateQuestion(questionId: number): boolean {
-    const db = getDatabase();
-    const result = db.prepare('UPDATE application_questions SET active = 1 WHERE id = ?').run(questionId);
-    return result.changes > 0;
-}
-
-/**
  * Get a formatted string of all active questions for display.
  */
 export function getQuestionsFormatted(): string {

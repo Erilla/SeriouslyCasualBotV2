@@ -114,8 +114,6 @@ export interface ApplicationSessionRow {
     status: string;
     current_question: number;
     answers: string;
-    channel_id: string | null;
-    forum_post_id: string | null;
     created_at: string;
 }
 
