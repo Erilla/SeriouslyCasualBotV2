@@ -73,7 +73,7 @@ export const TABLE_SCHEMAS: string[] = [
         user_id TEXT NOT NULL,
         channel_id TEXT,
         forum_post_id TEXT,
-        status TEXT NOT NULL DEFAULT 'pending',
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
         submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
 
@@ -92,8 +92,7 @@ export const TABLE_SCHEMAS: string[] = [
         status TEXT NOT NULL DEFAULT 'in_progress',
         current_question INTEGER NOT NULL DEFAULT 0,
         answers TEXT NOT NULL DEFAULT '[]',
-        channel_id TEXT,
-        forum_post_id TEXT
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
 
     // Voting messages for applications

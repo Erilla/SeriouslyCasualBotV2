@@ -42,4 +42,7 @@ export const config = {
 
     // Logging
     logLevel: optional('LOG_LEVEL', 'INFO'),
+
+    // Environment
+    nodeEnv: optional('NODE_ENV', 'production'),
 } as const;

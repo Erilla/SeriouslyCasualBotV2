@@ -20,6 +20,10 @@ async function deployCommands(): Promise<void> {
         const command = mod.default as Command;
 
         if (command?.data?.name) {
+            if (command.testOnly && config.nodeEnv === 'production') {
+                console.log(`Skipping test-only command: /${command.data.name}`);
+                continue;
+            }
             commands.push(command.data.toJSON());
             console.log(`Loaded command: /${command.data.name}`);
         } else {

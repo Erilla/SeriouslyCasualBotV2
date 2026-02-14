@@ -1,0 +1,61 @@
+import { type Client, type ForumChannel, type ThreadChannel, ChannelType } from 'discord.js';
+import { getChannel } from '../setup/getChannel.js';
+import { getDatabase } from '../../database/database.js';
+import { logger } from '../../services/logger.js';
+import type { ApplicationRow } from '../../types/index.js';
+
+/**
+ * Keep active application forum threads alive by preventing auto-archive.
+ * Unarchives any pending application threads that Discord has auto-archived.
+ * Also cleans up abandoned application sessions older than 2 hours.
+ */
+export async function keepAppThreadsAlive(client: Client): Promise<void> {
+    // Clean up abandoned sessions (older than 2 hours)
+    cleanupAbandonedSessions();
+
+    const forumId = getChannel('applications_forum');
+    if (!forumId) return;
+
+    const db = getDatabase();
+    const pendingApps = db
+        .prepare("SELECT * FROM applications WHERE status = 'pending' AND forum_post_id IS NOT NULL")
+        .all() as ApplicationRow[];
+
+    if (pendingApps.length === 0) return;
+
+    try {
+        const fetched = await client.channels.fetch(forumId);
+        if (!fetched || fetched.type !== ChannelType.GuildForum) return;
+        const forum = fetched as ForumChannel;
+
+        for (const app of pendingApps) {
+            if (!app.forum_post_id) continue;
+            try {
+                const thread = await forum.threads.fetch(app.forum_post_id) as ThreadChannel | null;
+                if (thread && thread.archived) {
+                    await thread.setArchived(false);
+                    await logger.debug(`[Applications] Unarchived thread for application ${app.id}`);
+                }
+            } catch {
+                // Thread may have been deleted
+            }
+        }
+    } catch (error) {
+        await logger.error('[Applications] Error keeping threads alive', error);
+    }
+}
+
+/**
+ * Remove application sessions that have been abandoned (no activity for 2+ hours).
+ * This prevents users from being permanently blocked from reapplying.
+ */
+function cleanupAbandonedSessions(): void {
+    const db = getDatabase();
+    const result = db.prepare(
+        "DELETE FROM application_sessions WHERE status = 'in_progress' AND created_at < datetime('now', '-2 hours')",
+    ).run();
+
+    if (result.changes > 0) {
+        logger.info(`[Applications] Cleaned up ${result.changes} abandoned session(s)`).catch(() => {});
+    }
+}
