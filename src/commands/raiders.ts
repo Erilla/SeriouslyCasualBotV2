@@ -27,6 +27,7 @@ import {
     getPreviousWeeklyGreatVaultMessage,
 } from '../functions/raids/alertHighestMythicPlusDone.js';
 import { getHistoricalData } from '../services/wowaudit.js';
+import { chunkMessage } from '../utils.js';
 
 const command: Command = {
     data: new SlashCommandBuilder()
@@ -120,7 +121,11 @@ const command: Command = {
         switch (sub) {
             case 'get_raiders': {
                 const list = getRaidersFormatted();
-                await interaction.reply({ content: list, flags: MessageFlags.Ephemeral });
+                const chunks = chunkMessage(list);
+                await interaction.reply({ content: chunks[0], flags: MessageFlags.Ephemeral });
+                for (let i = 1; i < chunks.length; i++) {
+                    await interaction.followUp({ content: chunks[i], flags: MessageFlags.Ephemeral });
+                }
                 break;
             }
 
@@ -154,7 +159,11 @@ const command: Command = {
                 await interaction.reply({ content: 'Syncing raiders...', flags: MessageFlags.Ephemeral });
                 await syncRaiders(interaction.client);
                 const list = getRaidersFormatted();
-                await interaction.editReply({ content: list });
+                const chunks = chunkMessage(list);
+                await interaction.editReply({ content: chunks[0] });
+                for (let i = 1; i < chunks.length; i++) {
+                    await interaction.followUp({ content: chunks[i], flags: MessageFlags.Ephemeral });
+                }
                 break;
             }
 

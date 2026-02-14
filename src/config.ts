@@ -34,6 +34,12 @@ export const config = {
     // OpenAI
     openaiApiKey: optional('OPENAI_API_KEY'),
 
+    // Guild
+    guildRegion: optional('GUILD_REGION', 'eu'),
+    guildRealm: optional('GUILD_REALM', 'silvermoon'),
+    guildName: optional('GUILD_NAME', 'seriouslycasual'),
+    raiderioGuildId: optional('RAIDERIO_GUILD_ID', '1061585%2C43113'),
+
     // Logging
     logLevel: optional('LOG_LEVEL', 'INFO'),
 } as const;

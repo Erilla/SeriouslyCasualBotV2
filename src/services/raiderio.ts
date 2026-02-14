@@ -1,7 +1,10 @@
 import axios from 'axios';
+import { config } from '../config.js';
+import { logger } from './logger.js';
 
 const BASE_URL = 'https://raider.io/api/v1';
-const GUILD_ID = '1061585%2C43113';
+
+const api = axios.create({ timeout: 10_000 });
 
 export interface RaidStaticData {
     raids: Array<{
@@ -52,10 +55,11 @@ export interface GuildMember {
  */
 export async function getRaidRankings(raidSlug: string): Promise<RaidRankingsData | null> {
     try {
-        const url = `${BASE_URL}/raiding/raid-rankings?raid=${raidSlug}&difficulty=mythic&region=world&guilds=${GUILD_ID}&limit=50`;
-        const response = await axios.get<RaidRankingsData>(url);
+        const url = `${BASE_URL}/raiding/raid-rankings?raid=${raidSlug}&difficulty=mythic&region=world&guilds=${config.raiderioGuildId}&limit=50`;
+        const response = await api.get<RaidRankingsData>(url);
         return response.data;
-    } catch {
+    } catch (error) {
+        logger.warn(`[RaiderIO] getRaidRankings failed: ${error}`).catch(() => {});
         return null;
     }
 }
@@ -67,9 +71,10 @@ export async function getRaidRankings(raidSlug: string): Promise<RaidRankingsDat
 export async function getRaidStaticData(expansionId: number): Promise<RaidStaticData | null> {
     try {
         const url = `${BASE_URL}/raiding/static-data?expansion_id=${expansionId}`;
-        const response = await axios.get<RaidStaticData>(url);
+        const response = await api.get<RaidStaticData>(url);
         return response.data;
-    } catch {
+    } catch (error) {
+        logger.warn(`[RaiderIO] getRaidStaticData failed: ${error}`).catch(() => {});
         return null;
     }
 }
@@ -84,9 +89,10 @@ export async function getPreviousWeeklyHighestMythicPlusRun(
 ): Promise<CharacterProfile | null> {
     try {
         const url = `${BASE_URL}/characters/profile?region=${region}&realm=${realm}&name=${encodeURIComponent(name)}&fields=mythic_plus_previous_weekly_highest_level_runs`;
-        const response = await axios.get<CharacterProfile>(url);
+        const response = await api.get<CharacterProfile>(url);
         return response.data;
-    } catch {
+    } catch (error) {
+        logger.warn(`[RaiderIO] getPreviousWeeklyHighestMythicPlusRun failed for ${name}: ${error}`).catch(() => {});
         return null;
     }
 }
@@ -96,15 +102,16 @@ export async function getPreviousWeeklyHighestMythicPlusRun(
  * Ranks: 0 (GM), 1 (Officer), 3, 4, 5, 7 (Raider ranks).
  */
 export async function getGuildRoster(
-    region: string = 'eu',
-    realm: string = 'silvermoon',
-    guildName: string = 'seriouslycasual',
+    region: string = config.guildRegion,
+    realm: string = config.guildRealm,
+    guildName: string = config.guildName,
 ): Promise<GuildMember[]> {
     try {
         const url = `${BASE_URL}/guilds/profile?region=${region}&realm=${realm}&name=${guildName}&fields=members`;
-        const response = await axios.get<{ members: GuildMember[] }>(url);
+        const response = await api.get<{ members: GuildMember[] }>(url);
         return response.data.members.filter((m) => [0, 1, 3, 4, 5, 7].includes(m.rank));
-    } catch {
+    } catch (error) {
+        logger.warn(`[RaiderIO] getGuildRoster failed: ${error}`).catch(() => {});
         return [];
     }
 }

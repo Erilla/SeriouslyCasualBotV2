@@ -1,7 +1,10 @@
 import axios from 'axios';
 import { config } from '../config.js';
+import { logger } from './logger.js';
 
 const BASE_URL = 'https://wowaudit.com/v1';
+
+const api = axios.create({ timeout: 10_000 });
 
 export interface WowAuditCharacterData {
     name: string;
@@ -33,12 +36,13 @@ function getHeaders() {
  */
 export async function getUpcomingRaids(): Promise<WowAuditRaid[] | null> {
     try {
-        const response = await axios.get<{ raids: WowAuditRaid[] }>(
+        const response = await api.get<{ raids: WowAuditRaid[] }>(
             `${BASE_URL}/raids?include_past=false`,
             { headers: getHeaders() },
         );
         return response.data.raids;
-    } catch {
+    } catch (error) {
+        logger.warn(`[WowAudit] getUpcomingRaids failed: ${error}`).catch(() => {});
         return null;
     }
 }
@@ -48,12 +52,13 @@ export async function getUpcomingRaids(): Promise<WowAuditRaid[] | null> {
  */
 export async function getRaidDetails(id: number): Promise<unknown> {
     try {
-        const response = await axios.get(
+        const response = await api.get(
             `${BASE_URL}/raids/${id}`,
             { headers: getHeaders() },
         );
         return response.data;
-    } catch {
+    } catch (error) {
+        logger.warn(`[WowAudit] getRaidDetails failed for id ${id}: ${error}`).catch(() => {});
         return null;
     }
 }
@@ -68,12 +73,13 @@ export async function getHistoricalData(): Promise<WowAuditCharacterData[] | nul
         if (currentPeriod === null) return null;
 
         const previousPeriod = currentPeriod - 1;
-        const response = await axios.get<{ characters: WowAuditCharacterData[] }>(
+        const response = await api.get<{ characters: WowAuditCharacterData[] }>(
             `${BASE_URL}/historical_data?period=${previousPeriod}`,
             { headers: getHeaders() },
         );
         return response.data.characters;
-    } catch {
+    } catch (error) {
+        logger.warn(`[WowAudit] getHistoricalData failed: ${error}`).catch(() => {});
         return null;
     }
 }
@@ -83,12 +89,13 @@ export async function getHistoricalData(): Promise<WowAuditCharacterData[] | nul
  */
 export async function getCurrentPeriod(): Promise<number | null> {
     try {
-        const response = await axios.get<{ current_period: number }>(
+        const response = await api.get<{ current_period: number }>(
             `${BASE_URL}/period`,
             { headers: getHeaders() },
         );
         return response.data.current_period;
-    } catch {
+    } catch (error) {
+        logger.warn(`[WowAudit] getCurrentPeriod failed: ${error}`).catch(() => {});
         return null;
     }
 }

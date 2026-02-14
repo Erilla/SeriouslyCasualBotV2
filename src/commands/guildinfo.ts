@@ -7,6 +7,7 @@ import {
 import type { Command } from '../types/index.js';
 import { requireAdmin } from '../utils/permissions.js';
 import { getChannel } from '../functions/setup/getChannel.js';
+import { fetchTextChannel } from '../utils.js';
 import { clearGuildInfo } from '../functions/guild-info/clearGuildInfo.js';
 import { updateAboutUs } from '../functions/guild-info/updateAboutUs.js';
 import { updateSchedule } from '../functions/guild-info/updateSchedule.js';
@@ -34,12 +35,17 @@ const command: Command = {
         await interaction.reply({ content: 'Updating Guild Info...', flags: MessageFlags.Ephemeral });
 
         const client = interaction.client;
+        const textChannel = await fetchTextChannel(client, 'guild_info');
+        if (!textChannel) {
+            await interaction.editReply('Failed to fetch guild_info channel.');
+            return;
+        }
 
-        await clearGuildInfo(client);
-        await updateAboutUs(client);
-        await updateSchedule(client);
-        await updateRecruitment(client);
-        await updateAchievements(client);
+        await clearGuildInfo(client, textChannel);
+        await updateAboutUs(client, textChannel);
+        await updateSchedule(client, textChannel);
+        await updateRecruitment(client, textChannel);
+        await updateAchievements(client, textChannel);
 
         await interaction.editReply('Guild Info updated!');
     },

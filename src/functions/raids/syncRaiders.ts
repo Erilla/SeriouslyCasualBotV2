@@ -1,8 +1,7 @@
-import type { Client, TextChannel } from 'discord.js';
+import type { Client } from 'discord.js';
 import { getDatabase } from '../../database/database.js';
 import { getGuildRoster } from '../../services/raiderio.js';
-import { getChannel } from '../setup/getChannel.js';
-import { asSendable } from '../../utils.js';
+import { fetchTextChannel } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 import { getStoredIgnoredCharacters } from './ignoreCharacter.js';
 import { sendAlertForRaidersWithNoUser } from './sendAlertForRaidersWithNoUser.js';
@@ -103,21 +102,20 @@ export async function syncRaiders(client: Client): Promise<void> {
     const updateStmt = db.prepare(
         'UPDATE raiders SET realm = ?, region = ? WHERE LOWER(character_name) = LOWER(?)',
     );
-    for (const member of guildRoster) {
-        if (storedNamesLower.has(member.character.name.toLowerCase())) {
-            updateStmt.run(member.character.realm, member.character.region, member.character.name);
+    const updateMany = db.transaction((members: typeof guildRoster) => {
+        for (const member of members) {
+            if (storedNamesLower.has(member.character.name.toLowerCase())) {
+                updateStmt.run(member.character.realm, member.character.region, member.character.name);
+            }
         }
-    }
+    });
+    updateMany(guildRoster);
 
     // Post summary to bot_setup channel
     if (summaryMessage) {
-        const channelId = getChannel('bot_setup');
-        if (channelId) {
-            const channel = await client.channels.fetch(channelId);
-            const sendable = asSendable(channel);
-            if (sendable) {
-                await (sendable as TextChannel).send(summaryMessage.trim());
-            }
+        const textChannel = await fetchTextChannel(client, 'bot_setup');
+        if (textChannel) {
+            await textChannel.send(summaryMessage.trim());
         }
     }
 

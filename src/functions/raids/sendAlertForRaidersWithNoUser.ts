@@ -6,8 +6,7 @@ import {
     ButtonBuilder,
     ButtonStyle,
 } from 'discord.js';
-import { getChannel } from '../setup/getChannel.js';
-import { asSendable } from '../../utils.js';
+import { fetchTextChannel, sendInBatches } from '../../utils.js';
 import { getDatabase } from '../../database/database.js';
 import { logger } from '../../services/logger.js';
 import type { RaiderRow } from '../../types/index.js';
@@ -21,14 +20,8 @@ export async function sendAlertForRaidersWithNoUser(
     client: Client,
     specificNames?: string[],
 ): Promise<void> {
-    const channelId = getChannel('bot_setup');
-    if (!channelId) return;
-
-    const channel = await client.channels.fetch(channelId);
-    const sendable = asSendable(channel);
-    if (!sendable) return;
-
-    const textChannel = sendable as TextChannel;
+    const textChannel = await fetchTextChannel(client, 'bot_setup');
+    if (!textChannel) return;
 
     const db = getDatabase();
     let missingUsers: string[];
@@ -44,7 +37,7 @@ export async function sendAlertForRaidersWithNoUser(
 
     if (missingUsers.length === 0) return;
 
-    for (const name of missingUsers) {
+    const payloads = missingUsers.map((name) => {
         const selectRow = new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
             new UserSelectMenuBuilder()
                 .setCustomId(`missing_user_select:${name}`)
@@ -60,11 +53,13 @@ export async function sendAlertForRaidersWithNoUser(
                 .setStyle(ButtonStyle.Danger),
         );
 
-        await textChannel.send({
+        return {
             content: name,
             components: [selectRow, buttonRow],
-        });
-    }
+        };
+    });
+
+    await sendInBatches(textChannel as TextChannel, payloads);
 
     await logger.debug(`[Raiders] Alerted ${missingUsers.length} raiders with no Discord user`);
 }

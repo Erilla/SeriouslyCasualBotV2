@@ -156,6 +156,10 @@ export const TABLE_SCHEMAS: string[] = [
         votes_against INTEGER NOT NULL DEFAULT 0
     )`,
 
+    // Indexes for frequently queried columns
+    `CREATE INDEX IF NOT EXISTS idx_raiders_character_name ON raiders(character_name COLLATE NOCASE)`,
+    `CREATE INDEX IF NOT EXISTS idx_raiders_discord_user_id ON raiders(discord_user_id)`,
+
     // Raid attendance tracking
     `CREATE TABLE IF NOT EXISTS raid_attendance (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

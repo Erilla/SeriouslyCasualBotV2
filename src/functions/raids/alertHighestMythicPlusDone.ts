@@ -1,7 +1,6 @@
 import { Buffer } from 'node:buffer';
-import type { Client, TextChannel } from 'discord.js';
-import { getChannel } from '../setup/getChannel.js';
-import { asSendable } from '../../utils.js';
+import type { Client } from 'discord.js';
+import { fetchTextChannel } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 import { getHistoricalData, type WowAuditCharacterData } from '../../services/wowaudit.js';
 
@@ -32,11 +31,11 @@ export async function getPreviousWeekMythicPlusMessage(
             : a.characterName.toUpperCase() > b.characterName.toUpperCase() ? 1 : 0,
     );
 
-    let content = '';
-    for (const character of dungeonsDone) {
+    const lines = dungeonsDone.map((character) => {
         const dungeons = character.dungeonsDone?.join(',') ?? 'No Data';
-        content += `${character.characterName}: [${dungeons}]\n`;
-    }
+        return `${character.characterName}: [${dungeons}]`;
+    });
+    const content = lines.join('\n') + '\n';
 
     const buffer = Buffer.from(content, 'utf-8');
     const today = new Date().toISOString().split('T')[0];
@@ -80,9 +79,10 @@ export async function getPreviousWeeklyGreatVaultMessage(
         (max, c) => Math.max(max, c.characterName.length), 0,
     );
 
-    let content = '';
-    content += `${padRight('', longestName)}| ${padRight('Raid', 16)} | ${padRight('Dungeon', 16)} | ${padRight('World', 16)}\n`;
-    content += '-'.repeat(content.length) + '\n';
+    const lines: string[] = [];
+    const header = `${padRight('', longestName)}| ${padRight('Raid', 16)} | ${padRight('Dungeon', 16)} | ${padRight('World', 16)}`;
+    lines.push(header);
+    lines.push('-'.repeat(header.length));
 
     for (const character of greatVault) {
         const raids = character.greatVault?.raids ?? null;
@@ -96,8 +96,10 @@ export async function getPreviousWeeklyGreatVaultMessage(
         const worldOptions = world === null ? 'No Data         '
             : `${padRight(world.option_1 ?? '', 4)}/ ${padRight(world.option_2 ?? '', 4)}/ ${padRight(world.option_3 ?? '', 4)}`;
 
-        content += `${padRight(character.characterName, longestName)}| ${padRight(raidOptions, 16)} | ${padRight(dungeonOptions, 16)} | ${padRight(worldOptions, 16)}\n`;
+        lines.push(`${padRight(character.characterName, longestName)}| ${padRight(raidOptions, 16)} | ${padRight(dungeonOptions, 16)} | ${padRight(worldOptions, 16)}`);
     }
+
+    const content = lines.join('\n') + '\n';
 
     const buffer = Buffer.from(content, 'utf-8');
     const today = new Date().toISOString().split('T')[0];
@@ -116,14 +118,8 @@ export async function getPreviousWeeklyGreatVaultMessage(
  * Send both weekly reports (M+ and Great Vault) to the weekly_check channel.
  */
 export async function alertHighestMythicPlusDone(client: Client): Promise<void> {
-    const channelId = getChannel('weekly_check');
-    if (!channelId) return;
-
-    const channel = await client.channels.fetch(channelId);
-    const sendable = asSendable(channel);
-    if (!sendable) return;
-
-    const textChannel = sendable as TextChannel;
+    const textChannel = await fetchTextChannel(client, 'weekly_check');
+    if (!textChannel) return;
     const data = await getHistoricalData();
 
     const mythicPlusMessage = await getPreviousWeekMythicPlusMessage(data);

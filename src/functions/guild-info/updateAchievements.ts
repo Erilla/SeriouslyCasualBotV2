@@ -4,9 +4,8 @@ import {
     EmbedBuilder,
     Colors,
 } from 'discord.js';
-import { getChannel } from '../setup/getChannel.js';
 import { getDatabase } from '../../database/database.js';
-import { asSendable, loadJson } from '../../utils.js';
+import { fetchTextChannel, loadJson } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 import { getRaidRankings, getRaidStaticData, type RaidStaticData } from '../../services/raiderio.js';
 
@@ -24,48 +23,52 @@ const achievementsData = loadJson<AchievementsData>('data/achievements.json');
 
 // Minimum expansion ID for Raider.io API data (older ones use manual JSON data)
 const RAIDERIO_MIN_EXPANSION = 6;
+// Range of expansion IDs to fetch in parallel from Raider.io
+const RAIDERIO_MAX_EXPANSION = 15;
 
 /**
  * Build and post (or edit) the achievements embed.
  * Combines manual data from achievements.json with live Raider.io data.
  */
-export async function updateAchievements(client: Client): Promise<void> {
-    const channelId = getChannel('guild_info');
-    if (!channelId) return;
+export async function updateAchievements(client: Client, channel?: TextChannel): Promise<void> {
+    const textChannel = channel ?? await fetchTextChannel(client, 'guild_info');
+    if (!textChannel) return;
 
-    const channel = await client.channels.fetch(channelId);
-    const sendable = asSendable(channel);
-    if (!sendable) return;
-
-    const textChannel = sendable as TextChannel;
-
-    let raidsColumn = '';
-    let progressColumn = '';
-    let rankingColumn = '';
+    const raidsLines: string[] = [];
+    const progressLines: string[] = [];
+    const rankingLines: string[] = [];
 
     // Build manual achievements (old expansions from JSON)
     for (let expansion = 4; expansion < RAIDERIO_MIN_EXPANSION; expansion++) {
         const manual = buildManualAchievements(expansion);
-        raidsColumn = manual.raids + raidsColumn;
-        progressColumn = manual.progress + progressColumn;
-        rankingColumn = manual.ranking + rankingColumn;
+        raidsLines.unshift(manual.raids);
+        progressLines.unshift(manual.progress);
+        rankingLines.unshift(manual.ranking);
     }
 
-    // Build dynamic achievements from Raider.io
-    let expansion = RAIDERIO_MIN_EXPANSION;
-    while (true) {
-        const staticData = await getRaidStaticData(expansion);
-        if (!staticData) break;
+    // Fetch all expansion static data in parallel
+    const expansionIds = Array.from(
+        { length: RAIDERIO_MAX_EXPANSION - RAIDERIO_MIN_EXPANSION + 1 },
+        (_, i) => RAIDERIO_MIN_EXPANSION + i,
+    );
+    const staticResults = await Promise.all(
+        expansionIds.map((id) => getRaidStaticData(id)),
+    );
 
+    // Build dynamic achievements from results (in order)
+    for (const staticData of staticResults) {
+        if (!staticData) continue;
         const dynamic = await buildDynamicAchievements(staticData);
         if (dynamic) {
-            raidsColumn = dynamic.raids + '\n' + raidsColumn;
-            progressColumn = dynamic.progress + '\n' + progressColumn;
-            rankingColumn = dynamic.ranking + '\n' + rankingColumn;
+            raidsLines.unshift(dynamic.raids);
+            progressLines.unshift(dynamic.progress);
+            rankingLines.unshift(dynamic.ranking);
         }
-
-        expansion++;
     }
+
+    const raidsColumn = raidsLines.join('\n');
+    const progressColumn = progressLines.join('\n');
+    const rankingColumn = rankingLines.join('\n');
 
     const embed = new EmbedBuilder()
         .setTitle(achievementsData.title)
@@ -96,20 +99,20 @@ export async function updateAchievements(client: Client): Promise<void> {
     await logger.debug('[GuildInfo] Posted new achievements embed');
 }
 
-function buildManualAchievements(expansion: number): { raids: string; progress: string; ranking: string } {
+export function buildManualAchievements(expansion: number): { raids: string; progress: string; ranking: string } {
     const achievements = achievementsData.achievements.filter((a) => a.expansion === expansion);
 
-    let raids = '';
-    let progress = '';
-    let ranking = '';
+    const raids: string[] = [];
+    const progress: string[] = [];
+    const ranking: string[] = [];
 
     for (const achieve of achievements) {
-        raids = achieve.raid + '\n' + raids;
-        progress = achieve.progress + '\n' + progress;
-        ranking = achieve.result + '\n' + ranking;
+        raids.unshift(achieve.raid);
+        progress.unshift(achieve.progress);
+        ranking.unshift(achieve.result);
     }
 
-    return { raids, progress, ranking };
+    return { raids: raids.join('\n'), progress: progress.join('\n'), ranking: ranking.join('\n') };
 }
 
 async function buildDynamicAchievements(staticData: RaidStaticData): Promise<{ raids: string; progress: string; ranking: string } | null> {
@@ -128,9 +131,9 @@ async function buildDynamicAchievements(staticData: RaidStaticData): Promise<{ r
         })),
     );
 
-    let raids = '';
-    let progress = '';
-    let ranking = '';
+    const raids: string[] = [];
+    const progress: string[] = [];
+    const ranking: string[] = [];
 
     for (let i = 0; i < raidEntries.length; i++) {
         const { raid, rankingsData } = raidEntries[i];
@@ -164,16 +167,16 @@ async function buildDynamicAchievements(staticData: RaidStaticData): Promise<{ r
             worldRanking = `${isCE ? '**CE**' : '\u200b'} WR ${bestRanking.rank}`;
         }
 
-        raids = raid.name + '\n' + raids;
-        progress = `${killedBosses}/${totalBosses}M` + '\n' + progress;
-        ranking = worldRanking + '\n' + ranking;
+        raids.unshift(raid.name);
+        progress.unshift(`${killedBosses}/${totalBosses}M`);
+        ranking.unshift(worldRanking);
     }
 
-    if (!raids) return null;
-    return { raids, progress, ranking };
+    if (raids.length === 0) return null;
+    return { raids: raids.join('\n'), progress: progress.join('\n'), ranking: ranking.join('\n') };
 }
 
-function checkIsCuttingEdge(
+export function checkIsCuttingEdge(
     raid: RaidStaticData['raids'][0],
     tierEndDate: string | null,
     raidRanking: { encountersDefeated: Array<{ slug: string; firstDefeated: string }> },

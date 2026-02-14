@@ -4,9 +4,8 @@ import {
     EmbedBuilder,
     Colors,
 } from 'discord.js';
-import { getChannel } from '../setup/getChannel.js';
 import { getDatabase } from '../../database/database.js';
-import { asSendable, loadJson } from '../../utils.js';
+import { fetchTextChannel, loadJson } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 import type { OverlordRow } from '../../types/index.js';
 
@@ -24,13 +23,9 @@ const recruitment = loadJson<RecruitmentData>('data/recruitment.json');
  * Post the Recruitment embed to the guild_info channel.
  * Replaces {{OVERLORDS}} with mentions of all overlords from the DB.
  */
-export async function updateRecruitment(client: Client): Promise<void> {
-    const channelId = getChannel('guild_info');
-    if (!channelId) return;
-
-    const channel = await client.channels.fetch(channelId);
-    const sendable = asSendable(channel);
-    if (!sendable) return;
+export async function updateRecruitment(client: Client, channel?: TextChannel): Promise<void> {
+    const textChannel = channel ?? await fetchTextChannel(client, 'guild_info');
+    if (!textChannel) return;
 
     // Get overlords for the {{OVERLORDS}} token
     const db = getDatabase();
@@ -57,7 +52,7 @@ export async function updateRecruitment(client: Client): Promise<void> {
         }
     }
 
-    await (sendable as TextChannel).send({
+    await textChannel.send({
         embeds: [embed],
         allowedMentions: { users: [] },
     });

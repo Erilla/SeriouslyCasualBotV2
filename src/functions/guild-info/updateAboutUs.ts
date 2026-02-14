@@ -7,9 +7,8 @@ import {
     ButtonStyle,
     Colors,
 } from 'discord.js';
-import { getChannel } from '../setup/getChannel.js';
 import { logger } from '../../services/logger.js';
-import { asSendable, loadJson } from '../../utils.js';
+import { fetchTextChannel, loadJson } from '../../utils.js';
 
 interface AboutUsData {
     title: string;
@@ -26,13 +25,9 @@ const aboutUs = loadJson<AboutUsData>('data/aboutus.json');
 /**
  * Post the About Us embed to the guild_info channel.
  */
-export async function updateAboutUs(client: Client): Promise<void> {
-    const channelId = getChannel('guild_info');
-    if (!channelId) return;
-
-    const channel = await client.channels.fetch(channelId);
-    const sendable = asSendable(channel);
-    if (!sendable) return;
+export async function updateAboutUs(client: Client, channel?: TextChannel): Promise<void> {
+    const textChannel = channel ?? await fetchTextChannel(client, 'guild_info');
+    if (!textChannel) return;
 
     const embed = new EmbedBuilder()
         .setTitle(aboutUs.title)
@@ -50,6 +45,6 @@ export async function updateAboutUs(client: Client): Promise<void> {
         );
     }
 
-    await (sendable as TextChannel).send({ embeds: [embed], components: [row] });
+    await textChannel.send({ embeds: [embed], components: [row] });
     await logger.debug('[GuildInfo] Posted About Us embed');
 }

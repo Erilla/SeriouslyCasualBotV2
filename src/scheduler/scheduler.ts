@@ -47,17 +47,22 @@ export async function initScheduler(client: BotClient): Promise<void> {
             }
 
             try {
-                await handler(client);
+                await Promise.race([
+                    handler(client),
+                    new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error(`Job ${job.name} timed out after 90s`)), 90_000),
+                    ),
+                ]);
             } catch (error) {
                 await logger.error(`[Scheduler] Job ${job.name} failed`, error);
                 throw error;
             }
         },
-        { connection, concurrency: 1 }
+        { connection, concurrency: 1, lockDuration: 120_000 }
     );
 
     worker.on('failed', (job, err) => {
-        console.error(`[Scheduler] Job ${job?.name} failed:`, err.message);
+        logger.error(`[Scheduler] Job ${job?.name} failed: ${err.message}`, err).catch(() => {});
     });
 
     await logger.info('[Scheduler] BullMQ scheduler initialized');

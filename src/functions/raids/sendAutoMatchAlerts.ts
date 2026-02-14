@@ -5,8 +5,7 @@ import {
     ButtonBuilder,
     ButtonStyle,
 } from 'discord.js';
-import { getChannel } from '../setup/getChannel.js';
-import { asSendable } from '../../utils.js';
+import { fetchTextChannel, sendInBatches } from '../../utils.js';
 import type { AutoMatchResult } from './autoMatchRaiders.js';
 
 /**
@@ -19,16 +18,10 @@ export async function sendAutoMatchAlerts(
 ): Promise<void> {
     if (matched.length === 0) return;
 
-    const channelId = getChannel('bot_setup');
-    if (!channelId) return;
+    const textChannel = await fetchTextChannel(client, 'bot_setup');
+    if (!textChannel) return;
 
-    const channel = await client.channels.fetch(channelId);
-    const sendable = asSendable(channel);
-    if (!sendable) return;
-
-    const textChannel = sendable as TextChannel;
-
-    for (const { characterName, discordUserId } of matched) {
+    const payloads = matched.map(({ characterName, discordUserId }) => {
         const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder()
                 .setCustomId(`unmatch_raider:${characterName}`)
@@ -36,9 +29,11 @@ export async function sendAutoMatchAlerts(
                 .setStyle(ButtonStyle.Danger),
         );
 
-        await textChannel.send({
+        return {
             content: `${characterName} — Linked to <@${discordUserId}>`,
             components: [buttonRow],
-        });
-    }
+        };
+    });
+
+    await sendInBatches(textChannel as TextChannel, payloads);
 }

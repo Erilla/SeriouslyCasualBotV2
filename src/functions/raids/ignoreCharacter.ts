@@ -8,9 +8,11 @@ import type { IgnoredCharacterRow } from '../../types/index.js';
 export function ignoreCharacter(characterName: string): boolean {
     const db = getDatabase();
     try {
-        db.prepare('INSERT INTO ignored_characters (character_name) VALUES (?)').run(characterName);
-        // Remove from raiders if present
-        db.prepare('DELETE FROM raiders WHERE LOWER(character_name) = LOWER(?)').run(characterName);
+        const insertAndRemove = db.transaction(() => {
+            db.prepare('INSERT INTO ignored_characters (character_name) VALUES (?)').run(characterName);
+            db.prepare('DELETE FROM raiders WHERE LOWER(character_name) = LOWER(?)').run(characterName);
+        });
+        insertAndRemove();
         return true;
     } catch {
         return false;

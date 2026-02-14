@@ -15,13 +15,16 @@ export function setSetting(key: string, value: string): void {
  */
 export function toggleSetting(key: string): boolean {
     const db = getDatabase();
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
-    const current = row?.value === 'true';
-    const newValue = !current;
+    const toggle = db.transaction(() => {
+        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+        const current = row?.value === 'true';
+        const newValue = !current;
 
-    db.prepare(
-        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-    ).run(key, String(newValue));
+        db.prepare(
+            'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+        ).run(key, String(newValue));
 
-    return newValue;
+        return newValue;
+    });
+    return toggle();
 }

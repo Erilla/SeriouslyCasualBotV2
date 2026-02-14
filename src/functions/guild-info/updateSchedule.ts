@@ -4,8 +4,7 @@ import {
     EmbedBuilder,
     Colors,
 } from 'discord.js';
-import { getChannel } from '../setup/getChannel.js';
-import { asSendable, loadJson } from '../../utils.js';
+import { fetchTextChannel, loadJson } from '../../utils.js';
 import { logger } from '../../services/logger.js';
 
 interface ScheduleData {
@@ -20,13 +19,9 @@ const schedule = loadJson<ScheduleData>('data/schedule.json');
 /**
  * Post the Raid Schedule embed to the guild_info channel.
  */
-export async function updateSchedule(client: Client): Promise<void> {
-    const channelId = getChannel('guild_info');
-    if (!channelId) return;
-
-    const channel = await client.channels.fetch(channelId);
-    const sendable = asSendable(channel);
-    if (!sendable) return;
+export async function updateSchedule(client: Client, channel?: TextChannel): Promise<void> {
+    const textChannel = channel ?? await fetchTextChannel(client, 'guild_info');
+    if (!textChannel) return;
 
     let dayColumn = '';
     let timeColumn = '';
@@ -45,6 +40,6 @@ export async function updateSchedule(client: Client): Promise<void> {
         .setFooter({ text: schedule.timeZone })
         .setColor(Colors.Green);
 
-    await (sendable as TextChannel).send({ embeds: [embed] });
+    await textChannel.send({ embeds: [embed] });
     await logger.debug('[GuildInfo] Posted Schedule embed');
 }

@@ -2,13 +2,36 @@ import type { Client, GuildMember } from 'discord.js';
 import { config } from '../../config.js';
 import { getDatabase } from '../../database/database.js';
 import { getChannel } from '../setup/getChannel.js';
-import { updateRaiderDiscordUser } from './updateRaiderDiscordUser.js';
 import { logger } from '../../services/logger.js';
 import type { RaiderRow } from '../../types/index.js';
 
 export interface AutoMatchResult {
     matched: Array<{ characterName: string; discordUserId: string }>;
     unmatched: string[];
+}
+
+/**
+ * Build a name→members index from available members for O(1) lookups.
+ * Maps lowercase nickname, displayName, and username to member arrays.
+ */
+function buildNameIndex(members: Map<string, GuildMember>): Map<string, GuildMember[]> {
+    const index = new Map<string, GuildMember[]>();
+    for (const [, member] of members) {
+        const names = new Set<string>();
+        if (member.nickname) names.add(member.nickname.toLowerCase());
+        names.add(member.user.displayName.toLowerCase());
+        names.add(member.user.username.toLowerCase());
+
+        for (const name of names) {
+            const existing = index.get(name);
+            if (existing) {
+                existing.push(member);
+            } else {
+                index.set(name, [member]);
+            }
+        }
+    }
+    return index;
 }
 
 /**
@@ -21,16 +44,24 @@ export interface AutoMatchResult {
 export async function autoMatchRaiders(client: Client): Promise<AutoMatchResult> {
     const db = getDatabase();
 
-    // Get all unmatched raiders
-    const unmatchedRows = db.prepare(
-        'SELECT character_name FROM raiders WHERE discord_user_id IS NULL',
-    ).all() as Pick<RaiderRow, 'character_name'>[];
+    // Single query: get all raiders, partition in JS
+    const allRows = db.prepare(
+        'SELECT character_name, discord_user_id FROM raiders',
+    ).all() as Pick<RaiderRow, 'character_name' | 'discord_user_id'>[];
 
-    if (unmatchedRows.length === 0) {
-        return { matched: [], unmatched: [] };
+    const unmatchedNames: string[] = [];
+    const assignedUserIds = new Set<string>();
+    for (const row of allRows) {
+        if (row.discord_user_id == null) {
+            unmatchedNames.push(row.character_name);
+        } else {
+            assignedUserIds.add(row.discord_user_id);
+        }
     }
 
-    const unmatchedNames = unmatchedRows.map((r) => r.character_name);
+    if (unmatchedNames.length === 0) {
+        return { matched: [], unmatched: [] };
+    }
 
     // Raider role must be configured
     const raiderRoleId = getChannel('raider_role');
@@ -49,12 +80,6 @@ export async function autoMatchRaiders(client: Client): Promise<AutoMatchResult>
     );
     await logger.debug(`[Raiders] Auto-match: ${unmatchedNames.length} unmatched raiders, ${membersWithRole.size} members with raider role`);
 
-    // Get discord user IDs already assigned to any raider
-    const assignedRows = db.prepare(
-        'SELECT discord_user_id FROM raiders WHERE discord_user_id IS NOT NULL',
-    ).all() as Pick<RaiderRow, 'discord_user_id'>[];
-    const assignedUserIds = new Set(assignedRows.map((r) => r.discord_user_id));
-
     // Filter to members not already assigned
     const availableMembers = new Map<string, GuildMember>();
     for (const [id, member] of membersWithRole) {
@@ -64,27 +89,21 @@ export async function autoMatchRaiders(client: Client): Promise<AutoMatchResult>
     }
     await logger.debug(`[Raiders] Auto-match: ${availableMembers.size} available members (not already assigned)`);
 
+    // Build name index for O(1) lookups
+    const nameIndex = buildNameIndex(availableMembers);
+
     const matched: AutoMatchResult['matched'] = [];
     const unmatched: string[] = [];
 
     for (const characterName of unmatchedNames) {
         const charLower = characterName.toLowerCase();
+        const matches = nameIndex.get(charLower) ?? [];
 
-        // Find all available members that match this character name
-        const matches: GuildMember[] = [];
-        for (const [, member] of availableMembers) {
-            if (
-                member.nickname?.toLowerCase() === charLower
-                || member.user.displayName.toLowerCase() === charLower
-                || member.user.username.toLowerCase() === charLower
-            ) {
-                matches.push(member);
-            }
-        }
+        // Filter out members already matched in this run
+        const available = matches.filter((m) => availableMembers.has(m.id));
 
-        if (matches.length === 1) {
-            const member = matches[0];
-            updateRaiderDiscordUser(characterName, member.id);
+        if (available.length === 1) {
+            const member = available[0];
             matched.push({ characterName, discordUserId: member.id });
             // Remove from available pool to prevent double-assignment
             availableMembers.delete(member.id);
@@ -92,6 +111,19 @@ export async function autoMatchRaiders(client: Client): Promise<AutoMatchResult>
         } else {
             unmatched.push(characterName);
         }
+    }
+
+    // Batch all DB updates in a single transaction
+    if (matched.length > 0) {
+        const updateStmt = db.prepare(
+            'UPDATE raiders SET discord_user_id = ? WHERE LOWER(character_name) = LOWER(?)',
+        );
+        const batchUpdate = db.transaction(() => {
+            for (const { characterName, discordUserId } of matched) {
+                updateStmt.run(discordUserId, characterName);
+            }
+        });
+        batchUpdate();
     }
 
     if (matched.length > 0 || unmatched.length > 0) {

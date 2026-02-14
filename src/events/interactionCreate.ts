@@ -96,6 +96,9 @@ const event: BotEvent = {
                 await logger.debug(`Button clicked: ${customId}`);
             } catch (error) {
                 await logger.error('Error handling button interaction', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral });
+                }
             }
             return;
         }
@@ -104,6 +107,10 @@ const event: BotEvent = {
         if (interaction.isModalSubmit()) {
             // TODO: Route modal submissions (Task 5+)
             await logger.debug(`Modal submitted: ${interaction.customId}`);
+            await interaction.reply({
+                content: 'This feature is not yet available.',
+                flags: MessageFlags.Ephemeral,
+            });
             return;
         }
 
@@ -127,12 +134,19 @@ const event: BotEvent = {
                 await logger.debug(`User select menu: ${customId}`);
             } catch (error) {
                 await logger.error('Error handling user select menu', error);
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral });
+                }
             }
             return;
         }
 
         if (interaction.isStringSelectMenu()) {
             await logger.debug(`String select menu: ${interaction.customId}`);
+            await interaction.reply({
+                content: 'This feature is not yet available.',
+                flags: MessageFlags.Ephemeral,
+            });
             return;
         }
     },
