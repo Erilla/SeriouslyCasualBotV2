@@ -89,6 +89,7 @@ function extractApplicantName(channelName: string): string {
 /**
  * Try to extract the applicant user ID from messages.
  * Looks for mentions or the first non-bot message author.
+ * Also parses <@userId> patterns in message/embed text for 3rd party bot formats.
  */
 function extractApplicantId(messages: Message[]): string | null {
     // Look for the first non-bot message author
@@ -106,12 +107,42 @@ function extractApplicantId(messages: Message[]): string | null {
         }
     }
 
+    // Parse <@userId> from message content and embed descriptions
+    const mentionRegex = /<@!?(\d+)>/;
+    for (const msg of messages) {
+        const textSources = [
+            msg.content,
+            ...msg.embeds.map((e) => e.description ?? ''),
+        ];
+        for (const text of textSources) {
+            const match = text.match(mentionRegex);
+            if (match) return match[1];
+        }
+    }
+
     return null;
+}
+
+/** Lines that are noise (headers, pagination, metadata) — not real Q&A content */
+const NOISE_PATTERNS = [
+    /^-{5,}/, // ---------- header lines
+    /^Page \d+\/\d+$/i, // Page 1/2
+    /^\*This application has been split/i, // pagination notice
+    /^Date of Application:/i, // metadata
+    /^Name of Applicant:/i, // metadata
+];
+
+function isNoiseLine(text: string): boolean {
+    return NOISE_PATTERNS.some((p) => p.test(text.trim()));
 }
 
 /**
  * Extract Q&A pairs from messages.
  * Attempts to parse structured application content from bot messages.
+ * Supports:
+ *  - **Q1** / **Q2** format
+ *  - Numbered "1. " format
+ *  - 3rd party bot bold-question format: **Question text** -\nAnswer
  */
 function extractQuestionsAndAnswers(
     messages: Message[],
@@ -128,24 +159,39 @@ function extractQuestionsAndAnswers(
         return [{ question: 'Application Content', answer: 'No content found in the application channel.' }];
     }
 
-    // Try to split by common Q&A patterns (e.g. bold headers, numbered items)
-    const qaParts = fullContent.split(/(?=\*\*Q\d+|(?:^|\n)\d+\.\s)/);
+    // Try to split by common Q&A patterns (e.g. bold headers, numbered items, bold-question format)
+    const qaParts = fullContent.split(/(?=\*\*Q\d+|(?:^|\n)\d+\.\s|\*\*[^*]+\*\*\s*-)/);
 
     if (qaParts.length > 1) {
         for (const part of qaParts) {
             const trimmed = part.trim();
             if (!trimmed) continue;
+            if (isNoiseLine(trimmed)) continue;
+
             const firstNewline = trimmed.indexOf('\n');
             if (firstNewline > 0) {
-                result.push({
-                    question: trimmed.slice(0, firstNewline).replace(/\*\*/g, '').trim(),
-                    answer: trimmed.slice(firstNewline + 1).trim(),
-                });
+                const question = trimmed.slice(0, firstNewline)
+                    .replace(/\*\*/g, '')
+                    .replace(/\s*-\s*$/, '')
+                    .trim();
+                const answer = trimmed.slice(firstNewline + 1).trim();
+
+                // Skip if extracted question is noise
+                if (isNoiseLine(question) || !question) continue;
+                // Skip if answer is only noise lines
+                const answerLines = answer.split('\n').filter((l) => l.trim() && !isNoiseLine(l));
+                if (answerLines.length === 0) continue;
+
+                result.push({ question, answer: answerLines.join('\n').trim() });
             } else {
-                result.push({ question: 'Application', answer: trimmed });
+                if (!isNoiseLine(trimmed)) {
+                    result.push({ question: 'Application', answer: trimmed });
+                }
             }
         }
-    } else {
+    }
+
+    if (result.length === 0) {
         // Couldn't parse structure, dump as single entry
         result.push({ question: 'Application Content', answer: fullContent.slice(0, 4000) });
     }

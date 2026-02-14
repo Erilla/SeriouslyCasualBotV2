@@ -51,6 +51,10 @@ async function loadCommands(): Promise<void> {
             const command = mod.default as Command;
 
             if (command?.data?.name) {
+                if (command.testOnly && config.nodeEnv === 'production') {
+                    console.log(`[INFO] Skipping test-only command: /${command.data.name}`);
+                    continue;
+                }
                 client.commands.set(command.data.name, command);
             } else {
                 console.warn(`[WARN] Command ${file}: missing data or name, skipping`);

@@ -3,6 +3,7 @@ import type {
     Client,
     Collection,
     SlashCommandBuilder,
+    SlashCommandOptionsOnlyBuilder,
     SlashCommandSubcommandsOnlyBuilder,
 } from 'discord.js';
 
@@ -13,8 +14,9 @@ export interface BotClient extends Client {
 }
 
 export interface Command {
-    data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | Omit<SlashCommandBuilder, 'addSubcommand' | 'addSubcommandGroup'>;
+    data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | SlashCommandOptionsOnlyBuilder | Omit<SlashCommandBuilder, 'addSubcommand' | 'addSubcommandGroup'>;
     execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
+    testOnly?: boolean;
 }
 
 export interface BotEvent {
