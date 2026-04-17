@@ -48,7 +48,7 @@ export function buildReviewMessage(
   ].join('\n');
 }
 
-// Re-export for backwards compatibility
+import { calculateReviewDates } from './dateCalculations.js';
 export { calculateReviewDates } from './dateCalculations.js';
 
 /**
