@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateReviewDates } from '../../src/functions/trial-review/createTrialReviewThread.js';
+import { calculateReviewDates } from '../../src/functions/trial-review/dateCalculations.js';
 
 describe('calculateReviewDates', () => {
   it('should calculate 2-week review as 14 days from start date', () => {
