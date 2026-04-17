@@ -3,10 +3,35 @@ import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import type { TrialAlertRow, TrialRow, PromoteAlertRow } from '../../types/index.js';
 
+// ─── Constants ──────────────────────────────────────────────
+
+// setTimeout max safe delay is 2^31-1 ms (~24.85 days).
+// Delays exceeding this overflow to 0 and fire immediately.
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 // ─── Timer Storage ───────────────────────────────────────────
 
 const alertTimers = new Map<number, NodeJS.Timeout>();
 const promoteTimers = new Map<number, NodeJS.Timeout>();
+
+/**
+ * Schedule a callback with a delay that may exceed setTimeout's 2^31-1 ms limit.
+ * If the delay is larger, it chains intermediate timeouts.
+ */
+function safeSetTimeout(callback: () => void, delay: number): NodeJS.Timeout {
+  if (delay <= MAX_TIMEOUT_MS) {
+    return setTimeout(callback, delay);
+  }
+  // Chain: wait MAX_TIMEOUT_MS, then re-check remaining delay
+  return setTimeout(() => {
+    const remaining = delay - MAX_TIMEOUT_MS;
+    if (remaining <= 0) {
+      callback();
+    } else {
+      safeSetTimeout(callback, remaining);
+    }
+  }, MAX_TIMEOUT_MS);
+}
 
 /**
  * Clear all scheduled timers. Call on shutdown.
@@ -149,7 +174,7 @@ export function scheduleTrialAlerts(client: Client, trialId: number): void {
       // Past due - fire immediately (async, don't await)
       void fireAlert(client, alert);
     } else {
-      const timer = setTimeout(() => {
+      const timer = safeSetTimeout(() => {
         void fireAlert(client, alert);
       }, delay);
       alertTimers.set(alert.id, timer);
@@ -180,14 +205,14 @@ export function rescheduleAllAlerts(client: Client): void {
 
   for (const alert of alerts) {
     const alertTime = new Date(alert.alert_date + 'T12:00:00Z').getTime();
-    const delay = Math.max(0, alertTime - now);
+    const delay = alertTime - now;
 
-    if (delay === 0) {
+    if (delay <= 0) {
       pastDue++;
       void fireAlert(client, alert);
     } else {
       scheduled++;
-      const timer = setTimeout(() => {
+      const timer = safeSetTimeout(() => {
         void fireAlert(client, alert);
       }, delay);
       alertTimers.set(alert.id, timer);
@@ -204,14 +229,14 @@ export function rescheduleAllAlerts(client: Client): void {
 
   for (const pa of promoteAlerts) {
     const promoteTime = new Date(pa.promote_date + 'T12:00:00Z').getTime();
-    const delay = Math.max(0, promoteTime - now);
+    const delay = promoteTime - now;
 
-    if (delay === 0) {
+    if (delay <= 0) {
       promotePastDue++;
       void firePromoteAlert(client, pa);
     } else {
       promoteScheduled++;
-      const timer = setTimeout(() => {
+      const timer = safeSetTimeout(() => {
         void firePromoteAlert(client, pa);
       }, delay);
       promoteTimers.set(pa.id, timer);
@@ -247,16 +272,16 @@ export function schedulePromoteAlert(
   const promoteAlertId = result.lastInsertRowid as number;
   const now = Date.now();
   const promoteTime = new Date(promoteDate + 'T12:00:00Z').getTime();
-  const delay = Math.max(0, promoteTime - now);
+  const delay = promoteTime - now;
 
   const promoteAlert = db
     .prepare('SELECT * FROM promote_alerts WHERE id = ?')
     .get(promoteAlertId) as PromoteAlertRow;
 
-  if (delay === 0) {
+  if (delay <= 0) {
     void firePromoteAlert(client, promoteAlert);
   } else {
-    const timer = setTimeout(() => {
+    const timer = safeSetTimeout(() => {
       void firePromoteAlert(client, promoteAlert);
     }, delay);
     promoteTimers.set(promoteAlertId, timer);
