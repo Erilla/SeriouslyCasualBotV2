@@ -39,6 +39,12 @@ All commands are Discord slash commands registered to a single guild.
 | `/applications view_pending` | View all pending applications (in_progress, active, abandoned) | Yes | No |
 | `/applications set_accept_message` | Set the default acceptance DM message via modal | Yes | No |
 | `/applications set_reject_message` | Set the default rejection DM message via modal | Yes | No |
+| `/trials create_thread` | Open a modal to create a new trial review thread | Yes | No |
+| `/trials get_current_trials` | View all active/promoted trials | Yes | No |
+| `/trials remove_trial` | Close and archive a trial by thread ID | Yes | No |
+| `/trials change_trial_info` | Update a trial's character name, role, or start date | Yes | No |
+| `/trials update_trial_logs` | Refresh WarcraftLogs attendance for all active trials | Yes | No |
+| `/trials update_trial_review_messages` | Refresh all trial review thread starter messages | Yes | No |
 
 ## Notes
 
