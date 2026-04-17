@@ -14,6 +14,7 @@ This is a ground-up rewrite of V1 (CommonJS, Keyv, no types) with the goals of *
 | Discord.js v14 | Bot framework (slash commands, buttons, modals, select menus, forums) |
 | better-sqlite3 | Synchronous SQLite with WAL mode, foreign keys |
 | node-cron | Cron scheduling (for time-of-day tasks only) |
+| @napi-rs/canvas | Image generation for achievements display (Rust-based, ARM64 native) |
 | dotenv | Environment variable loading |
 | tsx | Dev runner (watch mode) |
 
@@ -943,13 +944,27 @@ All content seeded from `seed.ts` into `guild_info_content`, `guild_info_links`,
 
 `/guildinfo` deletes all messages in the channel and recreates all 4 embeds in order. Message IDs stored in `guild_info_messages` for future edit-in-place updates.
 
-### Achievements
+### Achievements (Generated Image)
 
+Unlike the other guild info sections (which use embeds), achievements are rendered as a generated PNG image for a cleaner table display.
+
+**Data sources:**
 - Expansion 4-5: from `achievements_manual` table
 - Expansion 6+: live from Raider.io (`getRaidStaticData` + `getRaidRankings`)
 - Cutting Edge detection: last boss killed before tier end date
-- Displayed in reverse chronological order with expansion separators
-- Refreshed every 30 minutes (polling - Raider.io has no webhooks)
+
+**Image generation** (using `@napi-rs/canvas`):
+1. Query all achievement data (manual + API)
+2. Build rows in reverse chronological order with expansion separators
+3. Draw table on canvas:
+   - Columns: Raid, Progress, World Ranking
+   - CE rows highlighted (bold or accent color)
+   - Guild-themed styling (green accent matching embed color)
+   - Clean monospace font for alignment
+4. Export as PNG buffer
+5. Attach to message as an image embed with the achievements title
+
+**Refreshed** every 30 minutes (polling - Raider.io has no webhooks). The image is regenerated each time.
 
 ### Slash Commands
 
@@ -1505,18 +1520,54 @@ Runs on pull requests. Claude AI code review.
 - Each feature branch gets a PR into `master`
 - Claude does a thorough code review of each PR before merge
 
+### Vertical Slices
+
+Each feature is developed as a complete vertical slice: schema + business logic + commands + events + tests + docs. This means each slice is independently deployable and testable.
+
 ### Parallelism with Worktrees
 
-Tasks that have no dependencies on each other can be developed simultaneously in separate worktrees:
+Independent slices are developed simultaneously in separate git worktrees. Each worktree has its own working directory, its own `node_modules`, and its own SQLite database file - so parallel development doesn't conflict.
 
-| Phase | Tasks (can be parallel) | Dependencies |
+| Phase | Slices (can be parallel) | Dependencies |
 |-------|------------------------|--------------|
-| 1 | Foundation (project setup, DB, config, scheduler, types) | None |
-| 2 | Guild Info, Settings, Raids (roster sync) | Foundation |
+| 1 | Foundation (project setup, DB, config, scheduler, types, CI/CD, Docker) | None |
+| 2 | Guild Info, Settings, Raids (roster sync + auto-link + identity map) | Foundation |
 | 3 | Applications, Trial Review, Loot, EPGP | Foundation + Raids (for raiders table) |
-| 4 | Integration tests, CI/CD workflows | All domains |
+| 4 | EPGP Migration, polish, final integration tests | All domains |
 
-Within each phase, independent domains can run in parallel worktrees. For example, in Phase 3: Applications, Trial Review, Loot, and EPGP can all be developed concurrently since they share the foundation but don't depend on each other.
+Within each phase, independent slices run in parallel worktrees.
+
+### Local Environment for Worktrees
+
+Each worktree is a full copy of the repo at a different branch:
+
+```
+G:/repos/SeriouslyCasualBotV2/              # main worktree (master)
+G:/repos/SeriouslyCasualBotV2-worktrees/
+  feat-guild-info/                          # worktree for guild info slice
+  feat-settings/                            # worktree for settings slice
+  feat-raids/                               # worktree for raids slice
+```
+
+Each worktree:
+- Has its own `node_modules/` (run `npm install` per worktree)
+- Has its own `db.sqlite` (gitignored, created on first run)
+- Shares the same `.env` (symlinked or copied)
+- Can run `npm run dev` independently
+
+**Only one worktree can run the bot at a time** - Discord only allows one connection per bot token. Development of business logic and tests can happen in parallel across worktrees, but Chrome testing is sequential.
+
+### Chrome Testing Queue
+
+Since only one bot instance can connect to Discord at a time, Chrome verification is sequential:
+
+1. Stop any running bot instance
+2. Switch to the worktree being tested: `cd` to worktree, `npm run dev`
+3. Test the slice in Chrome against the test Discord server
+4. Stop the bot
+5. Move to the next slice
+
+Code development (writing logic, tests, running unit tests) happens in parallel across worktrees. Chrome testing is the serialization point - one slice at a time.
 
 ### PR Flow
 
