@@ -6,6 +6,7 @@ import { syncRaiders } from '../functions/raids/syncRaiders.js';
 import { alertSignups } from '../functions/raids/alertSignups.js';
 import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythicPlusDone.js';
 import { refreshLinkingMessages } from '../functions/raids/refreshLinkingMessages.js';
+import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
 
 export const scheduler = new Scheduler();
 
@@ -47,6 +48,12 @@ export default {
       name: 'weeklyReports',
       expression: '0 12 * * 3',
       handler: () => alertHighestMythicPlusDone(client),
+    });
+
+    scheduler.registerInterval({
+      name: 'updateAchievements',
+      intervalMs: 1_800_000,
+      handler: () => updateAchievements(client),
     });
 
     scheduler.start();

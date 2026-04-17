@@ -29,6 +29,8 @@ All commands are Discord slash commands registered to a single guild.
 | `/raiders add_overlord` | Add an overlord (officer with special permissions) | Yes | No |
 | `/raiders get_overlords` | List all configured overlords | Yes | No |
 | `/raiders remove_overlord` | Remove an overlord | Yes | No |
+| `/guildinfo` | Full refresh of all guild info embeds (About Us, Schedule, Recruitment, Achievements) | Yes | No |
+| `/updateachievements` | Refresh the achievements embed only | Yes | No |
 
 ## Notes
 
