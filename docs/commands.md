@@ -31,6 +31,14 @@ All commands are Discord slash commands registered to a single guild.
 | `/raiders remove_overlord` | Remove an overlord | Yes | No |
 | `/guildinfo` | Full refresh of all guild info embeds (About Us, Schedule, Recruitment, Achievements) | Yes | No |
 | `/updateachievements` | Refresh the achievements embed only | Yes | No |
+| `/apply` | Start a guild application via DM questionnaire | No | No |
+| `/applications list_questions` | List all application questions | Yes | No |
+| `/applications add_question` | Add a new application question | Yes | No |
+| `/applications remove_question` | Remove an application question by ID | Yes | No |
+| `/applications post_apply_button` | Post an "Apply Now" button embed in the current channel | Yes | No |
+| `/applications view_pending` | View all pending applications (in_progress, active, abandoned) | Yes | No |
+| `/applications set_accept_message` | Set the default acceptance DM message via modal | Yes | No |
+| `/applications set_reject_message` | Set the default rejection DM message via modal | Yes | No |
 
 ## Notes
 
