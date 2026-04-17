@@ -1,4 +1,4 @@
-import { type Client, AttachmentBuilder, EmbedBuilder, Colors } from 'discord.js';
+import { type Client, AttachmentBuilder } from 'discord.js';
 import { createCanvas } from '@napi-rs/canvas';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
@@ -100,7 +100,8 @@ export async function updateAchievements(client: Client): Promise<void> {
     try {
       const oldMessage = await channel.messages.fetch(existingMsg.message_id);
       await oldMessage.edit({
-        embeds: [new EmbedBuilder().setColor(Colors.Green).setTitle(title).setImage('attachment://achievements.png')],
+        content: `**${title}**`,
+        embeds: [],
         files: [attachment],
       });
       logger.info('guild-info', 'Updated existing Achievements message');
@@ -112,7 +113,7 @@ export async function updateAchievements(client: Client): Promise<void> {
 
   // Send new message
   const message = await channel.send({
-    embeds: [new EmbedBuilder().setColor(Colors.Green).setTitle(title).setImage('attachment://achievements.png')],
+    content: `**${title}**`,
     files: [attachment],
   });
 
