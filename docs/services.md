@@ -35,12 +35,12 @@ Used for raid log data and performance metrics.
 
 Base URL: `https://www.warcraftlogs.com/api/v2` (GraphQL)
 
-| Query | Description | Status |
-|---|---|---|
-| `guildData.guild.attendance` | Attendance records | Placeholder |
-| `reportData.report.rankings` | Boss kill rankings | Placeholder |
+| Query | Function | Description | Status |
+|---|---|---|---|
+| `guildData.guild.attendance` | `getTrialLogs(characterName)` | Fetches guild attendance and filters to reports where a specific character was present; returns report codes in reverse chronological order | Implemented |
+| `reportData.report.rankings` | -- | Boss kill rankings | Placeholder |
 
-Authentication: OAuth2 client credentials via `WARCRAFTLOGS_CLIENT_ID` / `WARCRAFTLOGS_CLIENT_SECRET`. Guild identified by `WARCRAFTLOGS_GUILD_ID`.
+Authentication: OAuth2 client credentials via `WARCRAFTLOGS_CLIENT_ID` / `WARCRAFTLOGS_CLIENT_SECRET`. Guild identified by `WARCRAFTLOGS_GUILD_ID`. Tokens are cached with expiry tracking and refreshed automatically.
 
 ---
 

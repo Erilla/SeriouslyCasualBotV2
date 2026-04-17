@@ -7,6 +7,8 @@ import { alertSignups } from '../functions/raids/alertSignups.js';
 import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythicPlusDone.js';
 import { refreshLinkingMessages } from '../functions/raids/refreshLinkingMessages.js';
 import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
+import { rescheduleAllAlerts } from '../functions/trial-review/scheduleTrialAlerts.js';
+import { updateTrialLogs } from '../functions/trial-review/updateTrialLogs.js';
 
 export const scheduler = new Scheduler();
 
@@ -56,7 +58,16 @@ export default {
       handler: () => updateAchievements(client),
     });
 
+    scheduler.registerInterval({
+      name: 'updateTrialLogs',
+      intervalMs: 3_600_000,
+      handler: () => updateTrialLogs(client),
+    });
+
     scheduler.start();
+
+    // Reschedule trial alerts from DB (must happen after scheduler.start)
+    rescheduleAllAlerts(client);
 
     logger.info('bot', 'Startup complete');
   },
