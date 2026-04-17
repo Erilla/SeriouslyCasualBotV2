@@ -23,6 +23,14 @@ export interface TrialData {
 }
 
 /**
+ * Convert a Date to a Discord epoch timestamp string.
+ * Styles: 'D' = long date, 'R' = relative, 'f' = short datetime.
+ */
+function toDiscordTimestamp(date: Date, style: 'D' | 'R' | 'f' = 'D'): string {
+  return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
+}
+
+/**
  * Build the review message content for a trial.
  */
 export function buildReviewMessage(
@@ -33,18 +41,18 @@ export function buildReviewMessage(
   fourWeek: Date,
   sixWeek: Date,
 ): string {
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  const startDateObj = new Date(startDate + 'T00:00:00Z');
 
   return [
     `**Trial Review: ${characterName}**`,
     '',
     `**Role:** ${role}`,
-    `**Start Date:** ${startDate}`,
+    `**Start Date:** ${toDiscordTimestamp(startDateObj)}`,
     '',
     `**Review Schedule:**`,
-    `  2-week review: ${fmt(twoWeek)}`,
-    `  4-week review: ${fmt(fourWeek)}`,
-    `  6-week review: ${fmt(sixWeek)}`,
+    `  2-week review: ${toDiscordTimestamp(twoWeek)} (${toDiscordTimestamp(twoWeek, 'R')})`,
+    `  4-week review: ${toDiscordTimestamp(fourWeek)} (${toDiscordTimestamp(fourWeek, 'R')})`,
+    `  6-week review: ${toDiscordTimestamp(sixWeek)} (${toDiscordTimestamp(sixWeek, 'R')})`,
   ].join('\n');
 }
 
