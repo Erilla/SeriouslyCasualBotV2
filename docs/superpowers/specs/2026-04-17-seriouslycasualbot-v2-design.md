@@ -1569,6 +1569,8 @@ Since only one bot instance can connect to Discord at a time, Chrome verificatio
 
 Code development (writing logic, tests, running unit tests) happens in parallel across worktrees. Chrome testing is the serialization point - one slice at a time.
 
+**Important:** When Chrome testing a worktree, all file edits (code fixes, test adjustments) must happen in that worktree's directory, not the main worktree or any other. After Chrome testing is complete for a slice, switch back to the relevant worktree for any follow-up work. Never edit files in the main worktree while testing a feature branch - changes would land on the wrong branch.
+
 ### PR Flow
 
 1. Develop feature on branch in worktree
