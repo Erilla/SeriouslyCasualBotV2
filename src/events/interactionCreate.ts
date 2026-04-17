@@ -14,6 +14,9 @@ import {
   enterEditMode,
   startSessionTimeout,
 } from '../functions/applications/dmQuestionnaire.js';
+import { voteOnApplication } from '../functions/applications/voteOnApplication.js';
+import { acceptApplication, processAcceptModal } from '../functions/applications/acceptApplication.js';
+import { rejectApplication, processRejectModal } from '../functions/applications/rejectApplication.js';
 
 export default {
   name: 'interactionCreate',
@@ -208,6 +211,24 @@ export default {
             flags: MessageFlags.Ephemeral,
           });
         }
+
+        // application_vote:{type}:{applicationId} - Vote on an application
+        if (customId.startsWith('application_vote:')) {
+          const parts = customId.split(':');
+          const voteType = parts[1];
+          const applicationId = parseInt(parts[2], 10);
+          await voteOnApplication(interaction, applicationId, voteType);
+        }
+
+        // application:accept:{applicationId} - Accept button (show modal)
+        if (customId.startsWith('application:accept:')) {
+          await acceptApplication(interaction);
+        }
+
+        // application:reject:{applicationId} - Reject button (show modal)
+        if (customId.startsWith('application:reject:')) {
+          await rejectApplication(interaction);
+        }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error('interaction', `Button handler failed (${customId}): ${err.message}`, err);
@@ -301,6 +322,16 @@ export default {
             content: 'Reject message updated.',
             flags: MessageFlags.Ephemeral,
           });
+        }
+
+        // application:modal:accept:{applicationId} - Process accept
+        if (customId.startsWith('application:modal:accept:')) {
+          await processAcceptModal(interaction);
+        }
+
+        // application:modal:reject:{applicationId} - Process reject
+        if (customId.startsWith('application:modal:reject:')) {
+          await processRejectModal(interaction);
         }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
