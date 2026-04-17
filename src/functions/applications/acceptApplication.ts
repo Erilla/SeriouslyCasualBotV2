@@ -17,6 +17,7 @@ import { config } from '../../config.js';
 import { logger } from '../../services/logger.js';
 import { audit } from '../../services/auditLog.js';
 import { generateTranscript } from './generateTranscript.js';
+import { createTrialReviewThread } from '../trial-review/createTrialReviewThread.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
 
 /**
@@ -224,7 +225,18 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
   // Audit log
   await audit(interaction.user, 'accepted application', `${characterName} as ${role} starting ${startDate}`);
 
-  // TODO: Trial creation bridge - will be implemented in the Trial Review slice
+  // Create trial review thread
+  try {
+    await createTrialReviewThread(interaction.client, {
+      characterName,
+      role,
+      startDate,
+      applicationId,
+    });
+    logger.info('Trials', `Created trial review from accepted application #${applicationId}`);
+  } catch (error) {
+    logger.warn('Trials', `Failed to create trial review for application #${applicationId}: ${error}`);
+  }
 
   logger.info('Applications', `Application #${applicationId} accepted: ${characterName} as ${role}`);
 

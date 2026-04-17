@@ -1,5 +1,14 @@
-import { type Interaction, MessageFlags } from 'discord.js';
-import type { BotClient } from '../types/index.js';
+import {
+  type Interaction,
+  type GuildMember,
+  MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+} from 'discord.js';
+import type { BotClient, TrialRow } from '../types/index.js';
+import { config } from '../config.js';
 import { logger } from '../services/logger.js';
 import { updateRaiderDiscordUser } from '../functions/raids/updateRaiderDiscordUser.js';
 import { ignoreCharacter } from '../functions/raids/ignoreCharacter.js';
@@ -17,6 +26,11 @@ import {
 import { voteOnApplication } from '../functions/applications/voteOnApplication.js';
 import { acceptApplication, processAcceptModal } from '../functions/applications/acceptApplication.js';
 import { rejectApplication, processRejectModal } from '../functions/applications/rejectApplication.js';
+import { extendTrial } from '../functions/trial-review/extendTrial.js';
+import { markForPromotion } from '../functions/trial-review/markForPromotion.js';
+import { closeTrial } from '../functions/trial-review/closeTrial.js';
+import { changeTrialInfo } from '../functions/trial-review/changeTrialInfo.js';
+import { createTrialReviewThread } from '../functions/trial-review/createTrialReviewThread.js';
 
 export default {
   name: 'interactionCreate',
@@ -229,6 +243,137 @@ export default {
         if (customId.startsWith('application:reject:')) {
           await rejectApplication(interaction);
         }
+
+        // trial:update_info:{trialId} - Show update info modal
+        if (customId.startsWith('trial:update_info:')) {
+          const member = interaction.member as GuildMember;
+          if (!member.roles.cache.has(config.officerRoleId)) {
+            await interaction.reply({
+              content: 'You do not have permission to update trials.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          const trialId = parseInt(customId.split(':')[2], 10);
+          const db = getDatabase();
+          const trial = db
+            .prepare('SELECT * FROM trials WHERE id = ?')
+            .get(trialId) as TrialRow | undefined;
+
+          if (!trial) {
+            await interaction.reply({
+              content: 'Trial not found.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          const modal = new ModalBuilder()
+            .setCustomId(`trial:modal:update:${trialId}`)
+            .setTitle('Update Trial Info');
+
+          const charNameInput = new TextInputBuilder()
+            .setCustomId('character_name')
+            .setLabel('Character Name')
+            .setStyle(TextInputStyle.Short)
+            .setValue(trial.character_name)
+            .setRequired(true);
+
+          const roleInput = new TextInputBuilder()
+            .setCustomId('role')
+            .setLabel('Role')
+            .setStyle(TextInputStyle.Short)
+            .setValue(trial.role)
+            .setRequired(true);
+
+          const startDateInput = new TextInputBuilder()
+            .setCustomId('start_date')
+            .setLabel('Start Date (YYYY-MM-DD)')
+            .setStyle(TextInputStyle.Short)
+            .setValue(trial.start_date)
+            .setRequired(true);
+
+          modal.addComponents(
+            new ActionRowBuilder<TextInputBuilder>().addComponents(charNameInput),
+            new ActionRowBuilder<TextInputBuilder>().addComponents(roleInput),
+            new ActionRowBuilder<TextInputBuilder>().addComponents(startDateInput),
+          );
+
+          await interaction.showModal(modal);
+        }
+
+        // trial:extend:{trialId} - Extend trial by 1 week
+        if (customId.startsWith('trial:extend:')) {
+          const member = interaction.member as GuildMember;
+          if (!member.roles.cache.has(config.officerRoleId)) {
+            await interaction.reply({
+              content: 'You do not have permission to extend trials.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          const trialId = parseInt(customId.split(':')[2], 10);
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+          try {
+            await extendTrial(interaction.client, trialId);
+            await audit(interaction.user, 'extended trial', `#${trialId}`);
+            await interaction.editReply({ content: 'Trial extended by 1 week.' });
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            await interaction.editReply({ content: `Failed to extend trial: ${error.message}` });
+          }
+        }
+
+        // trial:mark_promote:{trialId} - Mark for promotion
+        if (customId.startsWith('trial:mark_promote:')) {
+          const member = interaction.member as GuildMember;
+          if (!member.roles.cache.has(config.officerRoleId)) {
+            await interaction.reply({
+              content: 'You do not have permission to mark trials for promotion.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          const trialId = parseInt(customId.split(':')[2], 10);
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+          try {
+            await markForPromotion(interaction.client, trialId);
+            await audit(interaction.user, 'marked trial for promotion', `#${trialId}`);
+            await interaction.editReply({ content: 'Trial marked for promotion.' });
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            await interaction.editReply({ content: `Failed: ${error.message}` });
+          }
+        }
+
+        // trial:close:{trialId} - Close trial
+        if (customId.startsWith('trial:close:')) {
+          const member = interaction.member as GuildMember;
+          if (!member.roles.cache.has(config.officerRoleId)) {
+            await interaction.reply({
+              content: 'You do not have permission to close trials.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          const trialId = parseInt(customId.split(':')[2], 10);
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+          try {
+            await closeTrial(interaction.client, trialId);
+            await audit(interaction.user, 'closed trial', `#${trialId}`);
+            await interaction.editReply({ content: 'Trial closed.' });
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            await interaction.editReply({ content: `Failed to close trial: ${error.message}` });
+          }
+        }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error('interaction', `Button handler failed (${customId}): ${err.message}`, err);
@@ -332,6 +477,92 @@ export default {
         // application:modal:reject:{applicationId} - Process reject
         if (customId.startsWith('application:modal:reject:')) {
           await processRejectModal(interaction);
+        }
+
+        // trial:modal:create - Create a new trial review thread
+        if (customId === 'trial:modal:create') {
+          const characterName = interaction.fields.getTextInputValue('character_name');
+          const role = interaction.fields.getTextInputValue('role');
+          const startDate = interaction.fields.getTextInputValue('start_date');
+
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+            await interaction.reply({
+              content: 'Invalid date format. Please use YYYY-MM-DD.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+          try {
+            const trial = await createTrialReviewThread(interaction.client, {
+              characterName,
+              role,
+              startDate,
+            });
+            await audit(interaction.user, 'created trial', `${characterName} as ${role} (#${trial.id})`);
+            await interaction.editReply({
+              content: `Trial created for **${characterName}**. Thread: <#${trial.thread_id}>`,
+            });
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            logger.error('Trials', `Failed to create trial: ${error.message}`, error);
+            await interaction.editReply({ content: `Failed to create trial: ${error.message}` });
+          }
+        }
+
+        // trial:modal:update:{trialId} - Update trial info
+        if (customId.startsWith('trial:modal:update:')) {
+          const trialId = parseInt(customId.split(':')[3], 10);
+          const characterName = interaction.fields.getTextInputValue('character_name');
+          const role = interaction.fields.getTextInputValue('role');
+          const startDate = interaction.fields.getTextInputValue('start_date');
+
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+            await interaction.reply({
+              content: 'Invalid date format. Please use YYYY-MM-DD.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+          try {
+            const db = getDatabase();
+            const trial = db
+              .prepare('SELECT * FROM trials WHERE id = ?')
+              .get(trialId) as TrialRow | undefined;
+
+            if (!trial) {
+              await interaction.editReply({ content: 'Trial not found.' });
+              return;
+            }
+
+            const updates: Record<string, string | undefined> = {};
+            if (characterName !== trial.character_name) updates.characterName = characterName;
+            if (role !== trial.role) updates.role = role;
+            if (startDate !== trial.start_date) updates.startDate = startDate;
+
+            if (Object.keys(updates).length === 0) {
+              await interaction.editReply({ content: 'No changes detected.' });
+              return;
+            }
+
+            await changeTrialInfo(interaction.client, trialId, updates);
+            await audit(
+              interaction.user,
+              'updated trial info via modal',
+              `${trial.character_name} (#${trialId})`,
+            );
+            await interaction.editReply({ content: 'Trial info updated.' });
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            await interaction.editReply({
+              content: `Failed to update trial: ${error.message}`,
+            });
+          }
         }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
