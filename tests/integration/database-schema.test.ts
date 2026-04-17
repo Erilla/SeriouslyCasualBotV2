@@ -69,4 +69,41 @@ describe('database schema', () => {
     // Run again - should not throw
     expect(() => initDatabase(':memory:')).not.toThrow();
   });
+
+  it('should seed default data on first run', () => {
+    initDatabase(':memory:');
+    const db = getDatabase();
+
+    const aboutUs = db.prepare("SELECT * FROM guild_info_content WHERE key = 'aboutus'").get() as { content: string } | undefined;
+    expect(aboutUs).toBeDefined();
+    expect(aboutUs!.content).toContain('SeriouslyCasual');
+
+    const schedDays = db.prepare('SELECT COUNT(*) as count FROM schedule_days').get() as { count: number };
+    expect(schedDays.count).toBe(2);
+
+    const settings = db.prepare('SELECT COUNT(*) as count FROM settings').get() as { count: number };
+    expect(settings.count).toBe(4);
+
+    const defaultMsgs = db.prepare('SELECT COUNT(*) as count FROM default_messages').get() as { count: number };
+    expect(defaultMsgs.count).toBe(2);
+
+    const achievements = db.prepare('SELECT COUNT(*) as count FROM achievements_manual').get() as { count: number };
+    expect(achievements.count).toBe(4);
+
+    const links = db.prepare('SELECT COUNT(*) as count FROM guild_info_links').get() as { count: number };
+    expect(links.count).toBe(3);
+  });
+
+  it('should not re-seed on second init', () => {
+    initDatabase(':memory:');
+    const db = getDatabase();
+
+    db.prepare("UPDATE guild_info_content SET content = 'modified' WHERE key = 'aboutus'").run();
+
+    // initDatabase on same connection shouldn't re-seed
+    initDatabase(':memory:');
+
+    const aboutUs = db.prepare("SELECT * FROM guild_info_content WHERE key = 'aboutus'").get() as { content: string };
+    expect(aboutUs.content).toBe('modified');
+  });
 });
