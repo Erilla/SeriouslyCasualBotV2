@@ -2,6 +2,10 @@ import type { Client } from 'discord.js';
 import { logger } from '../services/logger.js';
 import { Scheduler } from '../scheduler/scheduler.js';
 import { deployCommands } from '../deploy-commands.js';
+import { syncRaiders } from '../functions/raids/syncRaiders.js';
+import { alertSignups } from '../functions/raids/alertSignups.js';
+import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythicPlusDone.js';
+import { refreshLinkingMessages } from '../functions/raids/refreshLinkingMessages.js';
 
 export const scheduler = new Scheduler();
 
@@ -20,7 +24,31 @@ export default {
       logger.error('bot', `Failed to register commands: ${err.message}`, err);
     }
 
-    // Scheduled tasks will be registered by domain slices
+    // Register scheduled tasks
+    scheduler.registerInterval({
+      name: 'syncRaiders',
+      intervalMs: 600_000,
+      handler: () => syncRaiders(client),
+    });
+
+    scheduler.registerInterval({
+      name: 'refreshLinkingMessages',
+      intervalMs: 600_000,
+      handler: () => refreshLinkingMessages(client),
+    });
+
+    scheduler.registerCron({
+      name: 'alertSignups',
+      expression: '0 19 * * 1,2,5,6',
+      handler: () => alertSignups(client),
+    });
+
+    scheduler.registerCron({
+      name: 'weeklyReports',
+      expression: '0 12 * * 3',
+      handler: () => alertHighestMythicPlusDone(client),
+    });
+
     scheduler.start();
 
     logger.info('bot', 'Startup complete');
