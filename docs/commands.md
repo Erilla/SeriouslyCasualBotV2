@@ -45,6 +45,9 @@ All commands are Discord slash commands registered to a single guild.
 | `/trials change_trial_info` | Update a trial's character name, role, or start date | Yes | No |
 | `/trials update_trial_logs` | Refresh WarcraftLogs attendance for all active trials | Yes | No |
 | `/trials update_trial_review_messages` | Refresh all trial review thread starter messages | Yes | No |
+| `/loot create_posts` | Auto-discover current raid tier and create loot priority posts | Yes | No |
+| `/loot delete_post` | Delete a single loot priority post by boss ID | Yes | No |
+| `/loot delete_posts` | Delete multiple loot priority posts by comma-separated boss IDs | Yes | No |
 
 ## Notes
 
