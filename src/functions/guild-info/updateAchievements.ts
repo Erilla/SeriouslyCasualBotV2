@@ -262,18 +262,18 @@ function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
 // ─── Image Rendering ────────────────────────────────────────────
 
 function renderAchievementsImage(sections: AchievementSection[], title: string): Buffer {
-  const PADDING = 20;
+  const PADDING = 24;
   const ROW_HEIGHT = 28;
-  const HEADER_HEIGHT = 40;
+  const HEADER_HEIGHT = 44;
   const SECTION_GAP = 16;
-  const FONT_SIZE = 14;
-  const HEADER_FONT_SIZE = 12;
-  const WIDTH = 800;
+  const FONT_SIZE = 16;
+  const HEADER_FONT_SIZE = 18;
+  const WIDTH = 1000;
 
   // Column positions
   const COL_RAID = PADDING;
-  const COL_PROGRESS = 520;
-  const COL_RESULT = 650;
+  const COL_PROGRESS = 640;
+  const COL_RESULT = 800;
 
   // Calculate total height
   let totalRows = 0;
