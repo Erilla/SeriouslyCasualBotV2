@@ -42,6 +42,12 @@ Base URL: `https://www.warcraftlogs.com/api/v2` (GraphQL)
 
 Authentication: OAuth2 client credentials via `WARCRAFTLOGS_CLIENT_ID` / `WARCRAFTLOGS_CLIENT_SECRET`. Guild identified by `WARCRAFTLOGS_GUILD_ID`. Tokens are cached with expiry tracking and refreshed automatically.
 
+## EPGP
+
+EPGP (Effort Points / Gear Points) is handled entirely locally -- no external API is required. Officers upload data exported from a WoW addon via the `/epgp upload` command. The bot parses the JSON, stores EP/GP snapshots and loot history in the local SQLite database, calculates priority rankings with decay and time-based cutoffs, and renders a 3-message CSS code block display in a configured Discord channel.
+
+Key files: `src/functions/epgp/` (parseEpgpUpload, processRoster, processLoot, calculatePoints, generateDisplay, createDisplayPost).
+
 ---
 
 Service wrappers live in `src/services/`. Each service exports typed async functions consumed by scheduler jobs and command handlers.
