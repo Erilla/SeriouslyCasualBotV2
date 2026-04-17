@@ -193,11 +193,21 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
         if (!rankings || rankings.length === 0) continue;
 
         // Use the ranking entry with the most encounters defeated
-        const best = rankings.reduce((a, b) =>
-          (b.encountersDefeated > a.encountersDefeated ? b : a), rankings[0]);
+        // Guard against encountersDefeated being an array (API may return either)
+        const getDefeatedCount = (entry: RaidRankingEntry): number => {
+          const val = entry.encountersDefeated;
+          if (Array.isArray(val)) return (val as unknown[]).length;
+          if (typeof val === 'number') return val;
+          return 0;
+        };
 
-        const killedBosses = best.encountersDefeated;
-        const totalBosses = best.encountersTotal || raid.encounters.length;
+        const best = rankings.reduce((a, b) =>
+          (getDefeatedCount(b) > getDefeatedCount(a) ? b : a), rankings[0]);
+
+        const killedBosses = getDefeatedCount(best);
+        const totalBosses = typeof best.encountersTotal === 'number'
+          ? best.encountersTotal
+          : raid.encounters.length;
 
         if (killedBosses === 0) continue;
 
@@ -205,7 +215,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
         const isCE = determineCE(raid, best);
 
         const progress = `${killedBosses}/${totalBosses}M`;
-        const rank = best.rank;
+        const rank = typeof best.rank === 'number' ? best.rank : 0;
         const result = isCE ? `CE WR ${rank}` : `WR ${rank}`;
 
         sectionRows.push({
@@ -233,10 +243,15 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
 }
 
 function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
-  const totalBosses = ranking.encountersTotal || raid.encounters.length;
+  const totalBosses = typeof ranking.encountersTotal === 'number'
+    ? ranking.encountersTotal
+    : raid.encounters.length;
 
   // Not all bosses killed = no CE
-  if (ranking.encountersDefeated < totalBosses) return false;
+  const defeated = Array.isArray(ranking.encountersDefeated)
+    ? (ranking.encountersDefeated as unknown[]).length
+    : (typeof ranking.encountersDefeated === 'number' ? ranking.encountersDefeated : 0);
+  if (defeated < totalBosses) return false;
 
   // Get the tier end date
   const endDate = raid.ends?.eu ?? null;
