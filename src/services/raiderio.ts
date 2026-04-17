@@ -30,6 +30,8 @@ export interface RaidStaticData {
     slug: string;
     name: string;
     expansion_id: number;
+    starts: { us: string | null; eu: string | null };
+    ends: { us: string | null; eu: string | null };
     encounters: Array<{
       id: number;
       slug: string;
