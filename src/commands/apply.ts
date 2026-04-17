@@ -10,18 +10,18 @@ export default {
     .setName('apply')
     .setDescription('Apply to join the guild'),
   async execute(interaction: ChatInputCommandInteraction) {
-    const success = await startApplication(interaction.user);
+    await interaction.reply({
+      content: 'Check your DMs!',
+      flags: MessageFlags.Ephemeral,
+    });
 
-    if (success) {
-      await interaction.reply({
-        content: 'Check your DMs! I\'ve sent you the application questions.',
-        flags: MessageFlags.Ephemeral,
-      });
-    } else {
-      await interaction.reply({
-        content: 'I was unable to send you a DM. Please make sure your DMs are open and try again.',
-        flags: MessageFlags.Ephemeral,
-      });
+    try {
+      const success = await startApplication(interaction.user);
+      if (!success) {
+        await interaction.editReply('Failed to start application. Please make sure your DMs are open and try again.');
+      }
+    } catch {
+      await interaction.editReply('Failed to start application. Please try again or contact an officer.');
     }
   },
 };
