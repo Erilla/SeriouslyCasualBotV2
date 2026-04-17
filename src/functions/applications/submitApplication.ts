@@ -8,12 +8,14 @@ import {
   ChannelType,
   PermissionFlagsBits,
   ThreadAutoArchiveDuration,
-  EmbedBuilder,
-  Colors,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
 } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
+import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { getOverlords } from '../raids/overlords.js';
 import type { ApplicationRow } from '../../types/index.js';
 
@@ -67,7 +69,7 @@ export async function submitApplication(
   const channel = await createApplicationChannel(guild, channelName, user, qaText);
 
   // Create forum post
-  const { forumPost, threadId } = await createForumPost(guild, characterName, user, qaText);
+  const { forumPost, threadId } = await createForumPost(guild, characterName, user, qaText, applicationId);
 
   // Update application record
   db.prepare(
@@ -199,6 +201,7 @@ async function createForumPost(
   characterName: string,
   applicant: User,
   qaText: string,
+  applicationId: number,
 ): Promise<{ forumPost: { id: string } | null; threadId: string | null }> {
   const db = getDatabase();
 
@@ -268,17 +271,22 @@ async function createForumPost(
     await thread.send(messages[i]);
   }
 
-  // Voting embed placeholder (Part 2 will populate this)
-  const votingEmbed = new EmbedBuilder()
-    .setTitle(`Votes for ${characterName}`)
-    .setColor(Colors.Blue)
-    .setDescription('No votes yet.')
-    .setTimestamp();
+  // Voting embed with buttons
+  const votingData = generateVotingEmbed(applicationId);
+  await thread.send(votingData);
 
-  await thread.send({ embeds: [votingEmbed] });
-
-  // Accept/Reject buttons placeholder (Part 2 will populate this)
-  await thread.send('*Accept/Reject buttons will appear here after voting is implemented.*');
+  // Accept/Reject buttons
+  const decisionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`application:accept:${applicationId}`)
+      .setLabel('Accept')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`application:reject:${applicationId}`)
+      .setLabel('Reject')
+      .setStyle(ButtonStyle.Danger),
+  );
+  await thread.send({ components: [decisionRow] });
 
   return { forumPost: { id: forum.id }, threadId: thread.id };
 }
