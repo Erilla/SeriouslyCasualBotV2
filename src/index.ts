@@ -38,7 +38,7 @@ client.commands = new Collection();
 
 const commandsPath = join(__dirname, 'commands');
 try {
-  const commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js'));
+  const commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js') || f.endsWith('.ts'));
 
   for (const file of commandFiles) {
     const filePath = join(commandsPath, file);
@@ -58,7 +58,7 @@ try {
 // ─── Load Events ─────────────────────────────────────────────
 
 const eventsPath = join(__dirname, 'events');
-const eventFiles = readdirSync(eventsPath).filter((f) => f.endsWith('.js'));
+const eventFiles = readdirSync(eventsPath).filter((f) => f.endsWith('.js') || f.endsWith('.ts'));
 
 for (const file of eventFiles) {
   const filePath = join(eventsPath, file);
