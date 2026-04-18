@@ -44,6 +44,9 @@ export function runMigrations(database: Database.Database): void {
 
   if (currentVersion < 2) {
     // Rename epgp_channel_id -> epgp_rankings_channel_id to match /setup's config key.
+    // better-sqlite3's .transaction() returns a function we must invoke — the
+    // trailing () runs the block in an atomic transaction. Omitting () would
+    // define the transaction but never execute it.
     database.transaction(() => {
       database.exec(`
         INSERT OR IGNORE INTO config (key, value)
