@@ -4,47 +4,8 @@ import { getHistoricalData, type WowAuditHistoricalEntry } from '../../services/
 import { getWeeklyMythicPlusRuns } from '../../services/raiderio.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
-import type { ConfigRow, RaiderRow } from '../../types/index.js';
-
-async function getWeeklyCheckChannel(client: Client): Promise<TextChannel | null> {
-  const db = getDatabase();
-
-  const row = db
-    .prepare('SELECT value FROM config WHERE key = ?')
-    .get('weekly_check_channel_id') as ConfigRow | undefined;
-
-  if (row) {
-    try {
-      const channel = await client.channels.fetch(row.value);
-      if (channel && channel.type === ChannelType.GuildText) {
-        return channel as TextChannel;
-      }
-    } catch {
-      logger.warn('WeeklyReports', 'Configured weekly-check channel not found, will auto-create');
-    }
-  }
-
-  // Auto-create the channel
-  try {
-    const guild = await client.guilds.fetch(config.guildId);
-    const channel = await guild.channels.create({
-      name: 'weekly-check',
-      type: ChannelType.GuildText,
-      topic: 'Weekly M+ and Great Vault reports',
-    });
-
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'weekly_check_channel_id',
-      channel.id,
-    );
-
-    logger.info('WeeklyReports', `Auto-created weekly-check channel: #${channel.name}`);
-    return channel;
-  } catch (error) {
-    logger.error('WeeklyReports', 'Failed to auto-create weekly-check channel', error as Error);
-    return null;
-  }
-}
+import { getOrCreateChannel } from '../channels.js';
+import type { RaiderRow } from '../../types/index.js';
 
 export async function generateMythicPlusReport(raiders: RaiderRow[]): Promise<string> {
   const lines: string[] = [];
@@ -197,11 +158,13 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
   });
 
   // Get the weekly-check channel
-  const channel = await getWeeklyCheckChannel(client);
-  if (!channel) {
-    logger.error('WeeklyReports', 'Could not get weekly-check channel');
-    return;
-  }
+  const guild = await client.guilds.fetch(config.guildId);
+  const channel = (await getOrCreateChannel(guild, {
+    name: 'weekly-check',
+    type: ChannelType.GuildText,
+    categoryName: 'Overlords',
+    configKey: 'weekly_check_channel_id',
+  })) as TextChannel;
 
   try {
     await channel.send({
