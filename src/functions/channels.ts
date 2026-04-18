@@ -237,7 +237,10 @@ async function resolveChannelImpl(
     const cat = getCategoryByName(guild, opts.categoryName);
     if (cat) {
       parentId = cat.id;
-    } else if (shouldWarnAboutMissingCategory(guild, opts.categoryName)) {
+    } else if (
+      !opts.createOptions?.parent &&
+      shouldWarnAboutMissingCategory(guild, opts.categoryName)
+    ) {
       logger.warn(
         'channels',
         `Category "${opts.categoryName}" not found; "${opts.name}" will be created without a parent.`,
