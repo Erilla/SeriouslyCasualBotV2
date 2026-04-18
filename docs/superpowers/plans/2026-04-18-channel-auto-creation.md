@@ -300,13 +300,15 @@ export async function getOrCreateChannel(
   }
 
   // 2. Name lookup (case-insensitive; checks opts.name and any aliasNames).
-  // Match by name regardless of channel type, then split by type so we can
-  // warn on wrong-type conflicts AND still reuse a correctly-typed match
-  // (including when opts.type is GuildCategory, e.g. for Applications).
+  // Materialize the cache as an array first — Collection.filter returns a
+  // Collection (no .length, no [0], no array semantics), so we can't chain
+  // array ops on it. Match by name regardless of channel type, then split
+  // by type so we can warn on wrong-type conflicts AND still reuse a
+  // correctly-typed match (including when opts.type is GuildCategory, e.g.
+  // for Applications).
   const targets = [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase());
-  const nameMatches = guild.channels.cache.filter((c) =>
-    targets.includes(c.name.toLowerCase()),
-  ) as unknown as GuildBasedChannel[];
+  const allChannels = [...guild.channels.cache.values()] as unknown as GuildBasedChannel[];
+  const nameMatches = allChannels.filter((c) => targets.includes(c.name.toLowerCase()));
   const correctlyTypedMatches = nameMatches.filter((c) => c.type === opts.type);
   const wrongTypedMatches = nameMatches.filter((c) => c.type !== opts.type);
 
