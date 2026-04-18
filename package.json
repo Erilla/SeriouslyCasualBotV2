@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --project integration",
+    "test:e2e": "vitest run --project e2e",
+    "test:e2e:watch": "vitest --project e2e",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },
