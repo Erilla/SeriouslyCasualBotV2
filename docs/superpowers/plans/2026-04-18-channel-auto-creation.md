@@ -862,7 +862,8 @@ In `src/functions/applications/submitApplication.ts`, replace the entire block f
 import { ChannelType } from 'discord.js';
 import { getOrCreateChannel } from '../channels.js';
 
-// Get or create applications category (the only category the bot will auto-create)
+// Get or create applications category (by convention, only this call site uses
+// type: GuildCategory; the helper itself does not enforce that restriction)
 let categoryId: string;
 try {
   const category = await getOrCreateChannel(guild, {
@@ -891,8 +892,9 @@ Expected: PASS.
 git add src/functions/applications/submitApplication.ts
 git commit -m "refactor(applications): use getOrCreateChannel for Applications category
 
-The Applications category is the only category the bot auto-creates,
-resolved via the shared helper as a top-level GuildCategory channel."
+By convention, only this call site uses type: GuildCategory, making it
+the only category the bot creates. The constraint lives at the call
+site, not inside the helper."
 ```
 
 ---

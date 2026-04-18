@@ -18,7 +18,7 @@ Every auto-created channel resolves through a single helper that:
 - Falls back to creating the channel under a configured parent category.
 - If the target category is missing from the guild, logs a warning and creates the channel parent-less (does not auto-create categories).
 
-The helper creates whatever channel type it's asked for (text / forum / category) through the same code path. By policy, only the `Applications` entry is resolved with `type: GuildCategory`, so that remains the single category the bot will ever create — the constraint is enforced by convention at the call sites, not by a branch inside the helper.
+The helper creates whatever channel type it's asked for (text / forum / category) through the same code path. By convention, only the `Applications` entry uses `type: GuildCategory`, so it's the only category the bot ever creates. The constraint lives at the call sites, not inside the helper — the helper will happily create any `GuildCategory` it's asked for.
 
 ## Channel → Category Map
 
@@ -70,12 +70,12 @@ export async function getOrCreateChannel(
    - If `categoryName` is `null`: skip; parent stays undefined. (Used by the `Applications` category entry, which has no parent.)
    - Call `getCategoryByName(guild, categoryName)`.
    - If found: use its ID as the parent.
-   - If missing: log a `WARN` (deduplicated per process), proceed with no parent. The helper never creates a category to serve as someone else's parent — the `Applications` category works only because it's requested as a top-level channel of type `GuildCategory`, so its creation happens in step 4 via the normal create path.
+   - If missing: log a `WARN` (deduplicated per process), proceed with no parent. The `Applications` category works only because it's requested as a top-level channel of type `GuildCategory` at the call site, so its creation happens in step 4 via the normal create path. By convention only that call site uses `type: GuildCategory`; the helper itself imposes no such restriction.
 4. **Create.** `guild.channels.create({ name, type, parent, ...createOptions })`. Write the new ID to `config[configKey]`. Return the channel.
 
 ### Logging
 
-- `INFO`: config-cache hit, name-lookup reuse, channel creation, category creation (Applications only).
+- `INFO`: config-cache hit, name-lookup reuse, channel creation (including category creation when `type: GuildCategory` is passed).
 - `WARN`: category missing, duplicate-name matches (logs every matched ID), wrong-typed channel with matching name (proceeds to create a new correctly-typed one).
 - `ERROR`: create failure → rethrown so existing call-site error boundaries handle it.
 

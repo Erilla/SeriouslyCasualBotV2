@@ -137,7 +137,8 @@ async function createApplicationChannel(
 ): Promise<TextChannel> {
   const db = getDatabase();
 
-  // Get or create applications category (the only category the bot will auto-create)
+  // Get or create applications category (the only category the bot will auto-create,
+  // by convention; not enforced in the helper)
   let categoryId: string;
   try {
     const category = await getOrCreateChannel(guild, {
