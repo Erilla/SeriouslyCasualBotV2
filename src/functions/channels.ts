@@ -230,9 +230,10 @@ async function resolveChannelImpl(
     return resolved;
   }
 
-  // 3. Parent category
+  // 3. Parent category — skip entirely for GuildCategory (categories can't be
+  // nested under another category; step 4 guards this too as defense in depth).
   let parentId: string | undefined;
-  if (opts.categoryName) {
+  if (opts.categoryName && opts.type !== ChannelType.GuildCategory) {
     const cat = getCategoryByName(guild, opts.categoryName);
     if (cat) {
       parentId = cat.id;
