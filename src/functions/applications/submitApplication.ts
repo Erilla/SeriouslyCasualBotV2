@@ -3,7 +3,6 @@ import {
   type User,
   type TextChannel,
   type ForumChannel,
-  type CategoryChannel,
   type Guild,
   ChannelType,
   PermissionFlagsBits,
@@ -54,6 +53,10 @@ export async function submitApplication(
     )
     .all(applicationId) as AnswerWithQuestion[];
 
+  if (answers.length === 0) {
+    throw new Error(`Application #${applicationId} has no answers`);
+  }
+
   const guild = client.guilds.cache.get(config.guildId);
   if (!guild) {
     throw new Error('Guild not found');
@@ -65,31 +68,59 @@ export async function submitApplication(
   // Build the Q&A text
   const qaText = buildQAText(answers, user, characterName);
 
-  // Create text channel
-  const channel = await createApplicationChannel(guild, channelName, user, qaText);
+  // Step 1: Create text channel
+  let channel: TextChannel;
+  try {
+    channel = await createApplicationChannel(guild, channelName, user, qaText);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.error('Applications', `Failed to create application channel for #${applicationId}: ${error.message}`, error);
+    throw new Error(`Failed to create application channel: ${error.message}`);
+  }
 
-  // Create forum post
-  const { forumPost, threadId } = await createForumPost(guild, characterName, user, qaText, applicationId);
+  // Step 2: Create forum post
+  let forumPost: { id: string } | null = null;
+  let threadId: string | null = null;
+  try {
+    const result = await createForumPost(guild, characterName, user, qaText, applicationId);
+    forumPost = result.forumPost;
+    threadId = result.threadId;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.error('Applications', `Failed to create forum post for #${applicationId}: ${error.message}`, error);
+    // Don't throw here - the text channel was already created, so update the record with what we have
+  }
 
-  // Update application record
-  db.prepare(
-    `UPDATE applications
-     SET status = 'active',
-         channel_id = ?,
-         forum_post_id = ?,
-         thread_id = ?,
-         submitted_at = datetime('now')
-     WHERE id = ?`,
-  ).run(
-    channel.id,
-    forumPost?.id ?? null,
-    threadId ?? null,
-    applicationId,
-  );
+  // Step 3: Update application record
+  try {
+    db.prepare(
+      `UPDATE applications
+       SET status = 'active',
+           channel_id = ?,
+           forum_post_id = ?,
+           thread_id = ?,
+           submitted_at = datetime('now')
+       WHERE id = ?`,
+    ).run(
+      channel.id,
+      forumPost?.id ?? null,
+      threadId ?? null,
+      applicationId,
+    );
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.error('Applications', `Failed to update application #${applicationId} record: ${error.message}`, error);
+    throw new Error(`Failed to update application record: ${error.message}`);
+  }
 
-  // Notify overlords in the forum thread
+  // Step 4: Notify overlords in the forum thread (non-fatal if it fails)
   if (threadId) {
-    await notifyOverlords(guild, threadId, characterName, user);
+    try {
+      await notifyOverlords(guild, threadId, characterName, user);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn('Applications', `Failed to notify overlords for application #${applicationId}: ${error.message}`);
+    }
   }
 
   logger.info(
@@ -130,24 +161,34 @@ async function createApplicationChannel(
   )?.value;
 
   if (categoryId) {
-    // Verify category still exists
-    const existing = guild.channels.cache.get(categoryId);
-    if (!existing || existing.type !== ChannelType.GuildCategory) {
+    // Verify category still exists (it may have been deleted)
+    try {
+      const existing = guild.channels.cache.get(categoryId) ?? await guild.channels.fetch(categoryId).catch(() => null);
+      if (!existing || existing.type !== ChannelType.GuildCategory) {
+        logger.info('Applications', `Applications category ${categoryId} no longer exists, creating a new one`);
+        categoryId = undefined;
+      }
+    } catch {
       categoryId = undefined;
     }
   }
 
   if (!categoryId) {
-    const category = await guild.channels.create({
-      name: 'Applications',
-      type: ChannelType.GuildCategory,
-    });
-    categoryId = category.id;
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'applications_category_id',
-      categoryId,
-    );
-    logger.info('Applications', `Created applications category: ${categoryId}`);
+    try {
+      const category = await guild.channels.create({
+        name: 'Applications',
+        type: ChannelType.GuildCategory,
+      });
+      categoryId = category.id;
+      db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
+        'applications_category_id',
+        categoryId,
+      );
+      logger.info('Applications', `Created applications category: ${categoryId}`);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      throw new Error(`Failed to create Applications category (does the bot have Manage Channels permission?): ${error.message}`);
+    }
   }
 
   // Get overlords for permissions
@@ -178,12 +219,18 @@ async function createApplicationChannel(
     });
   }
 
-  const channel = await guild.channels.create({
-    name: channelName,
-    type: ChannelType.GuildText,
-    parent: categoryId,
-    permissionOverwrites,
-  });
+  let channel: TextChannel;
+  try {
+    channel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      parent: categoryId,
+      permissionOverwrites,
+    }) as TextChannel;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    throw new Error(`Failed to create text channel "${channelName}" (does the bot have Manage Channels permission?): ${error.message}`);
+  }
 
   // Post Q&A (split if > 2000 chars)
   const messages = splitMessage(qaText);
@@ -215,41 +262,59 @@ async function createForumPost(
   let forum: ForumChannel | null = null;
 
   if (forumId) {
-    const existing = guild.channels.cache.get(forumId);
-    if (existing && existing.type === ChannelType.GuildForum) {
-      forum = existing as ForumChannel;
+    // Check cache first, then try fetching from API
+    try {
+      const existing = guild.channels.cache.get(forumId) ?? await guild.channels.fetch(forumId).catch(() => null);
+      if (existing && existing.type === ChannelType.GuildForum) {
+        forum = existing as ForumChannel;
+      } else {
+        logger.info('Applications', `Application-log forum ${forumId} no longer exists or is wrong type, creating a new one`);
+      }
+    } catch {
+      logger.info('Applications', `Failed to fetch application-log forum ${forumId}, creating a new one`);
     }
   }
 
   if (!forum) {
-    forum = await guild.channels.create({
-      name: 'application-log',
-      type: ChannelType.GuildForum,
-    });
-    forumId = forum.id;
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'application_log_forum_id',
-      forumId,
-    );
-    logger.info('Applications', `Created application-log forum: ${forumId}`);
+    try {
+      forum = (await guild.channels.create({
+        name: 'application-log',
+        type: ChannelType.GuildForum,
+      })) as ForumChannel;
+      forumId = forum.id;
+      db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
+        'application_log_forum_id',
+        forumId,
+      );
+      logger.info('Applications', `Created application-log forum: ${forumId}`);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`);
+    }
   }
 
   // Ensure tags exist (Active, Accepted, Rejected)
-  const existingTags = forum.availableTags;
-  const requiredTags = ['Active', 'Accepted', 'Rejected'];
-  const missingTags = requiredTags.filter(
-    (tag) => !existingTags.some((t) => t.name === tag),
-  );
+  try {
+    const existingTags = forum.availableTags;
+    const requiredTags = ['Active', 'Accepted', 'Rejected'];
+    const missingTags = requiredTags.filter(
+      (tag) => !existingTags.some((t) => t.name === tag),
+    );
 
-  if (missingTags.length > 0) {
-    const newTags = [
-      ...existingTags,
-      ...missingTags.map((name) => ({ name })),
-    ];
-    await forum.setAvailableTags(newTags);
-    // Re-fetch to get the updated tag IDs
-    const updatedForum = (await forum.fetch()) as ForumChannel;
-    forum = updatedForum;
+    if (missingTags.length > 0) {
+      const newTags = [
+        ...existingTags,
+        ...missingTags.map((name) => ({ name })),
+      ];
+      await forum.setAvailableTags(newTags);
+      // Re-fetch to get the updated tag IDs
+      const updatedForum = (await forum.fetch()) as ForumChannel;
+      forum = updatedForum;
+    }
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.warn('Applications', `Failed to set forum tags for application-log: ${error.message}`);
+    // Non-fatal - we can still create the thread without tags
   }
 
   // Find Active tag
@@ -258,13 +323,22 @@ async function createForumPost(
   // Split Q&A for the first message
   const messages = splitMessage(qaText);
 
+  // Truncate thread name to Discord's 100-character limit
+  const threadName = characterName.substring(0, 100);
+
   // Create the forum thread
-  const thread = await forum.threads.create({
-    name: characterName,
-    autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
-    message: { content: messages[0] },
-    appliedTags: activeTag ? [activeTag.id] : [],
-  });
+  let thread;
+  try {
+    thread = await forum.threads.create({
+      name: threadName,
+      autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
+      message: { content: messages[0] },
+      appliedTags: activeTag ? [activeTag.id] : [],
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    throw new Error(`Failed to create forum thread for "${threadName}": ${error.message}`);
+  }
 
   // Send remaining Q&A messages if split
   for (let i = 1; i < messages.length; i++) {
@@ -272,21 +346,31 @@ async function createForumPost(
   }
 
   // Voting embed with buttons
-  const votingData = generateVotingEmbed(applicationId);
-  await thread.send(votingData);
+  try {
+    const votingData = generateVotingEmbed(applicationId);
+    await thread.send(votingData);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.warn('Applications', `Failed to send voting embed for application #${applicationId}: ${error.message}`);
+  }
 
   // Accept/Reject buttons
-  const decisionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`application:accept:${applicationId}`)
-      .setLabel('Accept')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`application:reject:${applicationId}`)
-      .setLabel('Reject')
-      .setStyle(ButtonStyle.Danger),
-  );
-  await thread.send({ components: [decisionRow] });
+  try {
+    const decisionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`application:accept:${applicationId}`)
+        .setLabel('Accept')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`application:reject:${applicationId}`)
+        .setLabel('Reject')
+        .setStyle(ButtonStyle.Danger),
+    );
+    await thread.send({ components: [decisionRow] });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.warn('Applications', `Failed to send decision buttons for application #${applicationId}: ${error.message}`);
+  }
 
   return { forumPost: { id: forum.id }, threadId: thread.id };
 }
