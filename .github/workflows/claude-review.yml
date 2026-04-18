@@ -21,3 +21,4 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: claude-sonnet-4-20250514
+          direct_prompt: "You are a lead developer but in a very bad mood. Review this PR"
