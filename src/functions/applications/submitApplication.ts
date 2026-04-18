@@ -2,19 +2,15 @@ import {
   type Client,
   type User,
   type TextChannel,
-  type ForumChannel,
   type Guild,
   ChannelType,
   PermissionFlagsBits,
-  ThreadAutoArchiveDuration,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
 } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
-import { generateVotingEmbed } from './generateVotingEmbed.js';
+import { createForumPost } from './createForumPost.js';
+import { splitMessage } from './splitMessage.js';
 import { getOverlords } from '../raids/overlords.js';
 import type { ApplicationRow } from '../../types/index.js';
 
@@ -241,140 +237,6 @@ async function createApplicationChannel(
   return channel;
 }
 
-// ─── Forum Post Creation ──────────────────────────────────────
-
-async function createForumPost(
-  guild: Guild,
-  characterName: string,
-  applicant: User,
-  qaText: string,
-  applicationId: number,
-): Promise<{ forumPost: { id: string } | null; threadId: string | null }> {
-  const db = getDatabase();
-
-  // Get or create application-log forum
-  let forumId = (
-    db.prepare('SELECT value FROM config WHERE key = ?').get('application_log_forum_id') as
-      | { value: string }
-      | undefined
-  )?.value;
-
-  let forum: ForumChannel | null = null;
-
-  if (forumId) {
-    // Check cache first, then try fetching from API
-    try {
-      const existing = guild.channels.cache.get(forumId) ?? await guild.channels.fetch(forumId).catch(() => null);
-      if (existing && existing.type === ChannelType.GuildForum) {
-        forum = existing as ForumChannel;
-      } else {
-        logger.info('Applications', `Application-log forum ${forumId} no longer exists or is wrong type, creating a new one`);
-      }
-    } catch {
-      logger.info('Applications', `Failed to fetch application-log forum ${forumId}, creating a new one`);
-    }
-  }
-
-  if (!forum) {
-    try {
-      forum = (await guild.channels.create({
-        name: 'application-log',
-        type: ChannelType.GuildForum,
-      })) as ForumChannel;
-      forumId = forum.id;
-      db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-        'application_log_forum_id',
-        forumId,
-      );
-      logger.info('Applications', `Created application-log forum: ${forumId}`);
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`);
-    }
-  }
-
-  // Ensure tags exist (Active, Accepted, Rejected)
-  try {
-    const existingTags = forum.availableTags;
-    const requiredTags = ['Active', 'Accepted', 'Rejected'];
-    const missingTags = requiredTags.filter(
-      (tag) => !existingTags.some((t) => t.name === tag),
-    );
-
-    if (missingTags.length > 0) {
-      const newTags = [
-        ...existingTags,
-        ...missingTags.map((name) => ({ name })),
-      ];
-      await forum.setAvailableTags(newTags);
-      // Re-fetch to get the updated tag IDs
-      const updatedForum = (await forum.fetch()) as ForumChannel;
-      forum = updatedForum;
-    }
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    logger.warn('Applications', `Failed to set forum tags for application-log: ${error.message}`);
-    // Non-fatal - we can still create the thread without tags
-  }
-
-  // Find Active tag
-  const activeTag = forum.availableTags.find((t) => t.name === 'Active');
-
-  // Split Q&A for the first message
-  const messages = splitMessage(qaText);
-
-  // Truncate thread name to Discord's 100-character limit
-  const threadName = characterName.substring(0, 100);
-
-  // Create the forum thread
-  let thread;
-  try {
-    thread = await forum.threads.create({
-      name: threadName,
-      autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
-      message: { content: messages[0] },
-      appliedTags: activeTag ? [activeTag.id] : [],
-    });
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create forum thread for "${threadName}": ${error.message}`);
-  }
-
-  // Send remaining Q&A messages if split
-  for (let i = 1; i < messages.length; i++) {
-    await thread.send(messages[i]);
-  }
-
-  // Voting embed with buttons
-  try {
-    const votingData = generateVotingEmbed(applicationId);
-    await thread.send(votingData);
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    logger.warn('Applications', `Failed to send voting embed for application #${applicationId}: ${error.message}`);
-  }
-
-  // Accept/Reject buttons
-  try {
-    const decisionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`application:accept:${applicationId}`)
-        .setLabel('Accept')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`application:reject:${applicationId}`)
-        .setLabel('Reject')
-        .setStyle(ButtonStyle.Danger),
-    );
-    await thread.send({ components: [decisionRow] });
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    logger.warn('Applications', `Failed to send decision buttons for application #${applicationId}: ${error.message}`);
-  }
-
-  return { forumPost: { id: forum.id }, threadId: thread.id };
-}
-
 // ─── Overlord Notification ────────────────────────────────────
 
 async function notifyOverlords(
@@ -409,26 +271,3 @@ async function notifyOverlords(
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────
-
-function splitMessage(content: string, maxLength = 2000): string[] {
-  if (content.length <= maxLength) return [content];
-
-  const parts: string[] = [];
-  let remaining = content;
-
-  while (remaining.length > maxLength) {
-    let splitAt = remaining.lastIndexOf('\n', maxLength);
-    if (splitAt === -1 || splitAt < maxLength / 2) {
-      splitAt = maxLength;
-    }
-    parts.push(remaining.substring(0, splitAt));
-    remaining = remaining.substring(splitAt).trimStart();
-  }
-
-  if (remaining.length > 0) {
-    parts.push(remaining);
-  }
-
-  return parts;
-}
