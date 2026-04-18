@@ -9,7 +9,9 @@ import { seedApplicationVariety } from '../../src/functions/testdata/seedApplica
 import { seedTrial } from '../../src/functions/testdata/seedTrial.js';
 import { seedEpgp } from '../../src/functions/testdata/seedEpgp.js';
 import { seedLoot } from '../../src/functions/testdata/seedLoot.js';
+import { seedLootDiscord } from '../../src/functions/testdata/discord/seedLootDiscord.js';
 import { resetData } from '../../src/functions/testdata/resetData.js';
+import type { Client } from 'discord.js';
 
 let db: Database.Database;
 
@@ -488,6 +490,24 @@ describe('seedLoot', () => {
   it('is idempotent — calling twice does not duplicate posts', () => {
     seedLoot(db);
     seedLoot(db);
+
+    const rows = db.prepare('SELECT * FROM loot_posts').all();
+    expect(rows).toHaveLength(3);
+  });
+});
+
+// ─── seedLootDiscord ─────────────────────────────────────────────────────────
+
+describe('seedLootDiscord (graceful degradation)', () => {
+  it('still inserts DB rows when loot_channel_id is not configured', async () => {
+    // No loot_channel_id in config — the Discord path will early-return.
+    const client = {} as Client;
+
+    const result = await seedLootDiscord(client, db);
+
+    expect(result.dbPostsInserted).toBe(3);
+    expect(result.postsCreated).toBe(0);
+    expect(result.skippedReason).toMatch(/loot_channel_id not configured/);
 
     const rows = db.prepare('SELECT * FROM loot_posts').all();
     expect(rows).toHaveLength(3);

@@ -11,6 +11,7 @@ import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { createForumPost } from './createForumPost.js';
 import { splitMessage } from './splitMessage.js';
+import { buildQAText } from './buildQAText.js';
 import { getOverlords } from '../raids/overlords.js';
 import type { ApplicationRow } from '../../types/index.js';
 
@@ -123,20 +124,6 @@ export async function submitApplication(
     'Applications',
     `Application #${applicationId} submitted by ${user.tag} (${characterName}) - channel: ${channel.id}`,
   );
-}
-
-// ─── Q&A Text Builder ─────────────────────────────────────────
-
-function buildQAText(answers: AnswerWithQuestion[], user: User, characterName: string): string {
-  let text = `**Application: ${characterName}**\n`;
-  text += `Applicant: ${user} (${user.tag})\n`;
-  text += `Date: ${new Date().toISOString().split('T')[0]}\n\n`;
-
-  for (let i = 0; i < answers.length; i++) {
-    text += `**${i + 1}. ${answers[i].question}**\n${answers[i].answer}\n\n`;
-  }
-
-  return text;
 }
 
 // ─── Channel Creation ─────────────────────────────────────────

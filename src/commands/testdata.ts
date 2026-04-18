@@ -154,7 +154,8 @@ async function runSubcommand(
       if (discord) {
         const r = await seedLootDiscord(interaction.client, db);
         return formatLines(
-          `Loot posts created: **${r.postsCreated}** of **${r.postsAttempted}** attempted.`,
+          `DB loot_posts inserted: **${r.dbPostsInserted}**.`,
+          `Discord messages posted: **${r.postsCreated}** of **${r.postsAttempted}** attempted.`,
           r.skippedReason ? `_Discord skipped: ${r.skippedReason}_` : null,
         );
       }
@@ -169,7 +170,7 @@ async function runSubcommand(
         `• Application: **#${r.applicationId ?? 'n/a'}**`,
         `• Trial: **#${r.trialId ?? 'n/a'}**`,
         `• EPGP seeded: ${r.epgpSeeded ? 'yes' : 'no'}`,
-        `• Loot posts created: **${r.lootPostsCreated}**`,
+        `• Loot posts in DB: **${r.lootPostsInDb}**` + (r.discord ? `, Discord messages: **${r.lootDiscordMessagesPosted}**` : ''),
       ];
       if (r.skipped.length > 0) {
         lines.push('', '_Skipped:_');

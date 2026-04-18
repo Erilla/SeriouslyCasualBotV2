@@ -22,65 +22,93 @@ export interface SeedAllResult {
   applicationId: number | null;
   trialId: number | null;
   epgpSeeded: boolean;
-  lootPostsCreated: number;
+  lootPostsInDb: number;
+  lootDiscordMessagesPosted: number;
   skipped: string[];
 }
 
 /**
- * Runs all seeds in order. When options.client is provided, each sub-seed uses its
- * Discord variant; otherwise the DB-only variants are used.
- * The trial is linked to the seeded application via application_id.
+ * Runs all seeds in order, reporting per-step failures instead of aborting.
+ * When options.client is provided, each sub-seed uses its Discord variant.
+ * The trial is linked to the seeded application via application_id when both exist.
+ *
+ * Error model: fail-soft. Every step is caught individually; failures are recorded
+ * in `skipped`. A failure in one step does not prevent subsequent steps from running.
  */
 export async function seedAll(db: Database.Database, options: SeedAllOptions = {}): Promise<SeedAllResult> {
   const discord = Boolean(options.client);
   const skipped: string[] = [];
 
-  let raidersSeeded: number;
-  if (options.client) {
-    const r = await seedRaidersDiscord(options.client, db);
-    raidersSeeded = r.raidersSeeded;
-    if (r.skippedReason) skipped.push(`raiders: ${r.skippedReason}`);
-  } else {
-    seedRaiders(db);
-    raidersSeeded = (db.prepare('SELECT COUNT(*) as c FROM raiders').get() as { c: number }).c;
-  }
-
-  seedApplicationQuestions(db);
-
-  let applicationId: number | null = null;
-  if (options.client) {
-    const r = await seedApplicationDiscord(options.client, db);
-    applicationId = r.applicationId;
-    if (r.skippedReason) skipped.push(`application: ${r.skippedReason}`);
-  } else {
-    const r = seedApplication(db);
-    applicationId = r.applicationId;
-  }
-
-  let trialId: number | null = null;
-  if (options.client) {
-    const r = await seedTrialDiscord(options.client, { applicationId: applicationId ?? undefined });
-    trialId = r.trialId;
-    if (r.skippedReason) skipped.push(`trial: ${r.skippedReason}`);
-  } else {
-    const r = seedTrial(db, { applicationId: applicationId ?? undefined });
-    trialId = r.trialId;
+  let raidersSeeded = 0;
+  try {
+    if (options.client) {
+      const r = await seedRaidersDiscord(options.client, db);
+      raidersSeeded = r.raidersSeeded;
+      if (r.skippedReason) skipped.push(`raiders: ${r.skippedReason}`);
+    } else {
+      seedRaiders(db);
+      raidersSeeded = (db.prepare('SELECT COUNT(*) as c FROM raiders').get() as { c: number }).c;
+    }
+  } catch (error) {
+    skipped.push(`raiders: ${(error as Error).message}`);
   }
 
   try {
+    seedApplicationQuestions(db);
+  } catch (error) {
+    skipped.push(`application_questions: ${(error as Error).message}`);
+  }
+
+  let applicationId: number | null = null;
+  try {
+    if (options.client) {
+      const r = await seedApplicationDiscord(options.client, db);
+      applicationId = r.applicationId;
+      if (r.skippedReason) skipped.push(`application: ${r.skippedReason}`);
+    } else {
+      const r = seedApplication(db);
+      applicationId = r.applicationId;
+    }
+  } catch (error) {
+    skipped.push(`application: ${(error as Error).message}`);
+  }
+
+  let trialId: number | null = null;
+  try {
+    if (options.client) {
+      const r = await seedTrialDiscord(options.client, { applicationId: applicationId ?? undefined });
+      trialId = r.trialId;
+      if (r.skippedReason) skipped.push(`trial: ${r.skippedReason}`);
+    } else {
+      const r = seedTrial(db, { applicationId: applicationId ?? undefined });
+      trialId = r.trialId;
+    }
+  } catch (error) {
+    skipped.push(`trial: ${(error as Error).message}`);
+  }
+
+  let epgpSeeded = false;
+  try {
     seedEpgp(db);
+    epgpSeeded = true;
   } catch (error) {
     skipped.push(`epgp: ${(error as Error).message}`);
   }
 
-  let lootPostsCreated: number;
-  if (options.client) {
-    const r = await seedLootDiscord(options.client, db);
-    lootPostsCreated = r.postsCreated;
-    if (r.skippedReason) skipped.push(`loot: ${r.skippedReason}`);
-  } else {
-    const r = seedLoot(db);
-    lootPostsCreated = r.postsInserted;
+  let lootPostsInDb = 0;
+  let lootDiscordMessagesPosted = 0;
+  try {
+    if (options.client) {
+      const r = await seedLootDiscord(options.client, db);
+      lootPostsInDb = r.dbPostsInserted;
+      lootDiscordMessagesPosted = r.postsCreated;
+      if (r.skippedReason) skipped.push(`loot: ${r.skippedReason}`);
+    } else {
+      const r = seedLoot(db);
+      lootPostsInDb = r.postsInserted;
+    }
+  } catch (error) {
+    skipped.push(`loot: ${(error as Error).message}`);
   }
 
   logger.info('TestData', `seedAll complete — discord=${discord}, skipped=${skipped.length}`);
@@ -90,8 +118,9 @@ export async function seedAll(db: Database.Database, options: SeedAllOptions = {
     raidersSeeded,
     applicationId,
     trialId,
-    epgpSeeded: true,
-    lootPostsCreated,
+    epgpSeeded,
+    lootPostsInDb,
+    lootDiscordMessagesPosted,
     skipped,
   };
 }

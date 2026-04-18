@@ -1,9 +1,10 @@
-import type { Client, User } from 'discord.js';
+import type { Client } from 'discord.js';
 import type Database from 'better-sqlite3';
 import { logger } from '../../../services/logger.js';
 import { config } from '../../../config.js';
 import { seedApplication, type SeedApplicationOptions } from '../seedApplication.js';
 import { createForumPost } from '../../applications/createForumPost.js';
+import { buildQAText, type AnswerWithQuestion } from '../../applications/buildQAText.js';
 
 export interface SeedApplicationDiscordResult {
   applicationId: number;
@@ -12,25 +13,10 @@ export interface SeedApplicationDiscordResult {
   skippedReason?: string;
 }
 
-interface AnswerWithQuestion {
-  question: string;
-  answer: string;
-}
-
-function buildQAText(answers: AnswerWithQuestion[], user: User, characterName: string): string {
-  let text = `**Application: ${characterName}**\n`;
-  text += `Applicant: ${user} (${user.tag})\n`;
-  text += `Date: ${new Date().toISOString().split('T')[0]}\n\n`;
-  for (let i = 0; i < answers.length; i++) {
-    text += `**${i + 1}. ${answers[i].question}**\n${answers[i].answer}\n\n`;
-  }
-  return text;
-}
-
 /**
  * DB-only seedApplication + creates the applications forum post (Active tag + voting buttons + accept/reject buttons).
  * The forum channel is auto-created if not configured.
- * Mock "applicant" is the bot user itself.
+ * Mock "applicant" is the bot user itself (ClientUser is a structural subtype of User).
  */
 export async function seedApplicationDiscord(
   client: Client,
@@ -70,28 +56,26 @@ export async function seedApplicationDiscord(
     )
     .all(seedResult.applicationId) as AnswerWithQuestion[];
 
-  const qaText = buildQAText(answers, client.user as unknown as User, characterName);
+  const qaText = buildQAText(answers, client.user, characterName);
 
   try {
     const { forumPost, threadId } = await createForumPost(
       guild,
       characterName,
-      client.user as unknown as User,
+      client.user,
       qaText,
       seedResult.applicationId,
     );
 
-    if (forumPost) {
-      db.prepare('UPDATE applications SET forum_post_id = ?, thread_id = ? WHERE id = ?').run(
-        forumPost.id,
-        threadId,
-        seedResult.applicationId,
-      );
-    }
+    db.prepare('UPDATE applications SET forum_post_id = ?, thread_id = ? WHERE id = ?').run(
+      forumPost.id,
+      threadId,
+      seedResult.applicationId,
+    );
 
     return {
       applicationId: seedResult.applicationId,
-      forumPostId: forumPost?.id ?? null,
+      forumPostId: forumPost.id,
       threadId,
     };
   } catch (error) {

@@ -14,8 +14,8 @@ import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { splitMessage } from './splitMessage.js';
 
 export interface CreateForumPostResult {
-  forumPost: { id: string } | null;
-  threadId: string | null;
+  forumPost: { id: string };
+  threadId: string;
 }
 
 export async function createForumPost(
@@ -91,7 +91,8 @@ export async function createForumPost(
 
   const messages = splitMessage(qaText);
 
-  const threadName = characterName.substring(0, 100);
+  // Truncate by code points rather than UTF-16 units so we never slice a surrogate pair.
+  const threadName = Array.from(characterName).slice(0, 100).join('');
 
   let thread;
   try {
