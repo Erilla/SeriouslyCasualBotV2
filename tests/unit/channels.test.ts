@@ -200,6 +200,46 @@ describe('getOrCreateChannel — name lookup', () => {
     expect(result.id).toBe('ch-welcome');
   });
 
+  it('prefers primary name over alias when both exist as correctly-typed channels', async () => {
+    // guild-info (primary) AND welcome (alias) both exist with correct type.
+    // Should resolve to guild-info, not welcome.
+    const guild = mkGuild([
+      mkChannel({ id: 'ch-guild-info', name: 'guild-info', type: ChannelType.GuildText }),
+      mkChannel({ id: 'ch-welcome', name: 'welcome', type: ChannelType.GuildText }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'guild-info',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'guild_info_channel_id',
+      aliasNames: ['welcome'],
+    });
+
+    expect(result.id).toBe('ch-guild-info');
+    expect(guild.channels.create).not.toHaveBeenCalled();
+  });
+
+  it('falls through to alias when primary name has no correctly-typed match but alias does', async () => {
+    // guild-info exists but as GuildForum (wrong type); welcome exists as GuildText (correct).
+    // Should resolve to welcome, not create a new channel.
+    const guild = mkGuild([
+      mkChannel({ id: 'ch-guild-info-wrong', name: 'guild-info', type: ChannelType.GuildForum }),
+      mkChannel({ id: 'ch-welcome', name: 'welcome', type: ChannelType.GuildText }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'guild-info',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'guild_info_channel_id',
+      aliasNames: ['welcome'],
+    });
+
+    expect(result.id).toBe('ch-welcome');
+    expect(guild.channels.create).not.toHaveBeenCalled();
+  });
+
   it('warns and picks the first when duplicates exist', async () => {
     const guild = mkGuild([
       mkChannel({ id: 'ch-1', name: 'raiders-lounge', type: ChannelType.GuildText }),

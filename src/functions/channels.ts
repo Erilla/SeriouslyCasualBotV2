@@ -76,38 +76,58 @@ export async function getOrCreateChannel(
     deleteConfig(opts.configKey);
   }
 
-  // 2. Name lookup (case-insensitive; checks opts.name and any aliasNames).
-  // Materialize the cache as an array so subsequent filter/.length/[0] are
-  // plain array ops (Collection.filter returns a Collection, not an array).
-  const targets = [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase());
-  const allChannels = [...guild.channels.cache.values()] as unknown as GuildBasedChannel[];
-  const nameMatches = allChannels.filter((c) => targets.includes(c.name.toLowerCase()));
-  const correctlyTypedMatches = nameMatches.filter((c) => c.type === opts.type);
-  const wrongTypedMatches = nameMatches.filter((c) => c.type !== opts.type);
+  // 2. Name lookup — iterate targets in preference order (primary name first, then
+  // aliases) so the primary name always wins over an alias when both are present.
+  // This avoids the non-determinism of scanning the cache and asking "is this name
+  // in targets?" (which lets whichever entry the Map happens to yield first win).
+  // We also drop the `as unknown as GuildBasedChannel[]` double-cast by iterating
+  // the cache values() iterator directly; each value is already a GuildBasedChannel.
+  const targets = [opts.name, ...(opts.aliasNames ?? [])];
+  let correctlyTyped: GuildBasedChannel | undefined;
+  const correctlyTypedAll: GuildBasedChannel[] = []; // collect for duplicate-warn
+  const wrongTyped: GuildBasedChannel[] = [];
 
-  if (wrongTypedMatches.length > 0) {
-    const ids = wrongTypedMatches.map((c) => c.id).join(', ');
+  outer: for (const target of targets) {
+    const lc = target.toLowerCase();
+    const matchesForTarget: GuildBasedChannel[] = [];
+    for (const c of guild.channels.cache.values() as IterableIterator<GuildBasedChannel>) {
+      if (c.name.toLowerCase() !== lc) continue;
+      if (c.type === opts.type) {
+        matchesForTarget.push(c);
+      } else {
+        wrongTyped.push(c);
+      }
+    }
+    if (matchesForTarget.length > 0) {
+      correctlyTypedAll.push(...matchesForTarget);
+      correctlyTyped = matchesForTarget[0];
+      break outer; // stop at first preference-order target that has a correctly-typed match
+    }
+  }
+
+  if (wrongTyped.length > 0 && !correctlyTyped) {
+    // Only warn about wrong-typed channels when there is no correctly-typed match
+    const ids = wrongTyped.map((c) => c.id).join(', ');
     logger.warn(
       'channels',
       `Found "${opts.name}" with wrong channel type (expected ${opts.type}); existing channel(s): ${ids}. Will create a correctly-typed channel.`,
     );
   }
 
-  if (correctlyTypedMatches.length > 0) {
-    if (correctlyTypedMatches.length > 1) {
-      const ids = correctlyTypedMatches.map((c) => c.id).join(', ');
+  if (correctlyTyped) {
+    if (correctlyTypedAll.length > 1) {
+      const ids = correctlyTypedAll.map((c) => c.id).join(', ');
       logger.warn(
         'channels',
         `Multiple channels named "${opts.name}" found: ${ids}. Using the first.`,
       );
     }
-    const resolved = correctlyTypedMatches[0];
-    writeConfig(opts.configKey, resolved.id);
+    writeConfig(opts.configKey, correctlyTyped.id);
     logger.info(
       'channels',
-      `Reusing existing channel "${opts.name}" (${resolved.id}) for ${opts.configKey}`,
+      `Reusing existing channel "${opts.name}" (${correctlyTyped.id}) for ${opts.configKey}`,
     );
-    return resolved;
+    return correctlyTyped;
   }
 
   // 3. Parent category
