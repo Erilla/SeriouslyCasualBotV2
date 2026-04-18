@@ -1228,3 +1228,24 @@ Expected: Build succeeds, no warnings beyond the normal CRLF line-ending notices
 - **When a call-site refactor removes the last use of `getDatabase` in a file, drop that import too**. Same for `ChannelType` / `ConfigRow` where they become unused.
 - **Do not change behavior beyond what the spec describes**. No opportunistic renames of channel names or config keys, no reordering of existing logic, no speculative refactors. If you find an unrelated bug while editing, note it and leave it alone.
 - **After every commit, run the full test suite**. A task that red-greens locally but breaks a sibling test is not done until the sibling is green too.
+
+---
+
+## Post-review amendments
+
+The plan above describes the initial implementation. Subsequent code review rounds on PR #31 added the following, which are now part of the merged helper in `src/functions/channels.ts`:
+
+- **Three function overloads** keyed on `opts.type` so call sites don't cast the return value.
+- **Inflight dedup** via a `WeakMap<Guild, Map<configKey, Promise>>` so concurrent calls for the same channel share one resolution.
+- **Stale-config-ID logging** with distinct messages for "channel deleted" vs. "channel type changed".
+- **Cache refresh with retry** — on a name-lookup miss, one full REST fetch per guild (shared across concurrent callers via an in-flight promise, retried on failure).
+- **Wrong-type name-match warnings** fire regardless of whether a correct match resolves via an alias; duplicate-name-within-target warnings fire only when two correctly-typed channels share a single target name.
+- **Deterministic alias priority** — `targets` are iterated in preference order (primary name beats aliases).
+- **Target deduplication** so a caller passing `aliasNames` that include `opts.name` doesn't do redundant work.
+- **Parent-for-category guard** — category creations never pass `parent`, even if `opts.createOptions.parent` is set.
+- **Per-guild dedup of missing-category warnings** via `WeakMap<Guild, Set<string>>`.
+- **Human-readable channel types in log messages** (`ChannelType[x]` stringification).
+- **Migration v2 conflict warn** — `runMigrations` emits a `console.warn` when both the old and new EPGP config keys are present with different values.
+- **Per-channel error isolation in `ready.ts`** via a local `tryBootstrap(name, fn)` helper; one channel's failure doesn't block the others.
+
+The design spec at `docs/superpowers/specs/2026-04-18-channel-auto-creation-design.md` has been updated in-tree to reflect current behaviour.
