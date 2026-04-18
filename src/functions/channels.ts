@@ -77,13 +77,14 @@ export function getOrCreateChannel(
   guild: Guild,
   opts: GetOrCreateChannelOptions,
 ): Promise<GuildBasedChannel> {
-  const existing = inflightResolves.get(opts.configKey);
+  const inflightKey = `${guild.id}:${opts.configKey}`;
+  const existing = inflightResolves.get(inflightKey);
   if (existing) return existing;
 
   const promise = resolveChannelImpl(guild, opts);
-  inflightResolves.set(opts.configKey, promise);
+  inflightResolves.set(inflightKey, promise);
   promise.finally(() => {
-    inflightResolves.delete(opts.configKey);
+    inflightResolves.delete(inflightKey);
   });
   return promise;
 }

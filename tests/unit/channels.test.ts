@@ -473,4 +473,60 @@ describe('getOrCreateChannel — concurrent dedup', () => {
     expect(a.id).toBe(b.id);
     expect(guild.channels.create).toHaveBeenCalledTimes(1);
   });
+
+  it('does not share inflight dedup across guilds', async () => {
+    const guildA = mkGuild([]);
+    const guildB = { ...mkGuild([]), id: 'guild-2' } as unknown as Guild;
+    // Give guildB its own channels mock so it doesn't share state with guildA.
+    const mapB = new Map<string, MockChannel>();
+    (guildB as unknown as { channels: ReturnType<typeof mkGuild>['channels'] }).channels = {
+      cache: {
+        get: (id: string) => mapB.get(id),
+        find: (predicate: (c: MockChannel) => boolean) => {
+          for (const c of mapB.values()) if (predicate(c)) return c;
+          return undefined;
+        },
+        filter: (predicate: (c: MockChannel) => boolean) => {
+          const out: MockChannel[] = [];
+          for (const c of mapB.values()) if (predicate(c)) out.push(c);
+          return out;
+        },
+        values: () => mapB.values(),
+        set: (id: string, ch: MockChannel) => mapB.set(id, ch),
+      } as unknown as Guild['channels']['cache'],
+      fetch: vi.fn(async (id?: string) => {
+        if (id === undefined) return mapB;
+        return mapB.get(id) ?? null;
+      }) as unknown as Guild['channels']['fetch'],
+      create: vi.fn(async (opts: { name: string; type: ChannelType; parent?: string | null }) => {
+        const created: MockChannel = {
+          id: `created-guildB-${opts.name}`,
+          name: opts.name,
+          type: opts.type,
+          parentId: opts.parent ?? null,
+        };
+        mapB.set(created.id, created);
+        return created;
+      }) as unknown as Guild['channels']['create'],
+    };
+
+    const [a, b] = await Promise.all([
+      getOrCreateChannel(guildA, {
+        name: 'channel-a',
+        type: ChannelType.GuildText,
+        categoryName: null,
+        configKey: 'shared_key',
+      }),
+      getOrCreateChannel(guildB as unknown as Guild, {
+        name: 'channel-b',
+        type: ChannelType.GuildText,
+        categoryName: null,
+        configKey: 'shared_key',
+      }),
+    ]);
+
+    expect(a.id).not.toBe(b.id);
+    expect(guildA.channels.create).toHaveBeenCalledTimes(1);
+    expect(guildB.channels.create).toHaveBeenCalledTimes(1);
+  });
 });
