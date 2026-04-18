@@ -10,8 +10,8 @@ export async function resetAndSeed(): Promise<void> {
   const { client, guild, officer } = getE2EContext();
   const env = loadE2EEnv();
 
-  wipeTestDb();
   closeDatabase();
+  wipeTestDb();
   initDatabase(env.testDbPath);
 
   const channel = guild.systemChannel ?? guild.channels.cache.find((c) => c.isTextBased())!;
