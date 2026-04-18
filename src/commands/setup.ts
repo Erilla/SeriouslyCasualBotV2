@@ -9,6 +9,26 @@ import { getDatabase } from '../database/db.js';
 import { requireOfficer } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 
+const EXPECTED_CHANNEL_TYPE: Record<string, ChannelType> = {
+  guild_info_channel_id: ChannelType.GuildText,
+  bot_logs_channel_id: ChannelType.GuildText,
+  bot_audit_channel_id: ChannelType.GuildText,
+  raider_setup_channel_id: ChannelType.GuildText,
+  weekly_check_channel_id: ChannelType.GuildText,
+  epgp_rankings_channel_id: ChannelType.GuildText,
+  loot_channel_id: ChannelType.GuildText,
+  raiders_lounge_channel_id: ChannelType.GuildText,
+  application_log_forum_id: ChannelType.GuildForum,
+  trial_reviews_forum_id: ChannelType.GuildForum,
+  applications_category_id: ChannelType.GuildCategory,
+};
+
+const CHANNEL_TYPE_LABEL: Record<number, string> = {
+  [ChannelType.GuildText]: 'text channel',
+  [ChannelType.GuildForum]: 'forum channel',
+  [ChannelType.GuildCategory]: 'category',
+};
+
 export default {
   data: new SlashCommandBuilder()
     .setName('setup')
@@ -32,6 +52,9 @@ export default {
               { name: 'EPGP Rankings', value: 'epgp_rankings_channel_id' },
               { name: 'Loot', value: 'loot_channel_id' },
               { name: 'Raiders Lounge', value: 'raiders_lounge_channel_id' },
+              { name: 'Application Log Forum', value: 'application_log_forum_id' },
+              { name: 'Trial Reviews Forum', value: 'trial_reviews_forum_id' },
+              { name: 'Applications Category', value: 'applications_category_id' },
             ),
         )
         .addChannelOption((opt) =>
@@ -39,7 +62,11 @@ export default {
             .setName('channel')
             .setDescription('The channel')
             .setRequired(true)
-            .addChannelTypes(ChannelType.GuildText),
+            .addChannelTypes(
+              ChannelType.GuildText,
+              ChannelType.GuildForum,
+              ChannelType.GuildCategory,
+            ),
         ),
     )
     .addSubcommand((sub) =>
@@ -68,6 +95,15 @@ export default {
     if (subcommand === 'set_channel') {
       const key = interaction.options.getString('key', true);
       const channel = interaction.options.getChannel('channel', true);
+
+      const expectedType = EXPECTED_CHANNEL_TYPE[key];
+      if (channel.type !== expectedType) {
+        await interaction.reply({
+          content: `**${key}** must be a ${CHANNEL_TYPE_LABEL[expectedType]}, but ${channel} is a ${CHANNEL_TYPE_LABEL[channel.type] ?? 'different channel type'}.`,
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
 
       db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(key, channel.id);
       await audit(interaction.user, 'configured channel', `${key} = #${channel.name}`);
