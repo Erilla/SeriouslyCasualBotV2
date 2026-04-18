@@ -6,6 +6,26 @@ import { getOrCreateGuildInfoChannel } from './clearGuildInfo.js';
 import { getRaidStaticData, getRaidRankings } from '../../services/raiderio.js';
 import type { AchievementsManualRow, GuildInfoContentRow, GuildInfoMessageRow } from '../../types/index.js';
 
+// ─── Expansion Names ───────────────────────────────────────────
+
+const EXPANSION_NAMES: Record<number, string> = {
+  1: 'Classic',
+  2: 'The Burning Crusade',
+  3: 'Wrath of the Lich King',
+  4: 'Mists of Pandaria',
+  5: 'Warlords of Draenor',
+  6: 'Legion',
+  7: 'Battle for Azeroth',
+  8: 'Shadowlands',
+  9: 'Dragonflight',
+  10: 'The War Within',
+  11: 'Midnight',
+};
+
+function getExpansionName(id: number): string {
+  return EXPANSION_NAMES[id] ?? `Expansion ${id}`;
+}
+
 // ─── Types ──────────────────────────────────────────────────────
 
 interface AchievementRow {
@@ -140,7 +160,7 @@ function buildManualSections(rows: AchievementsManualRow[]): AchievementSection[
 
   for (const [expansion, expRows] of grouped) {
     sections.push({
-      expansionLabel: `Expansion ${expansion}`,
+      expansionLabel: getExpansionName(expansion),
       rows: expRows.map((r) => ({
         raid: r.raid,
         progress: r.progress,
@@ -231,7 +251,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
 
     if (sectionRows.length > 0) {
       sections.push({
-        expansionLabel: `Expansion ${expansionId}`,
+        expansionLabel: getExpansionName(expansionId),
         rows: sectionRows,
       });
     }
