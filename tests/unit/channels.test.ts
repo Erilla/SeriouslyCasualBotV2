@@ -149,3 +149,186 @@ describe('getOrCreateChannel — config-ID path', () => {
     expect(guild.channels.create).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('getOrCreateChannel — name lookup', () => {
+  it('reuses an existing channel found by name when config is empty', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'cat-1', name: 'Overlords', type: ChannelType.GuildCategory }),
+      mkChannel({ id: 'ch-by-name', name: 'trial-reviews', type: ChannelType.GuildForum, parentId: 'cat-1' }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'trial-reviews',
+      type: ChannelType.GuildForum,
+      categoryName: 'Overlords',
+      configKey: 'trial_reviews_forum_id',
+    });
+
+    expect(result.id).toBe('ch-by-name');
+    expect(guild.channels.create).not.toHaveBeenCalled();
+    expect(getConfig('trial_reviews_forum_id')).toBe('ch-by-name');
+  });
+
+  it('is case-insensitive on the channel name', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'ch-1', name: 'Trial-Reviews', type: ChannelType.GuildForum }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'trial-reviews',
+      type: ChannelType.GuildForum,
+      categoryName: null,
+      configKey: 'trial_reviews_forum_id',
+    });
+
+    expect(result.id).toBe('ch-1');
+  });
+
+  it('accepts alias names for the name lookup', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'ch-welcome', name: 'welcome', type: ChannelType.GuildText }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'guild-info',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'guild_info_channel_id',
+      aliasNames: ['welcome'],
+    });
+
+    expect(result.id).toBe('ch-welcome');
+  });
+
+  it('warns and picks the first when duplicates exist', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'ch-1', name: 'raiders-lounge', type: ChannelType.GuildText }),
+      mkChannel({ id: 'ch-2', name: 'raiders-lounge', type: ChannelType.GuildText }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'raiders-lounge',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'raiders_lounge_channel_id',
+    });
+
+    expect(result.id).toBe('ch-1');
+  });
+
+  it('treats a wrong-typed name match as a miss and creates a new channel', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'ch-wrong', name: 'trial-reviews', type: ChannelType.GuildText }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'trial-reviews',
+      type: ChannelType.GuildForum,
+      categoryName: null,
+      configKey: 'trial_reviews_forum_id',
+    });
+
+    expect(result.id).not.toBe('ch-wrong');
+    expect(result.type).toBe(ChannelType.GuildForum);
+    expect(guild.channels.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses an existing category by name when resolving a category-type channel', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'cat-apps', name: 'Applications', type: ChannelType.GuildCategory }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'Applications',
+      type: ChannelType.GuildCategory,
+      categoryName: null,
+      configKey: 'applications_category_id',
+    });
+
+    expect(result.id).toBe('cat-apps');
+    expect(guild.channels.create).not.toHaveBeenCalled();
+    expect(getConfig('applications_category_id')).toBe('cat-apps');
+  });
+});
+
+describe('getOrCreateChannel — create path', () => {
+  it('creates under the resolved category when one is named', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'cat-overlords', name: 'Overlords', type: ChannelType.GuildCategory }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'trial-reviews',
+      type: ChannelType.GuildForum,
+      categoryName: 'Overlords',
+      configKey: 'trial_reviews_forum_id',
+    });
+
+    expect(guild.channels.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'trial-reviews', parent: 'cat-overlords' }),
+    );
+    expect(result.parentId).toBe('cat-overlords');
+  });
+
+  it('creates without a parent when the category is missing', async () => {
+    const guild = mkGuild([]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'trial-reviews',
+      type: ChannelType.GuildForum,
+      categoryName: 'Overlords',
+      configKey: 'trial_reviews_forum_id',
+    });
+
+    expect(guild.channels.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'trial-reviews', parent: undefined }),
+    );
+    expect(result.parentId).toBeNull();
+  });
+
+  it('creates without a parent when categoryName is null', async () => {
+    const guild = mkGuild([
+      mkChannel({ id: 'cat-overlords', name: 'Overlords', type: ChannelType.GuildCategory }),
+    ]);
+
+    await getOrCreateChannel(guild, {
+      name: 'Applications',
+      type: ChannelType.GuildCategory,
+      categoryName: null,
+      configKey: 'applications_category_id',
+    });
+
+    expect(guild.channels.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Applications', parent: undefined }),
+    );
+  });
+
+  it('stores the new ID in config', async () => {
+    const guild = mkGuild([]);
+
+    await getOrCreateChannel(guild, {
+      name: 'loot',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'loot_channel_id',
+    });
+
+    expect(getConfig('loot_channel_id')).toBe('created-loot');
+  });
+
+  it('passes through createOptions', async () => {
+    const guild = mkGuild([]);
+
+    await getOrCreateChannel(guild, {
+      name: 'raiders-lounge',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'raiders_lounge_channel_id',
+      createOptions: { topic: 'Raider signup alerts and discussion' },
+    });
+
+    expect(guild.channels.create).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: 'Raider signup alerts and discussion' }),
+    );
+  });
+});
