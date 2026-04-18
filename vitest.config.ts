@@ -20,6 +20,7 @@ export default defineConfig({
           testTimeout: 60_000,
           hookTimeout: 120_000,
           globalSetup: ['tests/e2e/setup/globalSetup.ts'],
+          setupFiles: ['tests/e2e/setup/workerSetup.ts'],
         },
       },
     ],
