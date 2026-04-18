@@ -52,6 +52,7 @@ export default {
       });
       setAuditChannel(botAuditChannel as TextChannel);
 
+      // Pre-resolve/cache the epgp-rankings channel ID; createDisplayPost reads it from config on demand.
       await getOrCreateChannel(guild, {
         name: 'epgp-rankings',
         type: ChannelType.GuildText,

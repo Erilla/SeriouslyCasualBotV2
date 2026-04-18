@@ -44,14 +44,16 @@ export function runMigrations(database: Database.Database): void {
 
   if (currentVersion < 2) {
     // Rename epgp_channel_id -> epgp_rankings_channel_id to match /setup's config key.
-    database.exec(`
-      INSERT OR IGNORE INTO config (key, value)
-        SELECT 'epgp_rankings_channel_id', value
-        FROM config
-        WHERE key = 'epgp_channel_id';
-      DELETE FROM config WHERE key = 'epgp_channel_id';
-    `);
-    database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(2);
+    database.transaction(() => {
+      database.exec(`
+        INSERT OR IGNORE INTO config (key, value)
+          SELECT 'epgp_rankings_channel_id', value
+          FROM config
+          WHERE key = 'epgp_channel_id';
+        DELETE FROM config WHERE key = 'epgp_channel_id';
+      `);
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(2);
+    })();
   }
 }
 
