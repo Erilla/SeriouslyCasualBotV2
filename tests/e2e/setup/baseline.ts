@@ -1,15 +1,18 @@
 import { getE2EContext } from './bootstrap.js';
 import { fakeChatInput } from './synthesizer.js';
 import { wipeTestDb } from './db.js';
-import { initDatabase } from '../../../src/database/db.js';
+import { initDatabase, closeDatabase } from '../../../src/database/db.js';
+import { loadE2EEnv } from './env.js';
 import testdataCmd from '../../../src/commands/testdata.js';
 import type { ChatInputCommandInteraction, TextBasedChannel } from 'discord.js';
 
 export async function resetAndSeed(): Promise<void> {
   const { client, guild, officer } = getE2EContext();
+  const env = loadE2EEnv();
 
   wipeTestDb();
-  initDatabase();
+  closeDatabase();
+  initDatabase(env.testDbPath);
 
   const channel = guild.systemChannel ?? guild.channels.cache.find((c) => c.isTextBased())!;
 

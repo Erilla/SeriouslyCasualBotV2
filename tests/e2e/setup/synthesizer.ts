@@ -1,3 +1,10 @@
+import type {
+  Client, Guild, GuildMember, TextBasedChannel, User,
+  InteractionReplyOptions, InteractionEditReplyOptions,
+  ModalBuilder, Message, MessageEditOptions,
+} from 'discord.js';
+import { MessageFlags } from 'discord.js';
+
 export interface OptionsShimInit {
   subcommand?: string;
   values: Record<string, string | number | boolean | unknown>;
@@ -43,13 +50,6 @@ export function buildOptionsShim(init: OptionsShimInit): OptionsShim {
     getAttachment: (n, r) => get(n, r, 'attachment'),
   };
 }
-
-import type {
-  Client, Guild, GuildMember, TextBasedChannel, User,
-  InteractionReplyOptions, InteractionEditReplyOptions,
-  ModalBuilder, Message, MessageEditOptions,
-} from 'discord.js';
-import { MessageFlags } from 'discord.js';
 
 export interface FakeReply {
   options: InteractionReplyOptions | string;
@@ -148,7 +148,7 @@ export function fakeChatInput(init: FakeChatInputInit): FakeChatInput {
       // If non-ephemeral, pipe to channel.send so real Discord reflects it.
       if (!ephemeral && 'send' in init.channel) {
         const payload = typeof opts === 'string' ? { content: opts } : opts;
-        await (init.channel as any).send(payload);
+        await (init.channel as TextBasedChannel & { send: (p: unknown) => Promise<unknown> }).send(payload);
       }
       return { id: 'fake-follow-up' };
     },
@@ -186,6 +186,7 @@ export interface FakeButton {
   replied: boolean;
 
   __replies: FakeReply[];
+  __deferred: { ephemeral: boolean } | null;
   __deferredUpdate: boolean;
   __updated: MessageEditOptions | null;
   __followUps: FakeReply[];
@@ -211,6 +212,7 @@ export function fakeButton(init: FakeButtonInit): FakeButton {
     deferred: false,
     replied: false,
     __replies: [],
+    __deferred: null,
     __deferredUpdate: false,
     __updated: null,
     __followUps: [],
@@ -221,6 +223,9 @@ export function fakeButton(init: FakeButtonInit): FakeButton {
       return { resource: { message: { createdTimestamp: Date.now() } } };
     },
     async deferReply(opts) {
+      fake.__deferred = {
+        ephemeral: (opts?.flags ?? 0) === MessageFlags.Ephemeral,
+      };
       fake.deferred = true;
       return undefined;
     },

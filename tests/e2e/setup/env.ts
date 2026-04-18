@@ -38,7 +38,11 @@ export function loadE2EEnv(): E2EEnv {
     if (!process.env[key]) missing.push(key);
   }
   if (missing.length > 0) {
-    throw new Error(`missing required e2e env vars: ${missing.join(', ')}`);
+    throw new Error(
+      `missing required e2e env vars: ${missing.join(', ')}.\n` +
+      `Copy .env.test.example → .env.test and fill in values.\n` +
+      `See docs/superpowers/runbook/e2e-scaffold-setup.md`,
+    );
   }
 
   cached = {
