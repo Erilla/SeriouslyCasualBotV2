@@ -43,6 +43,14 @@ const ALLOWED_CHANNEL_TYPES = [
   ...new Set(Object.values(CHANNEL_CONFIG).map((c) => c.type)),
 ];
 
+// Discord caps slash-command choices at 25 per option. Fail fast at module load
+// rather than at command registration if CHANNEL_CONFIG grows past that.
+if (CHANNEL_CHOICES.length > 25) {
+  throw new Error(
+    `CHANNEL_CONFIG has ${CHANNEL_CHOICES.length} entries but Discord allows max 25 choices per option; switch to autocomplete.`,
+  );
+}
+
 export default {
   data: new SlashCommandBuilder()
     .setName('setup')
@@ -94,6 +102,17 @@ export default {
       const key = interaction.options.getString('key', true);
       const channel = interaction.options.getChannel('channel', true);
       const expected = CHANNEL_CONFIG[key];
+
+      // Discord validates `key` against CHANNEL_CHOICES (derived from CHANNEL_CONFIG),
+      // so `expected` is structurally non-undefined. Guard anyway in case registration
+      // ever drifts (e.g. partial redeploy).
+      if (!expected) {
+        await interaction.reply({
+          content: 'Invalid configuration key.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
 
       if (channel.type !== expected.type) {
         await interaction.reply({
