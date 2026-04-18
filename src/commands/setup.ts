@@ -28,11 +28,14 @@ const CHANNEL_CONFIG: Record<string, { label: string; type: ConfigurableChannelT
   applications_category_id: { label: 'Applications Category', type: ChannelType.GuildCategory },
 };
 
-const CHANNEL_TYPE_LABEL: Partial<Record<ChannelType, string>> = {
-  [ChannelType.GuildText]: 'text channel',
-  [ChannelType.GuildForum]: 'forum channel',
-  [ChannelType.GuildCategory]: 'category',
-};
+function channelTypeLabel(type: ChannelType): string {
+  switch (type) {
+    case ChannelType.GuildText: return 'text channel';
+    case ChannelType.GuildForum: return 'forum channel';
+    case ChannelType.GuildCategory: return 'category';
+    default: return 'different channel type';
+  }
+}
 
 const CHANNEL_CHOICES = Object.entries(CHANNEL_CONFIG).map(([value, { label }]) => ({
   name: label,
@@ -116,7 +119,7 @@ export default {
 
       if (channel.type !== expected.type) {
         await interaction.reply({
-          content: `**${expected.label}** must be a ${CHANNEL_TYPE_LABEL[expected.type] ?? 'specified type'}, but ${channel} is a ${CHANNEL_TYPE_LABEL[channel.type] ?? 'different channel type'}.`,
+          content: `**${expected.label}** must be a ${channelTypeLabel(expected.type)}, but ${channel} is a ${channelTypeLabel(channel.type)}.`,
           flags: MessageFlags.Ephemeral,
         });
         return;
