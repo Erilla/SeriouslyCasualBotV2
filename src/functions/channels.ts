@@ -27,17 +27,18 @@ export interface GetOrCreateChannelOptions {
   createOptions?: Partial<GuildChannelCreateOptions>;
 }
 
-let warnedMissingCategories: Set<string> = new Set();
+const warnedMissingCategoriesPerGuild = new WeakMap<Guild, Set<string>>();
 
-/**
- * Hooks for vitest only. Not part of the public API; do not import from
- * production code. The double-underscore prefix signals test scaffolding.
- */
-export const __testing = {
-  resetWarnedCategories(): void {
-    warnedMissingCategories = new Set();
-  },
-};
+function shouldWarnAboutMissingCategory(guild: Guild, categoryName: string): boolean {
+  let set = warnedMissingCategoriesPerGuild.get(guild);
+  if (!set) {
+    set = new Set();
+    warnedMissingCategoriesPerGuild.set(guild, set);
+  }
+  if (set.has(categoryName)) return false;
+  set.add(categoryName);
+  return true;
+}
 
 function readConfig(key: string): string | undefined {
   const row = getDatabase().prepare('SELECT value FROM config WHERE key = ?').get(key) as
@@ -155,8 +156,7 @@ export async function getOrCreateChannel(
     const cat = getCategoryByName(guild, opts.categoryName);
     if (cat) {
       parentId = cat.id;
-    } else if (!warnedMissingCategories.has(opts.categoryName)) {
-      warnedMissingCategories.add(opts.categoryName);
+    } else if (shouldWarnAboutMissingCategory(guild, opts.categoryName)) {
       logger.warn(
         'channels',
         `Category "${opts.categoryName}" not found; "${opts.name}" will be created without a parent.`,
