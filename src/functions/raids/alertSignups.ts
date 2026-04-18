@@ -27,6 +27,7 @@ async function getRaidersLoungeChannel(client: Client): Promise<TextChannel | nu
       type: ChannelType.GuildText,
       categoryName: 'Raiders',
       configKey: 'raiders_lounge_channel_id',
+      aliasNames: ['raiderslounge'],
       createOptions: { topic: 'Raider signup alerts and discussion' },
     });
     return channel as TextChannel;
