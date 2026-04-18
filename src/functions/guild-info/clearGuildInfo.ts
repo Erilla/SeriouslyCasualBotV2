@@ -1,9 +1,8 @@
 import { type Client, type Message, ChannelType, type TextChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
-import { asSendable } from '../../utils.js';
 import { config } from '../../config.js';
-import type { ConfigRow } from '../../types/index.js';
+import { getOrCreateChannel } from '../channels.js';
 
 /**
  * Delete all messages in the guild info channel and clear the guild_info_messages table.
@@ -67,54 +66,19 @@ export async function clearGuildInfo(client: Client): Promise<void> {
  * Only creates a new channel as a last resort.
  */
 export async function getOrCreateGuildInfoChannel(client: Client): Promise<TextChannel | null> {
-  const db = getDatabase();
-  const row = db.prepare('SELECT value FROM config WHERE key = ?').get('guild_info_channel_id') as ConfigRow | undefined;
-
-  if (row) {
-    const channel = await client.channels.fetch(row.value).catch(() => null);
-    const sendable = asSendable(channel);
-    if (sendable) return sendable;
-    logger.warn('guild-info', `Configured guild info channel ${row.value} not found, searching for existing channel`);
-  }
-
-  const guild = await client.guilds.fetch(config.guildId).catch(() => null);
-  if (!guild) {
-    logger.error('guild-info', 'Could not fetch guild to resolve guild info channel');
-    return null;
-  }
-
-  // Search for an existing channel by name before creating a new one
-  const channels = guild.channels.cache;
-  const existing = channels.find(
-    (ch) => (ch.name === 'welcome' || ch.name === 'guild-info') && ch.type === ChannelType.GuildText,
-  );
-
-  if (existing) {
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'guild_info_channel_id',
-      existing.id,
-    );
-    logger.info('guild-info', `Using existing channel #${existing.name} (${existing.id}) for guild info`);
-    return existing as TextChannel;
-  }
-
-  // Last resort: create a new channel
   try {
-    const newChannel = await guild.channels.create({
+    const guild = await client.guilds.fetch(config.guildId);
+    const channel = (await getOrCreateChannel(guild, {
       name: 'guild-info',
       type: ChannelType.GuildText,
-    });
-
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'guild_info_channel_id',
-      newChannel.id,
-    );
-
-    logger.info('guild-info', `Created guild info channel #${newChannel.name} (${newChannel.id})`);
-    return newChannel;
+      categoryName: null,
+      configKey: 'guild_info_channel_id',
+      aliasNames: ['welcome'],
+    })) as TextChannel;
+    return channel;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    logger.error('guild-info', `Failed to create guild info channel: ${err.message}`, err);
+    logger.error('guild-info', `Failed to resolve guild info channel: ${err.message}`, err);
     return null;
   }
 }
