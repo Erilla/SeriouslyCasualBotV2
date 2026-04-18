@@ -182,6 +182,48 @@ async function resolveChannelImpl(
     return resolved;
   }
 
+  // The discord.js cache can be stale or incomplete (gateway reconnect, etc.).
+  // If both the stored-ID and in-cache name lookups came up empty, do one REST
+  // refresh and retry the name scan so we don't create a duplicate just because
+  // the cache was cold.
+  await guild.channels.fetch();
+
+  const refreshedCorrectMatches: NamedMatch[] = [];
+  const refreshedWrongMatches: NamedMatch[] = [];
+
+  for (const c of guild.channels.cache.values()) {
+    const idx = targets.indexOf(c.name.toLowerCase());
+    if (idx < 0) continue;
+    const match: NamedMatch = { channel: c as GuildBasedChannel, targetIndex: idx };
+    if (c.type === opts.type) {
+      refreshedCorrectMatches.push(match);
+    } else {
+      refreshedWrongMatches.push(match);
+    }
+  }
+
+  if (refreshedWrongMatches.length > wrongMatches.length) {
+    const fresh = refreshedWrongMatches.slice(wrongMatches.length);
+    const details = fresh
+      .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${ChannelType[m.channel.type]})`)
+      .join(', ');
+    logger.warn(
+      'channels',
+      `Found additional wrong-typed channel(s) after cache refresh: ${details}.`,
+    );
+  }
+
+  if (refreshedCorrectMatches.length > 0) {
+    refreshedCorrectMatches.sort((a, b) => a.targetIndex - b.targetIndex);
+    const resolved = refreshedCorrectMatches[0].channel;
+    writeConfig(opts.configKey, resolved.id);
+    logger.info(
+      'channels',
+      `Reusing existing channel "${resolved.name}" (${resolved.id}) for ${opts.configKey} (found after cache refresh)`,
+    );
+    return resolved;
+  }
+
   // 3. Parent category
   let parentId: string | undefined;
   if (opts.categoryName) {

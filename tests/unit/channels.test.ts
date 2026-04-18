@@ -418,6 +418,39 @@ describe('getOrCreateChannel — create path', () => {
   });
 });
 
+describe('getOrCreateChannel — cold cache refresh', () => {
+  it('refreshes the cache and reuses when name lookup was cold', async () => {
+    const guild = mkGuild([]);
+
+    // Simulate a cold cache: the channel exists on Discord but isn't populated
+    // in the local cache yet. The parameterless fetch() call should add it.
+    const coldChannel = mkChannel({
+      id: 'ch-cold',
+      name: 'trial-reviews',
+      type: ChannelType.GuildForum,
+    });
+
+    const cacheRef = guild.channels.cache as unknown as { set: (k: string, v: MockChannel) => void };
+    (guild.channels.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (id?: string) => {
+      if (id === undefined) {
+        cacheRef.set('ch-cold', coldChannel);
+        return null;
+      }
+      return null;
+    });
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'trial-reviews',
+      type: ChannelType.GuildForum,
+      categoryName: null,
+      configKey: 'trial_reviews_forum_id',
+    });
+
+    expect(result.id).toBe('ch-cold');
+    expect(guild.channels.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('getOrCreateChannel — concurrent dedup', () => {
   it('deduplicates concurrent calls for the same configKey', async () => {
     const guild = mkGuild([]);
