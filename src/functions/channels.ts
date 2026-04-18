@@ -85,7 +85,7 @@ export async function getOrCreateChannel(
       }
       logger.warn(
         'channels',
-        `Config key "${opts.configKey}" points to channel ${storedId} but its type is ${cached.type} (expected ${opts.type}); clearing stale config and falling through.`,
+        `Config key "${opts.configKey}" points to channel ${storedId} but its type is ${ChannelType[cached.type]} (expected ${ChannelType[opts.type]}); clearing stale config and falling through.`,
       );
     } else {
       logger.warn(
@@ -123,13 +123,13 @@ export async function getOrCreateChannel(
 
   if (wrongMatches.length > 0) {
     const details = wrongMatches
-      .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${m.channel.type})`)
+      .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${ChannelType[m.channel.type]})`)
       .join(', ');
     logger.warn(
       'channels',
       `Found channel(s) with name matching "${opts.name}"` +
         (opts.aliasNames?.length ? ' or one of its aliases' : '') +
-        ` but wrong type (expected ${opts.type}): ${details}.`,
+        ` but wrong type (expected ${ChannelType[opts.type]}): ${details}.`,
     );
   }
 
