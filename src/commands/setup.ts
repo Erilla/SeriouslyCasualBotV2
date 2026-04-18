@@ -28,6 +28,11 @@ const CHANNEL_CONFIG: Record<string, { label: string; type: ConfigurableChannelT
   applications_category_id: { label: 'Applications Category', type: ChannelType.GuildCategory },
 };
 
+const ROLE_CONFIG: Record<string, { label: string }> = {
+  officer_role_id: { label: 'Officer' },
+  raider_role_id: { label: 'Raider' },
+};
+
 function channelTypeLabel(type: ChannelType): string {
   switch (type) {
     case ChannelType.GuildText: return 'text channel';
@@ -88,8 +93,7 @@ export default {
             .setDescription('Role purpose')
             .setRequired(true)
             .addChoices(
-              { name: 'Officer', value: 'officer_role_id' },
-              { name: 'Raider', value: 'raider_role_id' },
+              ...Object.entries(ROLE_CONFIG).map(([value, { label }]) => ({ name: label, value })),
             ),
         )
         .addRoleOption((opt) => opt.setName('role').setDescription('The role').setRequired(true)),
@@ -140,11 +144,40 @@ export default {
     }
 
     if (subcommand === 'get_config') {
-      const rows = db.prepare('SELECT key, value FROM config ORDER BY key').all() as { key: string; value: string }[];
-      const formatted = rows.length > 0
-        ? rows.map((r) => `**${r.key}**: \`${r.value}\``).join('\n')
-        : 'No configuration set yet.';
-      await interaction.reply({ content: `**Bot Configuration:**\n${formatted}`, flags: MessageFlags.Ephemeral });
+      const rows = db.prepare('SELECT key, value FROM config').all() as { key: string; value: string }[];
+      const byKey = new Map(rows.map((r) => [r.key, r.value]));
+
+      const renderChannel = (key: string, label: string): string => {
+        const value = byKey.get(key);
+        return value ? `- **${label}** (${key}): <#${value}>` : `- **${label}** (${key}): *(not set)*`;
+      };
+      const renderRole = (key: string, label: string): string => {
+        const value = byKey.get(key);
+        return value ? `- **${label}** (${key}): <@&${value}>` : `- **${label}** (${key}): *(not set)*`;
+      };
+
+      const channelLines = Object.entries(CHANNEL_CONFIG).map(([k, { label }]) => renderChannel(k, label));
+      const roleLines = Object.entries(ROLE_CONFIG).map(([k, { label }]) => renderRole(k, label));
+
+      // Surface anything that's in the config table but not in our known sets
+      // (e.g. legacy keys from before a rename). Helps the admin spot stale rows.
+      const knownKeys = new Set([...Object.keys(CHANNEL_CONFIG), ...Object.keys(ROLE_CONFIG)]);
+      const unknownLines = rows
+        .filter((r) => !knownKeys.has(r.key))
+        .map((r) => `- **${r.key}**: \`${r.value}\``);
+
+      const sections = [
+        `**Channels**\n${channelLines.join('\n')}`,
+        `**Roles**\n${roleLines.join('\n')}`,
+      ];
+      if (unknownLines.length > 0) {
+        sections.push(`**Other (unknown keys)**\n${unknownLines.join('\n')}`);
+      }
+
+      await interaction.reply({
+        content: `**Bot Configuration**\n\n${sections.join('\n\n')}`,
+        flags: MessageFlags.Ephemeral,
+      });
     }
   },
 };
