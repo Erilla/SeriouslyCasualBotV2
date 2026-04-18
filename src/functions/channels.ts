@@ -93,6 +93,23 @@ interface NamedMatch {
   targetIndex: number;
 }
 
+function scanChannelsByTargets(
+  channels: Iterable<GuildBasedChannel>,
+  targets: string[],
+  expectedType: ChannelType,
+): { correctMatches: NamedMatch[]; wrongMatches: NamedMatch[] } {
+  const correctMatches: NamedMatch[] = [];
+  const wrongMatches: NamedMatch[] = [];
+  for (const c of channels) {
+    const idx = targets.indexOf(c.name.toLowerCase());
+    if (idx < 0) continue;
+    const match: NamedMatch = { channel: c, targetIndex: idx };
+    if (c.type === expectedType) correctMatches.push(match);
+    else wrongMatches.push(match);
+  }
+  return { correctMatches, wrongMatches };
+}
+
 async function resolveChannelImpl(
   guild: Guild,
   opts: GetOrCreateChannelOptions,
@@ -130,19 +147,11 @@ async function resolveChannelImpl(
     [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase()),
   )];
 
-  const correctMatches: NamedMatch[] = [];
-  const wrongMatches: NamedMatch[] = [];
-
-  for (const c of guild.channels.cache.values()) {
-    const idx = targets.indexOf(c.name.toLowerCase());
-    if (idx < 0) continue;
-    const match: NamedMatch = { channel: c as GuildBasedChannel, targetIndex: idx };
-    if (c.type === opts.type) {
-      correctMatches.push(match);
-    } else {
-      wrongMatches.push(match);
-    }
-  }
+  const { correctMatches, wrongMatches } = scanChannelsByTargets(
+    guild.channels.cache.values() as Iterable<GuildBasedChannel>,
+    targets,
+    opts.type,
+  );
 
   if (wrongMatches.length > 0) {
     const details = wrongMatches
@@ -188,19 +197,14 @@ async function resolveChannelImpl(
   // the cache was cold.
   await guild.channels.fetch();
 
-  const refreshedCorrectMatches: NamedMatch[] = [];
-  const refreshedWrongMatches: NamedMatch[] = [];
-
-  for (const c of guild.channels.cache.values()) {
-    const idx = targets.indexOf(c.name.toLowerCase());
-    if (idx < 0) continue;
-    const match: NamedMatch = { channel: c as GuildBasedChannel, targetIndex: idx };
-    if (c.type === opts.type) {
-      refreshedCorrectMatches.push(match);
-    } else {
-      refreshedWrongMatches.push(match);
-    }
-  }
+  const {
+    correctMatches: refreshedCorrectMatches,
+    wrongMatches: refreshedWrongMatches,
+  } = scanChannelsByTargets(
+    guild.channels.cache.values() as Iterable<GuildBasedChannel>,
+    targets,
+    opts.type,
+  );
 
   if (refreshedWrongMatches.length > wrongMatches.length) {
     const fresh = refreshedWrongMatches.slice(wrongMatches.length);
