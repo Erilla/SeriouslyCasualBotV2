@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getDatabase, closeDatabase, runMigrations } from '../../src/database/db.js';
 import { createTables } from '../../src/database/schema.js';
 
@@ -51,6 +51,20 @@ describe('runMigrations — epgp_channel_id -> epgp_rankings_channel_id', () => 
       | { value: string }
       | undefined;
     expect(newKey?.value).toBe('chan-999');
+  });
+
+  it('logs a warning when both epgp keys are set to different values', () => {
+    const db = getDatabase();
+    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_channel_id', 'old-chan');
+    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_rankings_channel_id', 'new-chan');
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    runMigrations(db);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Both epgp_channel_id'),
+    );
+    warnSpy.mockRestore();
   });
 
   it('does not overwrite an existing new-key value if both are set', () => {

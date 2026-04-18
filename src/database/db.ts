@@ -43,7 +43,23 @@ export function runMigrations(database: Database.Database): void {
   }
 
   if (currentVersion < 2) {
-    // Rename epgp_channel_id -> epgp_rankings_channel_id to match /setup's config key.
+    const oldRow = database
+      .prepare("SELECT value FROM config WHERE key = 'epgp_channel_id'")
+      .get() as { value: string } | undefined;
+    const newRow = database
+      .prepare("SELECT value FROM config WHERE key = 'epgp_rankings_channel_id'")
+      .get() as { value: string } | undefined;
+
+    if (oldRow && newRow && oldRow.value !== newRow.value) {
+      // Both keys set to different values — keep the new, drop the old, but
+      // log the conflict so an operator can investigate if this was unexpected.
+      console.warn(
+        `[db migration v2] Both epgp_channel_id ("${oldRow.value}") and ` +
+          `epgp_rankings_channel_id ("${newRow.value}") are set. Keeping ` +
+          `epgp_rankings_channel_id and dropping the old key.`,
+      );
+    }
+
     // better-sqlite3's .transaction() returns a function we must invoke — the
     // trailing () runs the block in an atomic transaction. Omitting () would
     // define the transaction but never execute it.
