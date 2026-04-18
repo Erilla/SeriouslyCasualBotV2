@@ -9,7 +9,12 @@ import { getDatabase } from '../database/db.js';
 import { requireOfficer } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 
-const CHANNEL_CONFIG: Record<string, { label: string; type: ChannelType }> = {
+type ConfigurableChannelType =
+  | ChannelType.GuildText
+  | ChannelType.GuildForum
+  | ChannelType.GuildCategory;
+
+const CHANNEL_CONFIG: Record<string, { label: string; type: ConfigurableChannelType }> = {
   guild_info_channel_id: { label: 'Guild Info', type: ChannelType.GuildText },
   bot_logs_channel_id: { label: 'Bot Logs', type: ChannelType.GuildText },
   bot_audit_channel_id: { label: 'Bot Audit', type: ChannelType.GuildText },
@@ -36,7 +41,7 @@ const CHANNEL_CHOICES = Object.entries(CHANNEL_CONFIG).map(([value, { label }]) 
 
 const ALLOWED_CHANNEL_TYPES = [
   ...new Set(Object.values(CHANNEL_CONFIG).map((c) => c.type)),
-] as (ChannelType.GuildText | ChannelType.GuildForum | ChannelType.GuildCategory)[];
+];
 
 export default {
   data: new SlashCommandBuilder()
@@ -92,7 +97,7 @@ export default {
 
       if (channel.type !== expected.type) {
         await interaction.reply({
-          content: `**${key}** must be a ${CHANNEL_TYPE_LABEL[expected.type]}, but ${channel} is a ${CHANNEL_TYPE_LABEL[channel.type] ?? 'different channel type'}.`,
+          content: `**${expected.label}** must be a ${CHANNEL_TYPE_LABEL[expected.type] ?? 'specified type'}, but ${channel} is a ${CHANNEL_TYPE_LABEL[channel.type] ?? 'different channel type'}.`,
           flags: MessageFlags.Ephemeral,
         });
         return;
