@@ -23,11 +23,13 @@ export interface E2EEnv {
 
 let cached: E2EEnv | null = null;
 
-export function loadE2EEnv(): E2EEnv {
+export function loadE2EEnv(options?: { skipDotenv?: boolean }): E2EEnv {
   if (cached) return cached;
 
-  loadDotenv({ path: '.env' });
-  loadDotenv({ path: '.env.test', override: true });
+  if (!options?.skipDotenv) {
+    loadDotenv({ path: '.env' });
+    loadDotenv({ path: '.env.test', override: true });
+  }
 
   const missing: Key[] = [];
   for (const key of REQUIRED_KEYS) {

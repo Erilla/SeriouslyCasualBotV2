@@ -12,7 +12,7 @@ describe('loadE2EEnv', () => {
   });
 
   it('throws a clear error when required keys are missing', () => {
-    expect(() => loadE2EEnv()).toThrow(/missing required e2e env vars/i);
+    expect(() => loadE2EEnv({ skipDotenv: true })).toThrow(/missing required e2e env vars/i);
   });
 
   it('returns a typed object when all keys are present', () => {
@@ -24,7 +24,7 @@ describe('loadE2EEnv', () => {
     process.env.OFFICER_ID = '5';
     // TEST_DB_PATH intentionally not set — verify the default is used
     delete process.env.TEST_DB_PATH;
-    const env = loadE2EEnv();
+    const env = loadE2EEnv({ skipDotenv: true });
     expect(env.sandboxGuildId).toBe('1');
     expect(env.testDbPath).toBe('./tests/e2e/.data/test.db');
   });
@@ -37,7 +37,7 @@ describe('loadE2EEnv', () => {
     process.env.VOTER_B_ID = '4';
     process.env.OFFICER_ID = '5';
     process.env.TEST_DB_PATH = './custom.db';
-    const env = loadE2EEnv();
+    const env = loadE2EEnv({ skipDotenv: true });
     expect(env.testDbPath).toBe('./custom.db');
   });
 });
