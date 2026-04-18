@@ -31,12 +31,17 @@ function mkGuild(channels: MockChannel[] = []): Guild {
       return out;
     },
     values: () => map.values(),
+    // Expose set so tests can inject channels after construction (cold-cache tests).
+    set: (id: string, ch: MockChannel) => map.set(id, ch),
   };
   return {
     id: 'guild-1',
     channels: {
       cache,
-      fetch: vi.fn(async (id: string) => map.get(id) ?? null),
+      fetch: vi.fn(async (id?: string) => {
+        if (id === undefined) return cache; // parameterless refresh: return the collection
+        return map.get(id) ?? null;
+      }),
       create: vi.fn(async (opts: { name: string; type: ChannelType; parent?: string | null }) => {
         const created: MockChannel = {
           id: `created-${opts.name}`,
@@ -393,5 +398,46 @@ describe('getOrCreateChannel — create path', () => {
     expect(guild.channels.create).toHaveBeenCalledWith(
       expect.objectContaining({ topic: 'Raider signup alerts and discussion' }),
     );
+  });
+
+  it('does not pass parent when creating a GuildCategory channel', async () => {
+    // Even if a parent category were somehow resolved, categories cannot have
+    // parents in Discord. The guard must pass parent: undefined for GuildCategory.
+    const guild = mkGuild([]);
+
+    await getOrCreateChannel(guild, {
+      name: 'My Category',
+      type: ChannelType.GuildCategory,
+      categoryName: null,
+      configKey: 'my_category_id',
+    });
+
+    expect(guild.channels.create).toHaveBeenCalledWith(
+      expect.objectContaining({ parent: undefined }),
+    );
+  });
+});
+
+describe('getOrCreateChannel — concurrent dedup', () => {
+  it('deduplicates concurrent calls for the same configKey', async () => {
+    const guild = mkGuild([]);
+
+    const [a, b] = await Promise.all([
+      getOrCreateChannel(guild, {
+        name: 'concurrent-test',
+        type: ChannelType.GuildText,
+        categoryName: null,
+        configKey: 'concurrent_test_channel_id',
+      }),
+      getOrCreateChannel(guild, {
+        name: 'concurrent-test',
+        type: ChannelType.GuildText,
+        categoryName: null,
+        configKey: 'concurrent_test_channel_id',
+      }),
+    ]);
+
+    expect(a.id).toBe(b.id);
+    expect(guild.channels.create).toHaveBeenCalledTimes(1);
   });
 });

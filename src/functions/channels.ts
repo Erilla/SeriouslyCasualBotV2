@@ -57,6 +57,10 @@ function deleteConfig(key: string): void {
   getDatabase().prepare('DELETE FROM config WHERE key = ?').run(key);
 }
 
+// In-flight dedup: prevents concurrent calls for the same configKey from each
+// triggering their own guild.channels.create when all of them miss the cache.
+const inflightResolves = new Map<string, Promise<GuildBasedChannel>>();
+
 export function getOrCreateChannel(
   guild: Guild,
   opts: GetOrCreateChannelOptions & { type: ChannelType.GuildText },
@@ -69,7 +73,27 @@ export function getOrCreateChannel(
   guild: Guild,
   opts: GetOrCreateChannelOptions & { type: ChannelType.GuildCategory },
 ): Promise<CategoryChannel>;
-export async function getOrCreateChannel(
+export function getOrCreateChannel(
+  guild: Guild,
+  opts: GetOrCreateChannelOptions,
+): Promise<GuildBasedChannel> {
+  const existing = inflightResolves.get(opts.configKey);
+  if (existing) return existing;
+
+  const promise = resolveChannelImpl(guild, opts);
+  inflightResolves.set(opts.configKey, promise);
+  promise.finally(() => {
+    inflightResolves.delete(opts.configKey);
+  });
+  return promise;
+}
+
+interface NamedMatch {
+  channel: GuildBasedChannel;
+  targetIndex: number;
+}
+
+async function resolveChannelImpl(
   guild: Guild,
   opts: GetOrCreateChannelOptions,
 ): Promise<GuildBasedChannel> {
@@ -105,11 +129,6 @@ export async function getOrCreateChannel(
   const targets = [...new Set(
     [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase()),
   )];
-
-  interface NamedMatch {
-    channel: GuildBasedChannel;
-    targetIndex: number;
-  }
 
   const correctMatches: NamedMatch[] = [];
   const wrongMatches: NamedMatch[] = [];
@@ -177,11 +196,11 @@ export async function getOrCreateChannel(
     }
   }
 
-  // 4. Create
+  // 4. Create — categories cannot have a parent, so guard against passing one.
   const created = (await guild.channels.create({
     name: opts.name,
     type: opts.type,
-    parent: parentId,
+    parent: opts.type === ChannelType.GuildCategory ? undefined : parentId,
     ...opts.createOptions,
   })) as GuildBasedChannel;
 
