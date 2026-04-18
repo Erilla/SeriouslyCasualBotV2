@@ -1,5 +1,8 @@
-import type { Client } from 'discord.js';
+import { ChannelType, type Client } from 'discord.js';
+import { config } from '../config.js';
 import { logger } from '../services/logger.js';
+import { getOrCreateChannel } from '../functions/channels.js';
+import { setAuditChannel } from '../services/auditLog.js';
 import { Scheduler } from '../scheduler/scheduler.js';
 import { deployCommands } from '../deploy-commands.js';
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
@@ -28,6 +31,58 @@ export default {
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       logger.error('bot', `Failed to register commands: ${err.message}`, err);
+    }
+
+    async function tryBootstrap(name: string, fn: () => Promise<void>): Promise<void> {
+      try {
+        await fn();
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error('bot', `Channel bootstrap failed for ${name}: ${err.message}`, err);
+      }
+    }
+
+    const guild = await client.guilds.fetch(config.guildId).catch((err) => {
+      logger.error(
+        'bot',
+        `Could not fetch guild for channel bootstrap: ${String(err)}`,
+        err instanceof Error ? err : new Error(String(err)),
+      );
+      return null;
+    });
+
+    if (guild) {
+      await tryBootstrap('bot-logs', async () => {
+        const botLogsChannel = await getOrCreateChannel(guild, {
+          name: 'bot-logs',
+          type: ChannelType.GuildText,
+          categoryName: 'SeriouslyCasual Bot',
+          configKey: 'bot_logs_channel_id',
+        });
+        logger.setDiscordChannel(botLogsChannel);
+      });
+
+      await tryBootstrap('bot-audit', async () => {
+        const botAuditChannel = await getOrCreateChannel(guild, {
+          name: 'bot-audit',
+          type: ChannelType.GuildText,
+          categoryName: 'SeriouslyCasual Bot',
+          configKey: 'bot_audit_channel_id',
+        });
+        setAuditChannel(botAuditChannel);
+      });
+
+      await tryBootstrap('epgp-rankings', async () => {
+        // Pre-resolve/cache the epgp-rankings channel ID; createDisplayPost reads it from config on demand.
+        await getOrCreateChannel(guild, {
+          name: 'epgp-rankings',
+          type: ChannelType.GuildText,
+          categoryName: 'Raiders',
+          configKey: 'epgp_rankings_channel_id',
+        });
+      });
+
+      logger.info('bot', 'Channel bootstrap complete');
     }
 
     // Register scheduled tasks

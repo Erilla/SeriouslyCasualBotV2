@@ -31,11 +31,11 @@ function cleanupLegacyBodyKey(): void {
 async function getEpgpChannel(client: Client): Promise<TextChannel | null> {
   const db = getDatabase();
   const channelConfig = db
-    .prepare("SELECT value FROM config WHERE key = 'epgp_channel_id'")
+    .prepare("SELECT value FROM config WHERE key = 'epgp_rankings_channel_id'")
     .get() as { value: string } | undefined;
 
   if (!channelConfig) {
-    logger.warn('EPGP', 'No epgp_channel_id configured. Use /setup set_channel.');
+    logger.warn('EPGP', 'No epgp_rankings_channel_id configured. Use /setup set_channel.');
     return null;
   }
 
