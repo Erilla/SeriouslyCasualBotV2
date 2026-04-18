@@ -27,6 +27,11 @@ export interface GetOrCreateChannelOptions {
 
 const warnedMissingCategories = new Set<string>();
 
+/** Test-only: resets per-process warn state. Do not call from production code. */
+export function _resetWarnedCategoriesForTesting(): void {
+  warnedMissingCategories.clear();
+}
+
 function readConfig(key: string): string | undefined {
   const row = getDatabase().prepare('SELECT value FROM config WHERE key = ?').get(key) as
     | { value: string }
@@ -54,10 +59,20 @@ export async function getOrCreateChannel(
     const cached =
       guild.channels.cache.get(storedId) ??
       (await guild.channels.fetch(storedId).catch(() => null));
-    if (cached && cached.type === opts.type) {
-      return cached as GuildBasedChannel;
+    if (cached) {
+      if (cached.type === opts.type) {
+        return cached as GuildBasedChannel;
+      }
+      logger.warn(
+        'channels',
+        `Config key "${opts.configKey}" points to channel ${storedId} but its type is ${cached.type} (expected ${opts.type}); clearing stale config and falling through.`,
+      );
+    } else {
+      logger.warn(
+        'channels',
+        `Config key "${opts.configKey}" points to deleted/inaccessible channel ${storedId}; clearing.`,
+      );
     }
-    // Stale — clear and fall through
     deleteConfig(opts.configKey);
   }
 

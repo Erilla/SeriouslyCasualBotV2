@@ -3,7 +3,7 @@ import { ChannelType } from 'discord.js';
 import type { Guild } from 'discord.js';
 import { createTables } from '../../src/database/schema.js';
 import { getDatabase, closeDatabase } from '../../src/database/db.js';
-import { getCategoryByName, getOrCreateChannel } from '../../src/functions/channels.js';
+import { getCategoryByName, getOrCreateChannel, _resetWarnedCategoriesForTesting } from '../../src/functions/channels.js';
 
 type MockChannel = {
   id: string;
@@ -54,6 +54,7 @@ beforeEach(() => {
   closeDatabase();
   const db = getDatabase(':memory:');
   createTables(db);
+  _resetWarnedCategoriesForTesting();
 });
 
 afterEach(() => {
