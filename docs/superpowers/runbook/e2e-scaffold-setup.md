@@ -1,45 +1,25 @@
-# Sandbox guild scaffold setup (e2e tests)
+# E2E test environment setup
 
-One-time manual provisioning for the Discord server that backs `npm run test:e2e`.
+The e2e suite reuses `.env` (existing bot creds). You only need to add a small `.env.test` with tester user IDs.
 
-## 1. Create a dedicated guild
+## 1. Ensure `.env` has the usual bot creds
 
-- Create a new Discord server. Do NOT use the production guild.
-- Community features: enable (forum channels require it).
-- Record the guild ID; put it in `.env.test` as `SANDBOX_GUILD_ID`.
+The bot's regular `.env` (DISCORD_TOKEN, GUILD_ID, OFFICER_ROLE_ID, WOWAUDIT_API_SECRET, WARCRAFTLOGS_*, RAIDERIO_GUILD_IDS) is sufficient.
 
-## 2. Create a bot application
+## 2. Create `.env.test`
 
-- Discord Developer Portal → New Application → Bot → reset token.
-- Put token in `.env.test` as `DISCORD_TOKEN_TEST`.
-- OAuth2 URL generator → scopes: `bot`, `applications.commands`; permissions: Administrator (fine for a sandbox).
-- Invite the bot to the sandbox guild.
-- Run `npm run deploy-commands` with `GUILD_ID` pointing at the sandbox guild to register commands.
+Copy `.env.test.example` → `.env.test` and fill in tester user IDs. These must be real Discord users who have joined `GUILD_ID` from `.env`. A single user can fill all four slots while multi-voter flows remain unimplemented:
 
-## 3. Create tester members
+- `TESTER_PRIMARY_ID` — default actor for slash commands.
+- `VOTER_A_ID` / `VOTER_B_ID` — distinct voters for application vote flows (same as primary for now is OK).
+- `OFFICER_ID` — invoker for officer-gated commands. The referenced account must have the role identified by `OFFICER_ROLE_ID`.
 
-Invite four real user accounts to the sandbox guild (burner accounts are fine). Note each user ID and populate:
+`TEST_DB_PATH` defaults to `./tests/e2e/.data/test.db`. Override only if you need an alternate location.
 
-- `TESTER_PRIMARY_ID`
-- `VOTER_A_ID`
-- `VOTER_B_ID`
-- `OFFICER_ID`
-
-Give `OFFICER_ID` the officer role that `requireOfficer` checks for in `src/commands/utils.ts`.
-
-## 4. Provision channels and roles
-
-Run the bot locally against the sandbox guild, then use `/setup` to create the expected channel structure. Record the resulting channel IDs in `.env.test` — names and required IDs expand as e2e tests grow; keep this section in sync.
-
-## 5. External API credentials
-
-- `RAIDERIO_API_KEY` — raider.io API key.
-- `WOWAUDIT_API_KEY` — wowaudit API key.
-
-## 6. Verify
+## 3. Verify
 
 ```bash
 npm run test:e2e -- tests/e2e/commands/ping.e2e.ts
 ```
 
-If `verifyScaffold()` reports missing pieces, add them.
+If `verifyScaffold()` reports missing pieces, extend the guild or check that accounts have the required roles.

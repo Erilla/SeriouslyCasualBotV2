@@ -5,9 +5,9 @@ describe('loadE2EEnv', () => {
   beforeEach(() => {
     resetE2EEnvCache();
     for (const k of [
-      'DISCORD_TOKEN_TEST', 'SANDBOX_GUILD_ID',
+      'DISCORD_TOKEN', 'GUILD_ID',
       'TESTER_PRIMARY_ID', 'VOTER_A_ID', 'VOTER_B_ID', 'OFFICER_ID',
-      'TEST_DB_PATH', 'RAIDERIO_API_KEY', 'WOWAUDIT_API_KEY',
+      'TEST_DB_PATH',
     ]) delete process.env[k];
   });
 
@@ -16,17 +16,28 @@ describe('loadE2EEnv', () => {
   });
 
   it('returns a typed object when all keys are present', () => {
-    process.env.DISCORD_TOKEN_TEST = 'token';
-    process.env.SANDBOX_GUILD_ID = '1';
+    process.env.DISCORD_TOKEN = 'token';
+    process.env.GUILD_ID = '1';
     process.env.TESTER_PRIMARY_ID = '2';
     process.env.VOTER_A_ID = '3';
     process.env.VOTER_B_ID = '4';
     process.env.OFFICER_ID = '5';
-    process.env.TEST_DB_PATH = './tmp.db';
-    process.env.RAIDERIO_API_KEY = 'r';
-    process.env.WOWAUDIT_API_KEY = 'w';
+    // TEST_DB_PATH intentionally not set — verify the default is used
+    delete process.env.TEST_DB_PATH;
     const env = loadE2EEnv();
     expect(env.sandboxGuildId).toBe('1');
-    expect(env.testDbPath).toBe('./tmp.db');
+    expect(env.testDbPath).toBe('./tests/e2e/.data/test.db');
+  });
+
+  it('uses explicit TEST_DB_PATH when provided', () => {
+    process.env.DISCORD_TOKEN = 'token';
+    process.env.GUILD_ID = '1';
+    process.env.TESTER_PRIMARY_ID = '2';
+    process.env.VOTER_A_ID = '3';
+    process.env.VOTER_B_ID = '4';
+    process.env.OFFICER_ID = '5';
+    process.env.TEST_DB_PATH = './custom.db';
+    const env = loadE2EEnv();
+    expect(env.testDbPath).toBe('./custom.db');
   });
 });

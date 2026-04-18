@@ -1,15 +1,12 @@
 import { config as loadDotenv } from 'dotenv';
 
 const REQUIRED_KEYS = [
-  'DISCORD_TOKEN_TEST',
-  'SANDBOX_GUILD_ID',
+  'DISCORD_TOKEN',
+  'GUILD_ID',
   'TESTER_PRIMARY_ID',
   'VOTER_A_ID',
   'VOTER_B_ID',
   'OFFICER_ID',
-  'TEST_DB_PATH',
-  'RAIDERIO_API_KEY',
-  'WOWAUDIT_API_KEY',
 ] as const;
 
 type Key = (typeof REQUIRED_KEYS)[number];
@@ -22,8 +19,6 @@ export interface E2EEnv {
   voterBId: string;
   officerId: string;
   testDbPath: string;
-  raiderioApiKey: string;
-  wowauditApiKey: string;
 }
 
 let cached: E2EEnv | null = null;
@@ -31,7 +26,8 @@ let cached: E2EEnv | null = null;
 export function loadE2EEnv(): E2EEnv {
   if (cached) return cached;
 
-  loadDotenv({ path: '.env.test' });
+  loadDotenv({ path: '.env' });
+  loadDotenv({ path: '.env.test', override: true });
 
   const missing: Key[] = [];
   for (const key of REQUIRED_KEYS) {
@@ -46,15 +42,13 @@ export function loadE2EEnv(): E2EEnv {
   }
 
   cached = {
-    discordToken: process.env.DISCORD_TOKEN_TEST!,
-    sandboxGuildId: process.env.SANDBOX_GUILD_ID!,
+    discordToken: process.env.DISCORD_TOKEN!,
+    sandboxGuildId: process.env.GUILD_ID!,
     testerPrimaryId: process.env.TESTER_PRIMARY_ID!,
     voterAId: process.env.VOTER_A_ID!,
     voterBId: process.env.VOTER_B_ID!,
     officerId: process.env.OFFICER_ID!,
-    testDbPath: process.env.TEST_DB_PATH!,
-    raiderioApiKey: process.env.RAIDERIO_API_KEY!,
-    wowauditApiKey: process.env.WOWAUDIT_API_KEY!,
+    testDbPath: process.env.TEST_DB_PATH ?? './tests/e2e/.data/test.db',
   };
   return cached;
 }
