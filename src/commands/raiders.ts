@@ -232,7 +232,7 @@ export default {
 
       case 'check_missing_users': {
         const unlinked = db
-          .prepare('SELECT * FROM raiders WHERE discord_user_id IS NULL')
+          .prepare('SELECT * FROM raiders WHERE discord_user_id IS NULL AND missing_since IS NULL')
           .all() as RaiderRow[];
 
         if (unlinked.length === 0) {

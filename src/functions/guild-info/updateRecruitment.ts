@@ -23,9 +23,18 @@ export async function updateRecruitment(client: Client): Promise<void> {
 
   const db = getDatabase();
 
-  // Get all recruitment sections ordered by key
+  // Get all recruitment sections in logical reading order
   const sections = db
-    .prepare("SELECT * FROM guild_info_content WHERE key LIKE 'recruitment_%' ORDER BY key")
+    .prepare(
+      `SELECT * FROM guild_info_content WHERE key LIKE 'recruitment_%'
+       ORDER BY CASE key
+         WHEN 'recruitment_who' THEN 1
+         WHEN 'recruitment_want' THEN 2
+         WHEN 'recruitment_give' THEN 3
+         WHEN 'recruitment_contact' THEN 4
+         ELSE 99
+       END`,
+    )
     .all() as GuildInfoContentRow[];
 
   if (sections.length === 0) {

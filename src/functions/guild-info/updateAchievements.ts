@@ -1,4 +1,4 @@
-import { type Client, AttachmentBuilder, EmbedBuilder, Colors } from 'discord.js';
+import { type Client, AttachmentBuilder } from 'discord.js';
 import { createCanvas } from '@napi-rs/canvas';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
@@ -100,7 +100,8 @@ export async function updateAchievements(client: Client): Promise<void> {
     try {
       const oldMessage = await channel.messages.fetch(existingMsg.message_id);
       await oldMessage.edit({
-        embeds: [new EmbedBuilder().setColor(Colors.Green).setTitle(title).setImage('attachment://achievements.png')],
+        content: `**${title}**`,
+        embeds: [],
         files: [attachment],
       });
       logger.info('guild-info', 'Updated existing Achievements message');
@@ -112,7 +113,7 @@ export async function updateAchievements(client: Client): Promise<void> {
 
   // Send new message
   const message = await channel.send({
-    embeds: [new EmbedBuilder().setColor(Colors.Green).setTitle(title).setImage('attachment://achievements.png')],
+    content: `**${title}**`,
     files: [attachment],
   });
 
@@ -192,11 +193,21 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
         if (!rankings || rankings.length === 0) continue;
 
         // Use the ranking entry with the most encounters defeated
-        const best = rankings.reduce((a, b) =>
-          (b.encountersDefeated > a.encountersDefeated ? b : a), rankings[0]);
+        // Guard against encountersDefeated being an array (API may return either)
+        const getDefeatedCount = (entry: RaidRankingEntry): number => {
+          const val = entry.encountersDefeated;
+          if (Array.isArray(val)) return (val as unknown[]).length;
+          if (typeof val === 'number') return val;
+          return 0;
+        };
 
-        const killedBosses = best.encountersDefeated;
-        const totalBosses = best.encountersTotal || raid.encounters.length;
+        const best = rankings.reduce((a, b) =>
+          (getDefeatedCount(b) > getDefeatedCount(a) ? b : a), rankings[0]);
+
+        const killedBosses = getDefeatedCount(best);
+        const totalBosses = typeof best.encountersTotal === 'number'
+          ? best.encountersTotal
+          : raid.encounters.length;
 
         if (killedBosses === 0) continue;
 
@@ -204,7 +215,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
         const isCE = determineCE(raid, best);
 
         const progress = `${killedBosses}/${totalBosses}M`;
-        const rank = best.rank;
+        const rank = typeof best.rank === 'number' ? best.rank : 0;
         const result = isCE ? `CE WR ${rank}` : `WR ${rank}`;
 
         sectionRows.push({
@@ -232,10 +243,15 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
 }
 
 function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
-  const totalBosses = ranking.encountersTotal || raid.encounters.length;
+  const totalBosses = typeof ranking.encountersTotal === 'number'
+    ? ranking.encountersTotal
+    : raid.encounters.length;
 
   // Not all bosses killed = no CE
-  if (ranking.encountersDefeated < totalBosses) return false;
+  const defeated = Array.isArray(ranking.encountersDefeated)
+    ? (ranking.encountersDefeated as unknown[]).length
+    : (typeof ranking.encountersDefeated === 'number' ? ranking.encountersDefeated : 0);
+  if (defeated < totalBosses) return false;
 
   // Get the tier end date
   const endDate = raid.ends?.eu ?? null;
@@ -261,18 +277,18 @@ function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
 // ─── Image Rendering ────────────────────────────────────────────
 
 function renderAchievementsImage(sections: AchievementSection[], title: string): Buffer {
-  const PADDING = 20;
+  const PADDING = 24;
   const ROW_HEIGHT = 28;
-  const HEADER_HEIGHT = 40;
+  const HEADER_HEIGHT = 44;
   const SECTION_GAP = 16;
-  const FONT_SIZE = 14;
-  const HEADER_FONT_SIZE = 12;
-  const WIDTH = 800;
+  const FONT_SIZE = 16;
+  const HEADER_FONT_SIZE = 18;
+  const WIDTH = 1000;
 
   // Column positions
   const COL_RAID = PADDING;
-  const COL_PROGRESS = 520;
-  const COL_RESULT = 650;
+  const COL_PROGRESS = 640;
+  const COL_RESULT = 800;
 
   // Calculate total height
   let totalRows = 0;
