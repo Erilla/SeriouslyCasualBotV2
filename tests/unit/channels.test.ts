@@ -480,6 +480,69 @@ describe('getOrCreateChannel — cold cache refresh', () => {
   });
 });
 
+describe('getOrCreateChannel — cache refresh concurrency and retry', () => {
+  it('shares a single in-flight cache refresh across concurrent calls', async () => {
+    const guild = mkGuild([]);
+    const fetchSpy = guild.channels.fetch as ReturnType<typeof vi.fn>;
+
+    // Both calls arrive before the first fetch resolves. The in-flight dedup
+    // by configKey doesn't apply (different keys) — we're testing the refresh
+    // in-flight map instead.
+    await Promise.all([
+      getOrCreateChannel(guild, {
+        name: 'ch-alpha',
+        type: ChannelType.GuildText,
+        categoryName: null,
+        configKey: 'alpha_key',
+      }),
+      getOrCreateChannel(guild, {
+        name: 'ch-beta',
+        type: ChannelType.GuildText,
+        categoryName: null,
+        configKey: 'beta_key',
+      }),
+    ]);
+
+    const parameterlessFetches = fetchSpy.mock.calls.filter((c) => c[0] === undefined).length;
+    expect(parameterlessFetches).toBe(1);
+  });
+
+  it('retries the cache refresh after a failed attempt', async () => {
+    const guild = mkGuild([]);
+    const fetchSpy = guild.channels.fetch as ReturnType<typeof vi.fn>;
+
+    // First parameterless fetch rejects; subsequent attempts succeed (return null).
+    let callCount = 0;
+    fetchSpy.mockImplementation(async (id?: string) => {
+      if (id === undefined) {
+        callCount++;
+        if (callCount === 1) throw new Error('network glitch');
+        return null;
+      }
+      return null;
+    });
+
+    // First call — refresh throws, we fall through to create.
+    await getOrCreateChannel(guild, {
+      name: 'ch-first',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'first_key',
+    });
+
+    // Second call — refresh should be retried (previous failure didn't mark the guild as refreshed).
+    await getOrCreateChannel(guild, {
+      name: 'ch-second',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'second_key',
+    });
+
+    const parameterlessFetches = fetchSpy.mock.calls.filter((c) => c[0] === undefined).length;
+    expect(parameterlessFetches).toBe(2); // one failed attempt + one retry
+  });
+});
+
 describe('getOrCreateChannel — concurrent dedup', () => {
   it('deduplicates concurrent calls for the same configKey', async () => {
     const guild = mkGuild([]);

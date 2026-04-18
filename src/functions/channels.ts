@@ -34,6 +34,27 @@ const warnedMissingCategoriesPerGuild = new WeakMap<Guild, Set<string>>();
 // full-fetch calls are redundant and hammer the API unnecessarily.
 const refreshedGuilds = new WeakSet<Guild>();
 
+/** In-flight refresh promises keyed by guild reference; concurrent callers share one fetch. */
+const refreshingGuilds = new WeakMap<Guild, Promise<unknown>>();
+
+async function refreshGuildChannelsOnce(guild: Guild): Promise<void> {
+  if (refreshedGuilds.has(guild)) return;
+
+  let inflight = refreshingGuilds.get(guild);
+  if (!inflight) {
+    inflight = guild.channels
+      .fetch()
+      .then(() => {
+        refreshedGuilds.add(guild);
+      })
+      .finally(() => {
+        refreshingGuilds.delete(guild);
+      });
+    refreshingGuilds.set(guild, inflight);
+  }
+  await inflight;
+}
+
 function shouldWarnAboutMissingCategory(guild: Guild, categoryName: string): boolean {
   let set = warnedMissingCategoriesPerGuild.get(guild);
   if (!set) {
@@ -64,7 +85,18 @@ function deleteConfig(key: string): void {
 
 // In-flight dedup: prevents concurrent calls for the same configKey from each
 // triggering their own guild.channels.create when all of them miss the cache.
-const inflightResolves = new Map<string, Promise<GuildBasedChannel>>();
+// Outer WeakMap is keyed by guild reference (GC-friendly across tests); inner
+// Map is keyed by configKey so dedup is scoped per-guild.
+const inflightResolves = new WeakMap<Guild, Map<string, Promise<GuildBasedChannel>>>();
+
+function getInflightForGuild(guild: Guild): Map<string, Promise<GuildBasedChannel>> {
+  let m = inflightResolves.get(guild);
+  if (!m) {
+    m = new Map();
+    inflightResolves.set(guild, m);
+  }
+  return m;
+}
 
 export function getOrCreateChannel(
   guild: Guild,
@@ -82,14 +114,14 @@ export function getOrCreateChannel(
   guild: Guild,
   opts: GetOrCreateChannelOptions,
 ): Promise<GuildBasedChannel> {
-  const inflightKey = `${guild.id}:${opts.configKey}`;
-  const existing = inflightResolves.get(inflightKey);
+  const perGuild = getInflightForGuild(guild);
+  const existing = perGuild.get(opts.configKey);
   if (existing) return existing;
 
   const promise = resolveChannelImpl(guild, opts);
-  inflightResolves.set(inflightKey, promise);
+  perGuild.set(opts.configKey, promise);
   promise.finally(() => {
-    inflightResolves.delete(inflightKey);
+    perGuild.delete(opts.configKey);
   });
   return promise;
 }
@@ -201,12 +233,19 @@ async function resolveChannelImpl(
   // fully populated before ready fires). Do one REST refresh per guild per
   // process and retry the scan — after that, the cache is maintained live
   // by gateway events, so further refreshes are redundant.
-  // NOTE: we add the guild to the set BEFORE the await so concurrent callers
-  // for the same guild (but different configKeys, bypassing the inflight map)
-  // don't each queue their own refresh.
-  if (!refreshedGuilds.has(guild)) {
-    refreshedGuilds.add(guild);
-    await guild.channels.fetch();
+  // Concurrent callers for different configKeys (bypassing the inflight-dedup
+  // map) share a single in-flight fetch promise via refreshGuildChannelsOnce.
+  // On failure, the guild is not marked as refreshed, so subsequent callers
+  // can retry.
+  if (!refreshedGuilds.has(guild) || refreshingGuilds.has(guild)) {
+    try {
+      await refreshGuildChannelsOnce(guild);
+    } catch (err) {
+      logger.warn(
+        'channels',
+        `Channel cache refresh failed for guild ${guild.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     const {
       correctMatches: refreshedCorrectMatches,
