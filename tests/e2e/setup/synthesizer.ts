@@ -248,3 +248,87 @@ export function fakeButton(init: FakeButtonInit): FakeButton {
   return fake;
 }
 
+export interface FakeModalSubmitInit {
+  client: Client;
+  guild: Guild;
+  channel: TextBasedChannel;
+  member: GuildMember;
+  user: User;
+  customId: string;
+  fields: Record<string, string>;
+}
+
+export interface FakeModalSubmit {
+  type: 'modalSubmit';
+  client: Client;
+  guild: Guild;
+  channel: TextBasedChannel;
+  member: GuildMember;
+  user: User;
+  customId: string;
+  fields: { getTextInputValue(customId: string): string };
+  createdTimestamp: number;
+  deferred: boolean;
+  replied: boolean;
+
+  __replies: FakeReply[];
+  __editedReply: FakeReply | null;
+  __followUps: FakeReply[];
+
+  reply(opts: InteractionReplyOptions | string): Promise<unknown>;
+  deferReply(opts?: { flags?: number }): Promise<unknown>;
+  editReply(opts: InteractionEditReplyOptions | string): Promise<unknown>;
+  followUp(opts: InteractionReplyOptions | string): Promise<unknown>;
+}
+
+export function fakeModalSubmit(init: FakeModalSubmitInit): FakeModalSubmit {
+  const fake: FakeModalSubmit = {
+    type: 'modalSubmit',
+    client: init.client,
+    guild: init.guild,
+    channel: init.channel,
+    member: init.member,
+    user: init.user,
+    customId: init.customId,
+    fields: {
+      getTextInputValue(id: string) {
+        const v = init.fields[id];
+        if (v === undefined) {
+          throw new Error(`modal field "${id}" not provided in fakeModalSubmit`);
+        }
+        return v;
+      },
+    },
+    createdTimestamp: Date.now(),
+    deferred: false,
+    replied: false,
+    __replies: [],
+    __editedReply: null,
+    __followUps: [],
+
+    async reply(opts) {
+      fake.__replies.push({ options: opts, ephemeral: isEphemeral(opts) });
+      fake.replied = true;
+      return { resource: { message: { createdTimestamp: Date.now() } } };
+    },
+    async deferReply(opts) {
+      fake.deferred = true;
+      return undefined;
+    },
+    async editReply(opts) {
+      fake.__editedReply = { options: opts as InteractionReplyOptions, ephemeral: false };
+      return { id: 'fake-edited-reply' };
+    },
+    async followUp(opts) {
+      const ephemeral = isEphemeral(opts);
+      fake.__followUps.push({ options: opts, ephemeral });
+      if (!ephemeral && 'send' in init.channel) {
+        const payload = typeof opts === 'string' ? { content: opts } : opts;
+        await (init.channel as TextBasedChannel & { send: (p: unknown) => Promise<unknown> }).send(payload);
+      }
+      return { id: 'fake-follow-up' };
+    },
+  };
+  return fake;
+}
+
