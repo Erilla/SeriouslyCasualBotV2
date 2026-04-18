@@ -37,23 +37,34 @@ client.commands = new Collection();
 // ─── Load Commands ───────────────────────────────────────────
 
 const commandsPath = join(__dirname, 'commands');
+let commandFiles: string[];
 try {
-  const commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js') || f.endsWith('.ts'));
+  commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js') || f.endsWith('.ts'));
+} catch {
+  logger.warn('bot', 'No commands directory found');
+  commandFiles = [];
+}
 
-  for (const file of commandFiles) {
+for (const file of commandFiles) {
+  try {
     const filePath = join(commandsPath, file);
     const module = await import(pathToFileURL(filePath).href);
     const command = module.default as Command;
 
-    if (!command?.data || !command?.execute) continue;
+    if (!command?.data || !command?.execute) {
+      logger.warn('bot', `Skipping ${file}: missing data or execute`);
+      continue;
+    }
     if (command.devOnly && config.isProduction) continue;
 
     client.commands.set(command.data.name, command);
-    logger.debug('bot', `Loaded command: ${command.data.name}`);
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error('bot', `Failed to load command ${file}: ${err.message}`, err);
   }
-} catch {
-  logger.warn('bot', 'No commands directory found');
 }
+
+logger.info('bot', `Loaded ${client.commands.size} commands`);
 
 // ─── Load Events ─────────────────────────────────────────────
 

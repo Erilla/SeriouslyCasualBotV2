@@ -6,6 +6,7 @@ import {
   ButtonStyle,
 } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
+import { logger } from '../../services/logger.js';
 import type { ApplicationVoteRow } from '../../types/index.js';
 
 /**
@@ -110,6 +111,8 @@ export function generateVotingEmbed(applicationId: number): {
       .setEmoji('😂')
       .setStyle(ButtonStyle.Danger),
   );
+
+  logger.debug('Applications', `Generated voting embed for application #${applicationId} (${votes.length} total votes)`);
 
   return { embeds: [embed], components: [votingRow] };
 }

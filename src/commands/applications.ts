@@ -20,6 +20,7 @@ import {
   addQuestion,
   removeQuestion,
 } from '../functions/applications/applicationQuestions.js';
+import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';
 import type { ApplicationRow } from '../types/index.js';
 
 export default {
@@ -188,14 +189,24 @@ export default {
           return `${statusEmoji} **#${app.id}** - ${app.character_name || 'Unknown'} (<@${app.applicant_user_id}>) - ${app.status}${channelRef}`;
         });
 
-        const embed = createEmbed(`Pending Applications (${applications.length})`).setDescription(
-          lines.join('\n'),
-        );
+        const title = `Pending Applications (${applications.length})`;
+        const pages = paginateLines(lines);
 
-        await interaction.reply({
-          embeds: [embed],
-          flags: MessageFlags.Ephemeral,
-        });
+        if (pages.length === 1) {
+          const embed = buildPageEmbed(title, pages[0], 1, 1);
+          await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        } else {
+          const embed = buildPageEmbed(title, pages[0], 1, pages.length);
+          const buttons = buildPageButtons('applications', 1, pages.length);
+          const { resource } = await interaction.reply({
+            embeds: [embed],
+            components: buttons ? [buttons] : [],
+            flags: MessageFlags.Ephemeral,
+            withResponse: true,
+          });
+          // withResponse: true guarantees resource.message is present
+          cachePaginatedData(`applications:${resource!.message!.id}`, title, pages);
+        }
         break;
       }
 

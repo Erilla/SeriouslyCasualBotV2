@@ -31,6 +31,8 @@ export async function updateLootResponse(
 
   txn();
 
+  logger.info('Loot', `Recorded ${responseType} response from user ${userId} for boss_id ${bossId}`);
+
   await updateLootPost(client, bossId);
 
   return '';

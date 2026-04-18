@@ -84,6 +84,8 @@ export async function checkRaidExpansions(client: Client): Promise<void> {
           });
         }
 
+        logger.info('Loot', `Raid expansion check complete: created ${currentRaid.encounters.length} loot posts for "${currentRaid.name}"`);
+
         // Found and processed the current raid, we're done
         done = true;
       }

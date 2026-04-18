@@ -29,4 +29,6 @@ export async function deleteLootPost(client: Client, bossId: number): Promise<vo
   // Delete from DB (responses first due to FK, then post)
   db.prepare('DELETE FROM loot_responses WHERE loot_post_id = ?').run(lootPost.id);
   db.prepare('DELETE FROM loot_posts WHERE boss_id = ?').run(bossId);
+
+  logger.info('Loot', `Deleted loot post for boss_id ${bossId} (post_id=${lootPost.id})`);
 }

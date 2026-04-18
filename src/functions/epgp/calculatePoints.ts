@@ -3,6 +3,7 @@
  */
 
 import { getDatabase } from '../../database/db.js';
+import { logger } from '../../services/logger.js';
 import type { RaiderRow, EpgpUploadHistoryRow } from '../../types/index.js';
 
 // ─── Class Mappings ─────────────────────────────────────────
@@ -94,6 +95,7 @@ export function getAllPoints(
     const allowedClasses = TIER_TOKEN_CLASSES[tierToken];
     if (allowedClasses) {
       raiders = raiders.filter((r) => r.class && allowedClasses.includes(r.class));
+      logger.debug('EPGP', `Filtered by tier token "${tierToken}": ${raiders.length} raiders remain`);
     }
   }
 
@@ -102,6 +104,7 @@ export function getAllPoints(
     const allowedClasses = ARMOUR_TYPE_CLASSES[armourType];
     if (allowedClasses) {
       raiders = raiders.filter((r) => r.class && allowedClasses.includes(r.class));
+      logger.debug('EPGP', `Filtered by armour type "${armourType}": ${raiders.length} raiders remain`);
     }
   }
 
@@ -135,6 +138,8 @@ export function getAllPoints(
   // Should we apply decay?
   const applyDecay =
     cutoffDate.getUTCDay() === 3 && lastUploadDate !== null && lastUploadDate > cutoffDate;
+
+  logger.debug('EPGP', `Calculating points for ${raiders.length} raiders (decay=${applyDecay}, cutoff=${cutoffIso})`);
 
   const result: EpgpRaiderPoints[] = [];
 
@@ -174,6 +179,8 @@ export function getAllPoints(
 
   // Sort by priority descending
   result.sort((a, b) => b.priority - a.priority);
+
+  logger.debug('EPGP', `Point calculation complete: ${result.length} raiders with standings`);
 
   return {
     lastUploadedDate,

@@ -1,4 +1,5 @@
 import { getDatabase } from '../../database/db.js';
+import { logger } from '../../services/logger.js';
 import type { ApplicationQuestionRow } from '../../types/index.js';
 
 /**
@@ -35,6 +36,8 @@ export function addQuestion(question: string): ApplicationQuestionRow {
     .prepare('INSERT INTO application_questions (question, sort_order) VALUES (?, ?)')
     .run(question, nextOrder);
 
+  logger.info('Applications', `Added question #${result.lastInsertRowid} (sort_order=${nextOrder})`);
+
   return {
     id: result.lastInsertRowid as number,
     question,
@@ -51,5 +54,12 @@ export function removeQuestion(id: number): boolean {
   const result = db
     .prepare('DELETE FROM application_questions WHERE id = ?')
     .run(id);
+
+  if (result.changes > 0) {
+    logger.info('Applications', `Removed question #${id}`);
+  } else {
+    logger.warn('Applications', `Attempted to remove non-existent question #${id}`);
+  }
+
   return result.changes > 0;
 }

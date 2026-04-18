@@ -134,8 +134,18 @@ export default {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         try {
-          const [header, body, footer] = generateDisplay(tierToken);
-          await interaction.editReply({ content: `${header}\n${body}\n${footer}` });
+          const { header, bodies, footer } = generateDisplay(tierToken);
+          const combined = [header, ...bodies, footer].join('\n');
+          // Discord ephemeral reply limit is 2000 chars; split into follow-ups if needed
+          if (combined.length <= 2000) {
+            await interaction.editReply({ content: combined });
+          } else {
+            await interaction.editReply({ content: header });
+            for (const body of bodies) {
+              await interaction.followUp({ content: body, flags: MessageFlags.Ephemeral });
+            }
+            await interaction.followUp({ content: footer, flags: MessageFlags.Ephemeral });
+          }
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           await interaction.editReply({ content: `Failed to generate display: ${err.message}` });
@@ -149,8 +159,17 @@ export default {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         try {
-          const [header, body, footer] = generateDisplay(null, armourType);
-          await interaction.editReply({ content: `${header}\n${body}\n${footer}` });
+          const { header, bodies, footer } = generateDisplay(null, armourType);
+          const combined = [header, ...bodies, footer].join('\n');
+          if (combined.length <= 2000) {
+            await interaction.editReply({ content: combined });
+          } else {
+            await interaction.editReply({ content: header });
+            for (const body of bodies) {
+              await interaction.followUp({ content: body, flags: MessageFlags.Ephemeral });
+            }
+            await interaction.followUp({ content: footer, flags: MessageFlags.Ephemeral });
+          }
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           await interaction.editReply({ content: `Failed to generate display: ${err.message}` });

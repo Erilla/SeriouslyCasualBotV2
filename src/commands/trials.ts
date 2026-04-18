@@ -12,6 +12,7 @@ import { getDatabase } from '../database/db.js';
 import { requireOfficer, createEmbed } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
+import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';
 import { closeTrial } from '../functions/trial-review/closeTrial.js';
 import { changeTrialInfo } from '../functions/trial-review/changeTrialInfo.js';
 import { updateTrialLogs } from '../functions/trial-review/updateTrialLogs.js';
@@ -142,14 +143,24 @@ export default {
           return `**${t.character_name}** - ${t.role} | Started: ${t.start_date} ${statusIndicator}${threadRef}`;
         });
 
-        const embed = createEmbed(`Active Trials (${trials.length})`).setDescription(
-          lines.join('\n'),
-        );
+        const title = `Active Trials (${trials.length})`;
+        const pages = paginateLines(lines);
 
-        await interaction.reply({
-          embeds: [embed],
-          flags: MessageFlags.Ephemeral,
-        });
+        if (pages.length === 1) {
+          const embed = buildPageEmbed(title, pages[0], 1, 1);
+          await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        } else {
+          const embed = buildPageEmbed(title, pages[0], 1, pages.length);
+          const buttons = buildPageButtons('trials', 1, pages.length);
+          const { resource } = await interaction.reply({
+            embeds: [embed],
+            components: buttons ? [buttons] : [],
+            flags: MessageFlags.Ephemeral,
+            withResponse: true,
+          });
+          // withResponse: true guarantees resource.message is present
+          cachePaginatedData(`trials:${resource!.message!.id}`, title, pages);
+        }
         break;
       }
 
