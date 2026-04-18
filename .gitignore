@@ -9,3 +9,4 @@ db.sqlite*
 .DS_Store
 *.log
 .claude/*.local.*
+.worktrees/
