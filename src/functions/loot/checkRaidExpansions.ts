@@ -12,6 +12,7 @@ export async function checkRaidExpansions(client: Client): Promise<void> {
     type: ChannelType.GuildText,
     categoryName: 'Raiders',
     configKey: 'loot_channel_id',
+    aliasNames: ['loot-priorities'],
   })) as TextChannel;
 
   const now = new Date();
