@@ -7,6 +7,7 @@ import {
   PermissionFlagsBits,
 } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
+import { getOrCreateChannel } from '../channels.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { createForumPost } from './createForumPost.js';
@@ -136,42 +137,19 @@ async function createApplicationChannel(
 ): Promise<TextChannel> {
   const db = getDatabase();
 
-  // Get or create applications category
-  let categoryId = (
-    db.prepare('SELECT value FROM config WHERE key = ?').get('applications_category_id') as
-      | { value: string }
-      | undefined
-  )?.value;
-
-  if (categoryId) {
-    // Verify category still exists (it may have been deleted)
-    try {
-      const existing = guild.channels.cache.get(categoryId) ?? await guild.channels.fetch(categoryId).catch(() => null);
-      if (!existing || existing.type !== ChannelType.GuildCategory) {
-        logger.info('Applications', `Applications category ${categoryId} no longer exists, creating a new one`);
-        categoryId = undefined;
-      }
-    } catch {
-      categoryId = undefined;
-    }
-  }
-
-  if (!categoryId) {
-    try {
-      const category = await guild.channels.create({
-        name: 'Applications',
-        type: ChannelType.GuildCategory,
-      });
-      categoryId = category.id;
-      db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-        'applications_category_id',
-        categoryId,
-      );
-      logger.info('Applications', `Created applications category: ${categoryId}`);
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      throw new Error(`Failed to create Applications category (does the bot have Manage Channels permission?): ${error.message}`);
-    }
+  // Get or create applications category (the only category the bot will auto-create)
+  let categoryId: string;
+  try {
+    const category = await getOrCreateChannel(guild, {
+      name: 'Applications',
+      type: ChannelType.GuildCategory,
+      categoryName: null,
+      configKey: 'applications_category_id',
+    });
+    categoryId = category.id;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    throw new Error(`Failed to create Applications category (does the bot have Manage Channels permission?): ${error.message}`);
   }
 
   // Get overlords for permissions
