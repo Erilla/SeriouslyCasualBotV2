@@ -100,7 +100,11 @@ export async function getOrCreateChannel(
   // in order). Single pass over the cache; we always warn about wrong-type
   // matches even when a correct match resolves under a different target, so
   // operators can clean up stray channels.
-  const targets = [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase());
+  // Dedup via Set to avoid redundant cache iterations when name === aliasName[i].
+  // new Set preserves insertion order per spec, so primary name still beats aliases.
+  const targets = [...new Set(
+    [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase()),
+  )];
 
   interface NamedMatch {
     channel: GuildBasedChannel;
