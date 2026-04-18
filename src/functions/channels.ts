@@ -207,9 +207,10 @@ async function resolveChannelImpl(
     opts.type,
   );
 
-  if (refreshedWrongMatches.length > wrongMatches.length) {
-    const fresh = refreshedWrongMatches.slice(wrongMatches.length);
-    const details = fresh
+  const existingWrongIds = new Set(wrongMatches.map((m) => m.channel.id));
+  const freshWrongMatches = refreshedWrongMatches.filter((m) => !existingWrongIds.has(m.channel.id));
+  if (freshWrongMatches.length > 0) {
+    const details = freshWrongMatches
       .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${ChannelType[m.channel.type]})`)
       .join(', ');
     logger.warn(
