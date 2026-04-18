@@ -47,7 +47,7 @@ export function buildOptionsShim(init: OptionsShimInit): OptionsShim {
 import type {
   Client, Guild, GuildMember, TextBasedChannel, User,
   InteractionReplyOptions, InteractionEditReplyOptions,
-  ModalBuilder,
+  ModalBuilder, Message, MessageEditOptions,
 } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 
@@ -157,6 +157,92 @@ export function fakeChatInput(init: FakeChatInputInit): FakeChatInput {
     },
     async fetchReply() {
       return { id: 'fake-reply' };
+    },
+  };
+  return fake;
+}
+
+export interface FakeButtonInit {
+  client: Client;
+  guild: Guild;
+  channel: TextBasedChannel;
+  member: GuildMember;
+  user: User;
+  message: Message;
+  customId: string;
+}
+
+export interface FakeButton {
+  type: 'button';
+  client: Client;
+  guild: Guild;
+  channel: TextBasedChannel;
+  member: GuildMember;
+  user: User;
+  message: Message;
+  customId: string;
+  createdTimestamp: number;
+  deferred: boolean;
+  replied: boolean;
+
+  __replies: FakeReply[];
+  __deferredUpdate: boolean;
+  __updated: MessageEditOptions | null;
+  __followUps: FakeReply[];
+
+  reply(opts: InteractionReplyOptions | string): Promise<unknown>;
+  deferReply(opts?: { flags?: number }): Promise<unknown>;
+  deferUpdate(): Promise<unknown>;
+  update(opts: MessageEditOptions | string): Promise<unknown>;
+  followUp(opts: InteractionReplyOptions | string): Promise<unknown>;
+}
+
+export function fakeButton(init: FakeButtonInit): FakeButton {
+  const fake: FakeButton = {
+    type: 'button',
+    client: init.client,
+    guild: init.guild,
+    channel: init.channel,
+    member: init.member,
+    user: init.user,
+    message: init.message,
+    customId: init.customId,
+    createdTimestamp: Date.now(),
+    deferred: false,
+    replied: false,
+    __replies: [],
+    __deferredUpdate: false,
+    __updated: null,
+    __followUps: [],
+
+    async reply(opts) {
+      fake.__replies.push({ options: opts, ephemeral: isEphemeral(opts) });
+      fake.replied = true;
+      return { resource: { message: { createdTimestamp: Date.now() } } };
+    },
+    async deferReply(opts) {
+      fake.deferred = true;
+      return undefined;
+    },
+    async deferUpdate() {
+      fake.__deferredUpdate = true;
+      return undefined;
+    },
+    async update(opts) {
+      const payload = typeof opts === 'string' ? { content: opts } : opts;
+      fake.__updated = payload;
+      // Pipe to real message.edit so the sandbox guild reflects the change.
+      await init.message.edit(payload);
+      return undefined;
+    },
+    async followUp(opts) {
+      const ephemeral = isEphemeral(opts);
+      fake.__followUps.push({ options: opts, ephemeral });
+      if (!ephemeral && 'send' in init.channel) {
+        const payload = typeof opts === 'string' ? { content: opts } : opts;
+        await (init.channel as TextBasedChannel & { send: (p: unknown) => Promise<unknown> }).send(payload);
+      }
+      return { id: 'fake-follow-up' };
     },
   };
   return fake;
