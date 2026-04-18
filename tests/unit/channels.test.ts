@@ -449,6 +449,35 @@ describe('getOrCreateChannel — cold cache refresh', () => {
     expect(result.id).toBe('ch-cold');
     expect(guild.channels.create).not.toHaveBeenCalled();
   });
+
+  it('refreshes cache at most once per guild', async () => {
+    // Both calls miss the cache so they would each try to do a full REST refresh.
+    // After the first refresh the WeakSet gate prevents any further parameterless
+    // guild.channels.fetch() calls for the same guild object.
+    const guild = mkGuild([]);
+    const fetchSpy = guild.channels.fetch as ReturnType<typeof vi.fn>;
+
+    await getOrCreateChannel(guild, {
+      name: 'channel-alpha',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'alpha_channel_id',
+    });
+
+    const callsAfterFirst = fetchSpy.mock.calls.filter((c) => c[0] === undefined).length;
+
+    await getOrCreateChannel(guild, {
+      name: 'channel-beta',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'beta_channel_id',
+    });
+
+    const callsAfterSecond = fetchSpy.mock.calls.filter((c) => c[0] === undefined).length;
+
+    // The second miss must NOT trigger another parameterless fetch.
+    expect(callsAfterSecond).toBe(callsAfterFirst);
+  });
 });
 
 describe('getOrCreateChannel — concurrent dedup', () => {

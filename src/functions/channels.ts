@@ -29,6 +29,11 @@ export interface GetOrCreateChannelOptions {
 
 const warnedMissingCategoriesPerGuild = new WeakMap<Guild, Set<string>>();
 
+// Gate the REST channel-list refresh to at most one call per guild per process.
+// After the first refresh the cache is kept live by gateway events, so further
+// full-fetch calls are redundant and hammer the API unnecessarily.
+const refreshedGuilds = new WeakSet<Guild>();
+
 function shouldWarnAboutMissingCategory(guild: Guild, categoryName: string): boolean {
   let set = warnedMissingCategoriesPerGuild.get(guild);
   if (!set) {
@@ -192,42 +197,48 @@ async function resolveChannelImpl(
     return resolved;
   }
 
-  // The discord.js cache can be stale or incomplete (gateway reconnect, etc.).
-  // If both the stored-ID and in-cache name lookups came up empty, do one REST
-  // refresh and retry the name scan so we don't create a duplicate just because
-  // the cache was cold.
-  await guild.channels.fetch();
+  // The discord.js cache can be stale or incomplete at startup (guild not
+  // fully populated before ready fires). Do one REST refresh per guild per
+  // process and retry the scan — after that, the cache is maintained live
+  // by gateway events, so further refreshes are redundant.
+  // NOTE: we add the guild to the set BEFORE the await so concurrent callers
+  // for the same guild (but different configKeys, bypassing the inflight map)
+  // don't each queue their own refresh.
+  if (!refreshedGuilds.has(guild)) {
+    refreshedGuilds.add(guild);
+    await guild.channels.fetch();
 
-  const {
-    correctMatches: refreshedCorrectMatches,
-    wrongMatches: refreshedWrongMatches,
-  } = scanChannelsByTargets(
-    guild.channels.cache.values() as Iterable<GuildBasedChannel>,
-    targets,
-    opts.type,
-  );
-
-  const existingWrongIds = new Set(wrongMatches.map((m) => m.channel.id));
-  const freshWrongMatches = refreshedWrongMatches.filter((m) => !existingWrongIds.has(m.channel.id));
-  if (freshWrongMatches.length > 0) {
-    const details = freshWrongMatches
-      .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${ChannelType[m.channel.type]})`)
-      .join(', ');
-    logger.warn(
-      'channels',
-      `Found additional wrong-typed channel(s) after cache refresh: ${details}.`,
+    const {
+      correctMatches: refreshedCorrectMatches,
+      wrongMatches: refreshedWrongMatches,
+    } = scanChannelsByTargets(
+      guild.channels.cache.values() as Iterable<GuildBasedChannel>,
+      targets,
+      opts.type,
     );
-  }
 
-  if (refreshedCorrectMatches.length > 0) {
-    refreshedCorrectMatches.sort((a, b) => a.targetIndex - b.targetIndex);
-    const resolved = refreshedCorrectMatches[0].channel;
-    writeConfig(opts.configKey, resolved.id);
-    logger.info(
-      'channels',
-      `Reusing existing channel "${resolved.name}" (${resolved.id}) for ${opts.configKey} (found after cache refresh)`,
-    );
-    return resolved;
+    const existingWrongIds = new Set(wrongMatches.map((m) => m.channel.id));
+    const freshWrongMatches = refreshedWrongMatches.filter((m) => !existingWrongIds.has(m.channel.id));
+    if (freshWrongMatches.length > 0) {
+      const details = freshWrongMatches
+        .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${ChannelType[m.channel.type]})`)
+        .join(', ');
+      logger.warn(
+        'channels',
+        `Found additional wrong-typed channel(s) after cache refresh: ${details}.`,
+      );
+    }
+
+    if (refreshedCorrectMatches.length > 0) {
+      refreshedCorrectMatches.sort((a, b) => a.targetIndex - b.targetIndex);
+      const resolved = refreshedCorrectMatches[0].channel;
+      writeConfig(opts.configKey, resolved.id);
+      logger.info(
+        'channels',
+        `Reusing existing channel "${resolved.name}" (${resolved.id}) for ${opts.configKey} (found after cache refresh)`,
+      );
+      return resolved;
+    }
   }
 
   // 3. Parent category — skip entirely for GuildCategory (categories can't be
