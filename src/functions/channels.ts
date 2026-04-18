@@ -27,12 +27,17 @@ export interface GetOrCreateChannelOptions {
   createOptions?: Partial<GuildChannelCreateOptions>;
 }
 
-const warnedMissingCategories = new Set<string>();
+let warnedMissingCategories: Set<string> = new Set();
 
-/** Test-only: resets per-process warn state. Do not call from production code. */
-export function _resetWarnedCategoriesForTesting(): void {
-  warnedMissingCategories.clear();
-}
+/**
+ * Hooks for vitest only. Not part of the public API; do not import from
+ * production code. The double-underscore prefix signals test scaffolding.
+ */
+export const __testing = {
+  resetWarnedCategories(): void {
+    warnedMissingCategories = new Set();
+  },
+};
 
 function readConfig(key: string): string | undefined {
   const row = getDatabase().prepare('SELECT value FROM config WHERE key = ?').get(key) as
