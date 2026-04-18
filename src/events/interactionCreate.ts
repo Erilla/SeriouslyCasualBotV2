@@ -35,6 +35,7 @@ import { updateLootResponse } from '../functions/loot/updateLootResponse.js';
 import { updateLootPost } from '../functions/loot/updateLootPost.js';
 import { generateLootPost } from '../functions/loot/generateLootPost.js';
 import type { LootPostRow, LootResponseRow } from '../types/index.js';
+import { getCachedPage, buildPageEmbed, buildPageButtons } from '../functions/pagination.js';
 
 export default {
   name: 'interactionCreate',
@@ -377,6 +378,31 @@ export default {
             const error = err instanceof Error ? err : new Error(String(err));
             await interaction.editReply({ content: `Failed to close trial: ${error.message}` });
           }
+        }
+
+        // page:{commandName}:{targetPage}:{totalPages} - Pagination navigation
+        if (customId.startsWith('page:')) {
+          const parts = customId.split(':');
+          const commandName = parts[1];
+          const page = parseInt(parts[2], 10);
+
+          const cacheKey = `${commandName}:${interaction.message.interaction?.id ?? interaction.message.id}`;
+          const data = getCachedPage(cacheKey, page);
+
+          if (!data) {
+            await interaction.reply({
+              content: 'This list has expired. Please run the command again.',
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          const embed = buildPageEmbed(data.title, data.content, page, data.totalPages);
+          const buttons = buildPageButtons(commandName, page, data.totalPages);
+          await interaction.update({
+            embeds: [embed],
+            components: buttons ? [buttons] : [],
+          });
         }
 
         // loot:{responseType}:{bossId} - Loot priority button

@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import { getDatabase } from '../database/db.js';
 import { requireOfficer, createEmbed, audit } from '../utils.js';
+import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
 import { autoMatchRaiders } from '../functions/raids/autoMatchRaiders.js';
 import { sendAlertForRaidersWithNoUser } from '../functions/raids/sendAlertForRaidersWithNoUser.js';
@@ -116,41 +117,29 @@ export default {
           return;
         }
 
-        // Build pages of raider listings
+        const title = `Raiders (${raiders.length} total)`;
         const lines = raiders.map(
           (r) =>
             `**${r.character_name}** (${r.realm}) - ${r.class ?? 'Unknown'} | ${r.discord_user_id ? `<@${r.discord_user_id}>` : 'Unlinked'}`,
         );
 
-        const pages: string[] = [];
-        let current = '';
-        for (const line of lines) {
-          if ((current + '\n' + line).length > 2000) {
-            pages.push(current);
-            current = line;
-          } else {
-            current = current ? current + '\n' + line : line;
-          }
-        }
-        if (current) pages.push(current);
+        const pages = paginateLines(lines);
 
-        // Send first page as embed
-        const embed = createEmbed(`Raiders (${raiders.length} total)`).setDescription(
-          pages[0],
-        );
-
-        if (pages.length > 1) {
-          embed.setFooter({ text: `Page 1/${pages.length} | SeriouslyCasualBot` });
-        }
-
-        await interaction.reply({ embeds: [embed] });
-
-        // Send remaining pages as follow-ups
-        for (let i = 1; i < pages.length; i++) {
-          const pageEmbed = createEmbed().setDescription(pages[i]).setFooter({
-            text: `Page ${i + 1}/${pages.length} | SeriouslyCasualBot`,
+        if (pages.length === 1) {
+          // Single page - no buttons or cache needed
+          const embed = buildPageEmbed(title, pages[0], 1, 1);
+          await interaction.reply({ embeds: [embed] });
+        } else {
+          // Multiple pages - use buttons and cache
+          const embed = buildPageEmbed(title, pages[0], 1, pages.length);
+          const buttons = buildPageButtons('raiders', 1, pages.length);
+          const { resource: reply } = await interaction.reply({
+            embeds: [embed],
+            components: buttons ? [buttons] : [],
+            withResponse: true,
           });
-          await interaction.followUp({ embeds: [pageEmbed] });
+          const messageId = reply?.message?.id ?? interaction.id;
+          cachePaginatedData(`raiders:${messageId}`, title, pages);
         }
         break;
       }
