@@ -96,58 +96,67 @@ export async function getOrCreateChannel(
     deleteConfig(opts.configKey);
   }
 
-  // 2. Name lookup — iterate targets in preference order (primary name first, then
-  // aliases) so the primary name always wins over an alias when both are present.
-  // This avoids the non-determinism of scanning the cache and asking "is this name
-  // in targets?" (which lets whichever entry the Map happens to yield first win).
-  // We also drop the `as unknown as GuildBasedChannel[]` double-cast by iterating
-  // the cache values() iterator directly; each value is already a GuildBasedChannel.
-  const targets = [opts.name, ...(opts.aliasNames ?? [])];
-  let correctlyTyped: GuildBasedChannel | undefined;
-  const correctlyTypedAll: GuildBasedChannel[] = []; // collect for duplicate-warn
-  const wrongTyped: GuildBasedChannel[] = [];
+  // 2. Name lookup (case-insensitive; checks opts.name first, then each aliasName
+  // in order). Single pass over the cache; we always warn about wrong-type
+  // matches even when a correct match resolves under a different target, so
+  // operators can clean up stray channels.
+  const targets = [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase());
 
-  outer: for (const target of targets) {
-    const lc = target.toLowerCase();
-    const matchesForTarget: GuildBasedChannel[] = [];
-    for (const c of guild.channels.cache.values() as IterableIterator<GuildBasedChannel>) {
-      if (c.name.toLowerCase() !== lc) continue;
-      if (c.type === opts.type) {
-        matchesForTarget.push(c);
-      } else {
-        wrongTyped.push(c);
-      }
-    }
-    if (matchesForTarget.length > 0) {
-      correctlyTypedAll.push(...matchesForTarget);
-      correctlyTyped = matchesForTarget[0];
-      break outer; // stop at first preference-order target that has a correctly-typed match
+  interface NamedMatch {
+    channel: GuildBasedChannel;
+    targetIndex: number;
+  }
+
+  const correctMatches: NamedMatch[] = [];
+  const wrongMatches: NamedMatch[] = [];
+
+  for (const c of guild.channels.cache.values()) {
+    const idx = targets.indexOf(c.name.toLowerCase());
+    if (idx < 0) continue;
+    const match: NamedMatch = { channel: c as GuildBasedChannel, targetIndex: idx };
+    if (c.type === opts.type) {
+      correctMatches.push(match);
+    } else {
+      wrongMatches.push(match);
     }
   }
 
-  if (wrongTyped.length > 0 && !correctlyTyped) {
-    // Only warn about wrong-typed channels when there is no correctly-typed match
-    const ids = wrongTyped.map((c) => c.id).join(', ');
+  if (wrongMatches.length > 0) {
+    const details = wrongMatches
+      .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${m.channel.type})`)
+      .join(', ');
     logger.warn(
       'channels',
-      `Found "${opts.name}" with wrong channel type (expected ${opts.type}); existing channel(s): ${ids}. Will create a correctly-typed channel.`,
+      `Found channel(s) with name matching "${opts.name}"` +
+        (opts.aliasNames?.length ? ' or one of its aliases' : '') +
+        ` but wrong type (expected ${opts.type}): ${details}.`,
     );
   }
 
-  if (correctlyTyped) {
-    if (correctlyTypedAll.length > 1) {
-      const ids = correctlyTypedAll.map((c) => c.id).join(', ');
+  if (correctMatches.length > 0) {
+    // Sort by target priority (primary name beats aliases, in order).
+    correctMatches.sort((a, b) => a.targetIndex - b.targetIndex);
+    const resolved = correctMatches[0].channel;
+
+    // If multiple correctly-typed channels exist under the *same* target
+    // (true duplicate), warn.
+    const sameTargetDuplicates = correctMatches.filter(
+      (m) => m.targetIndex === correctMatches[0].targetIndex,
+    );
+    if (sameTargetDuplicates.length > 1) {
+      const ids = sameTargetDuplicates.map((m) => m.channel.id).join(', ');
       logger.warn(
         'channels',
-        `Multiple channels named "${opts.name}" found: ${ids}. Using the first.`,
+        `Multiple channels named "${resolved.name}" found: ${ids}. Using the first.`,
       );
     }
-    writeConfig(opts.configKey, correctlyTyped.id);
+
+    writeConfig(opts.configKey, resolved.id);
     logger.info(
       'channels',
-      `Reusing existing channel "${opts.name}" (${correctlyTyped.id}) for ${opts.configKey}`,
+      `Reusing existing channel "${resolved.name}" (${resolved.id}) for ${opts.configKey}`,
     );
-    return correctlyTyped;
+    return resolved;
   }
 
   // 3. Parent category

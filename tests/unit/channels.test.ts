@@ -4,6 +4,7 @@ import type { Guild } from 'discord.js';
 import { createTables } from '../../src/database/schema.js';
 import { getDatabase, closeDatabase } from '../../src/database/db.js';
 import { getCategoryByName, getOrCreateChannel } from '../../src/functions/channels.js';
+import { logger } from '../../src/services/logger.js';
 
 type MockChannel = {
   id: string;
@@ -287,6 +288,29 @@ describe('getOrCreateChannel — name lookup', () => {
     expect(result.id).toBe('cat-apps');
     expect(guild.channels.create).not.toHaveBeenCalled();
     expect(getConfig('applications_category_id')).toBe('cat-apps');
+  });
+
+  it('warns about wrong-typed primary-name match even when alias has a correct match', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const guild = mkGuild([
+      mkChannel({ id: 'ch-wrong-primary', name: 'guild-info', type: ChannelType.GuildForum }),
+      mkChannel({ id: 'ch-welcome', name: 'welcome', type: ChannelType.GuildText }),
+    ]);
+
+    const result = await getOrCreateChannel(guild, {
+      name: 'guild-info',
+      type: ChannelType.GuildText,
+      categoryName: null,
+      configKey: 'guild_info_channel_id',
+      aliasNames: ['welcome'],
+    });
+
+    expect(result.id).toBe('ch-welcome');
+    expect(warnSpy).toHaveBeenCalledWith(
+      'channels',
+      expect.stringContaining('wrong type'),
+    );
+    warnSpy.mockRestore();
   });
 });
 
