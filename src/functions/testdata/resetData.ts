@@ -47,6 +47,8 @@ export function resetData(db: Database.Database): void {
 
   tx();
 
-  // Re-seed defaults (seedDatabase checks if data already exists; since we just cleared, it will seed)
+  // Re-seed defaults outside the delete transaction. If seedDatabase throws, the
+  // tables will be empty — acceptable for a dev-only command since /testdata reset
+  // can simply be re-run, but worth knowing if you're debugging a half-seeded state.
   seedDatabase(db);
 }

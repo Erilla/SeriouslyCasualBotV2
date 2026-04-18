@@ -33,7 +33,10 @@ export async function resumeSessions(client: Client): Promise<void> {
       .prepare('SELECT COUNT(*) as count FROM application_answers WHERE application_id = ?')
       .get(app.id) as { count: number };
 
-    // If all questions are answered the user was at the summary stage - skip
+    // If all questions are answered the user was at the summary stage. The
+    // summary message has persistent Confirm/Edit/Cancel buttons (custom IDs),
+    // so Discord will route the click to interactionCreate without needing an
+    // active in-memory session. We skip these rather than re-sending the summary.
     if (questions.length > 0 && count >= questions.length) {
       logger.debug(
         'Applications',

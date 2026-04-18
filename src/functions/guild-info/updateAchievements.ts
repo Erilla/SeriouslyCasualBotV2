@@ -165,7 +165,7 @@ function buildManualSections(rows: AchievementsManualRow[]): AchievementSection[
         const isCE = r.result.includes('CE');
         const result = r.result.replace(/\*\*/g, '').replace(/^CE\s*/, '').trim();
         return { raid: r.raid, progress: r.progress, result, isCE };
-      }).reverse(),
+      }).reverse(), // DB rows are in sort_order (oldest first); display is newest-first within each expansion
     });
   }
 

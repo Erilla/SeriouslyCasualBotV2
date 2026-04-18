@@ -43,118 +43,54 @@ export default {
     if (!requireOfficer(interaction)) return;
 
     const sub = interaction.options.getSubcommand();
+    const db = getDatabase();
 
-    if (sub === 'seed_raiders') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      try {
-        const db = getDatabase();
+    const handlers: Record<string, () => string> = {
+      seed_raiders: () => {
         seedRaiders(db);
-        logger.info('TestData', 'Seeded 15 mock raiders');
-        await interaction.editReply({ content: 'Seeded 15 mock raiders into the database.' });
-      } catch (err) {
-        logger.error('TestData', 'Failed to seed raiders', err as Error);
-        await interaction.editReply({ content: 'Failed to seed raiders. Check logs for details.' });
-      }
-
-      return;
-    }
-
-    if (sub === 'seed_application') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      try {
-        const db = getDatabase();
-        const result = seedApplication(db);
-        logger.info('TestData', `Seeded mock application ID ${result.applicationId}`);
-        await interaction.editReply({
-          content: `Seeded 1 mock application (ID: ${result.applicationId}) with ${result.questionCount} answers and 2 votes.`,
-        });
-      } catch (err) {
-        logger.error('TestData', 'Failed to seed application', err as Error);
-        await interaction.editReply({ content: 'Failed to seed application. Check logs for details.' });
-      }
-
-      return;
-    }
-
-    if (sub === 'seed_trial') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      try {
-        const db = getDatabase();
-        const result = seedTrial(db);
-        logger.info('TestData', `Seeded mock trial ID ${result.trialId}`);
-        await interaction.editReply({
-          content: `Seeded 1 mock trial (ID: ${result.trialId}) with ${result.alertCount} trial alerts.`,
-        });
-      } catch (err) {
-        logger.error('TestData', 'Failed to seed trial', err as Error);
-        await interaction.editReply({ content: 'Failed to seed trial. Check logs for details.' });
-      }
-
-      return;
-    }
-
-    if (sub === 'seed_epgp') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      try {
-        const db = getDatabase();
-        const result = seedEpgp(db);
-        logger.info('TestData', `Seeded EPGP data for ${result.raiderCount} raiders`);
-        await interaction.editReply({
-          content: [
-            `Seeded EPGP data for **${result.raiderCount}** raiders:`,
-            `• ${result.effortPointsInserted} effort point entries`,
-            `• ${result.gearPointsInserted} gear point entries`,
-            `• ${result.lootHistoryInserted} loot history entries`,
-            `• ${result.uploadHistoryInserted} upload history record`,
-          ].join('\n'),
-        });
-      } catch (err) {
-        logger.error('TestData', 'Failed to seed EPGP', err as Error);
-        const message = err instanceof Error ? err.message : 'Check logs for details.';
-        await interaction.editReply({ content: `Failed to seed EPGP. ${message}` });
-      }
-
-      return;
-    }
-
-    if (sub === 'seed_loot') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      try {
-        const db = getDatabase();
-        const result = seedLoot(db);
-        logger.info('TestData', `Seeded ${result.postsInserted} mock loot posts`);
-        await interaction.editReply({
-          content: `Seeded ${result.postsInserted} mock loot posts (boss IDs 99901–99903).`,
-        });
-      } catch (err) {
-        logger.error('TestData', 'Failed to seed loot', err as Error);
-        await interaction.editReply({ content: 'Failed to seed loot posts. Check logs for details.' });
-      }
-
-      return;
-    }
-
-    if (sub === 'reset') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      try {
-        const db = getDatabase();
+        return 'Seeded 15 mock raiders into the database.';
+      },
+      seed_application: () => {
+        const r = seedApplication(db);
+        return `Seeded 1 mock application (ID: ${r.applicationId}) with ${r.questionCount} answers and 2 votes.`;
+      },
+      seed_trial: () => {
+        const r = seedTrial(db);
+        return `Seeded 1 mock trial (ID: ${r.trialId}) with ${r.alertCount} trial alerts.`;
+      },
+      seed_epgp: () => {
+        const r = seedEpgp(db);
+        return [
+          `Seeded EPGP data for **${r.raiderCount}** raiders:`,
+          `• ${r.effortPointsInserted} effort point entries`,
+          `• ${r.gearPointsInserted} gear point entries`,
+          `• ${r.lootHistoryInserted} loot history entries`,
+          `• ${r.uploadHistoryInserted} upload history record`,
+        ].join('\n');
+      },
+      seed_loot: () => {
+        const r = seedLoot(db);
+        return `Seeded ${r.postsInserted} mock loot posts (boss IDs 99901-99903).`;
+      },
+      reset: () => {
         resetData(db);
-        logger.info('TestData', 'Reset all data and re-seeded defaults');
-        await interaction.editReply({
-          content: 'All data wiped and defaults re-seeded successfully.',
-        });
-      } catch (err) {
-        logger.error('TestData', 'Failed to reset data', err as Error);
-        await interaction.editReply({ content: 'Failed to reset data. Check logs for details.' });
-      }
+        return 'All data wiped and defaults re-seeded successfully.';
+      },
+    };
 
-      return;
+    const handler = handlers[sub];
+    if (!handler) return;
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    try {
+      const message = handler();
+      logger.info('TestData', `${sub}: ${message}`);
+      await interaction.editReply({ content: message });
+    } catch (err) {
+      logger.error('TestData', `Failed to run ${sub}`, err as Error);
+      const detail = err instanceof Error ? err.message : 'Check logs for details.';
+      await interaction.editReply({ content: `Failed to run ${sub}. ${detail}` });
     }
   },
 };

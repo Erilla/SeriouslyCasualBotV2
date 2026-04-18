@@ -198,14 +198,14 @@ export default {
         } else {
           const embed = buildPageEmbed(title, pages[0], 1, pages.length);
           const buttons = buildPageButtons('applications', 1, pages.length);
-          const { resource: reply } = await interaction.reply({
+          const { resource } = await interaction.reply({
             embeds: [embed],
             components: buttons ? [buttons] : [],
             flags: MessageFlags.Ephemeral,
             withResponse: true,
           });
-          const messageId = reply?.message?.id ?? interaction.id;
-          cachePaginatedData(`applications:${messageId}`, title, pages);
+          // withResponse: true guarantees resource.message is present
+          cachePaginatedData(`applications:${resource!.message!.id}`, title, pages);
         }
         break;
       }

@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync, statSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 
-const BACKUP_DIR = 'backups';
+/** Absolute path to backup directory, anchored to cwd at import time. */
+const BACKUP_DIR = resolve(process.cwd(), 'backups');
 const MAX_BACKUPS = 7;
 
 export async function dailyBackup(): Promise<void> {

@@ -22,6 +22,12 @@ function setEpgpConfig(key: string, value: string): void {
   db.prepare('INSERT OR REPLACE INTO epgp_config (key, value) VALUES (?, ?)').run(key, value);
 }
 
+/** Remove the legacy single body_message_id key if it exists (replaced by body_message_ids JSON array). */
+function cleanupLegacyBodyKey(): void {
+  const db = getDatabase();
+  db.prepare("DELETE FROM epgp_config WHERE key = 'body_message_id'").run();
+}
+
 async function getEpgpChannel(client: Client): Promise<TextChannel | null> {
   const db = getDatabase();
   const channelConfig = db
@@ -63,9 +69,7 @@ export async function createDisplayPost(client: Client): Promise<void> {
   const footerMsg = await channel.send(footer);
   setEpgpConfig('footer_message_id', footerMsg.id);
 
-  // Clean up legacy single body_message_id if it exists
-  const db = getDatabase();
-  db.prepare("DELETE FROM epgp_config WHERE key = 'body_message_id'").run();
+  cleanupLegacyBodyKey();
 
   logger.info('EPGP', `Created EPGP display post (${bodies.length} body message(s)).`);
 }
@@ -138,11 +142,7 @@ export async function updateDisplayPost(client: Client): Promise<void> {
 
   setEpgpConfig('body_message_ids', JSON.stringify(newBodyIds));
 
-  // Clean up legacy key
-  if (legacyBodyMsgId) {
-    const db = getDatabase();
-    db.prepare("DELETE FROM epgp_config WHERE key = 'body_message_id'").run();
-  }
+  if (legacyBodyMsgId) cleanupLegacyBodyKey();
 
   // Update footer
   try {

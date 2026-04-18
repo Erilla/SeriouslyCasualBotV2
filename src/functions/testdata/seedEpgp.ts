@@ -38,7 +38,8 @@ export function seedEpgp(db: Database.Database): SeedEpgpResult {
     let gpCount = 0;
 
     // 3 EP entries per raider, one per week going back
-    for (const raider of raiders) {
+    for (let idx = 0; idx < raiders.length; idx++) {
+      const raider = raiders[idx];
       for (let week = 0; week < 3; week++) {
         const weeksAgo = week + 1;
         const ts = new Date();
@@ -49,7 +50,6 @@ export function seedEpgp(db: Database.Database): SeedEpgpResult {
       }
 
       // GP entries for first half of raiders only (simulates varied loot history)
-      const idx = raiders.indexOf(raider);
       if (idx < Math.ceil(raiders.length / 2)) {
         const ts = new Date();
         ts.setUTCDate(ts.getUTCDate() - 14);

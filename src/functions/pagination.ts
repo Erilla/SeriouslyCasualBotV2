@@ -11,7 +11,10 @@ const DEFAULT_MAX_CHARS = 1800;
 
 /**
  * Split an array of lines into pages that each fit within maxChars.
- * Returns ['No results.'] for empty input.
+ *
+ * Empty input returns `['No results.']` as a single-page fallback so callers
+ * don't need to special-case the empty state when building embeds. Callers
+ * that want different empty-state handling should check `lines.length` first.
  */
 export function paginateLines(lines: string[], maxChars = DEFAULT_MAX_CHARS): string[] {
   if (lines.length === 0) return ['No results.'];
@@ -97,11 +100,33 @@ interface CacheEntry {
 
 const paginationCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_SIZE = 100;
+
+/** Remove expired entries. Called on each write to prevent unbounded growth. */
+function sweepExpired(): void {
+  const now = Date.now();
+  for (const [k, v] of paginationCache) {
+    if (now > v.expiresAt) paginationCache.delete(k);
+  }
+}
 
 /**
  * Store paginated data in the in-memory cache with a 5-minute TTL.
+ * Evicts expired entries on every write; hard-caps at 100 entries.
  */
 export function cachePaginatedData(key: string, title: string, pages: string[]): void {
+  sweepExpired();
+
+  // If still over capacity after sweep, drop oldest entries
+  if (paginationCache.size >= MAX_CACHE_SIZE) {
+    const toRemove = paginationCache.size - MAX_CACHE_SIZE + 1;
+    const iter = paginationCache.keys();
+    for (let i = 0; i < toRemove; i++) {
+      const oldest = iter.next().value;
+      if (oldest) paginationCache.delete(oldest);
+    }
+  }
+
   paginationCache.set(key, {
     title,
     pages,

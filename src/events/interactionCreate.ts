@@ -386,7 +386,7 @@ export default {
           const commandName = parts[1];
           const page = parseInt(parts[2], 10);
 
-          const cacheKey = `${commandName}:${interaction.message.interaction?.id ?? interaction.message.id}`;
+          const cacheKey = `${commandName}:${interaction.message.id}`;
           const data = getCachedPage(cacheKey, page);
 
           if (!data) {

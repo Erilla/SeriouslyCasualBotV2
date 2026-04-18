@@ -133,13 +133,13 @@ export default {
           // Multiple pages - use buttons and cache
           const embed = buildPageEmbed(title, pages[0], 1, pages.length);
           const buttons = buildPageButtons('raiders', 1, pages.length);
-          const { resource: reply } = await interaction.reply({
+          const { resource } = await interaction.reply({
             embeds: [embed],
             components: buttons ? [buttons] : [],
             withResponse: true,
           });
-          const messageId = reply?.message?.id ?? interaction.id;
-          cachePaginatedData(`raiders:${messageId}`, title, pages);
+          // withResponse: true guarantees resource.message is present
+          cachePaginatedData(`raiders:${resource!.message!.id}`, title, pages);
         }
         break;
       }
