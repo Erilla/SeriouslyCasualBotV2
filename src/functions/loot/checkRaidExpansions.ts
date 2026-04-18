@@ -1,4 +1,4 @@
-import { type Client, ChannelType } from 'discord.js';
+import { type Client, ChannelType, type TextChannel } from 'discord.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
@@ -6,14 +6,20 @@ import { getRaidStaticData } from '../../services/raiderio.js';
 import { addLootPost } from './addLootPost.js';
 
 export async function checkRaidExpansions(client: Client): Promise<void> {
-  const guild = await client.guilds.fetch(config.guildId);
-  const channel = await getOrCreateChannel(guild, {
-    name: 'loot',
-    type: ChannelType.GuildText,
-    categoryName: 'Raiders',
-    configKey: 'loot_channel_id',
-    aliasNames: ['loot-priorities'],
-  });
+  let channel: TextChannel;
+  try {
+    const guild = await client.guilds.fetch(config.guildId);
+    channel = await getOrCreateChannel(guild, {
+      name: 'loot',
+      type: ChannelType.GuildText,
+      categoryName: 'Raiders',
+      configKey: 'loot_channel_id',
+      aliasNames: ['loot-priorities'],
+    });
+  } catch (error) {
+    logger.error('Loot', 'Failed to resolve loot channel', error as Error);
+    return;
+  }
 
   const now = new Date();
   let expansion = 9;

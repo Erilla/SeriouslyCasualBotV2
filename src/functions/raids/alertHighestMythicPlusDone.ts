@@ -1,4 +1,4 @@
-import { type Client, ChannelType, AttachmentBuilder } from 'discord.js';
+import { type Client, ChannelType, AttachmentBuilder, type TextChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { getHistoricalData, type WowAuditHistoricalEntry } from '../../services/wowaudit.js';
 import { getWeeklyMythicPlusRuns } from '../../services/raiderio.js';
@@ -158,13 +158,19 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
   });
 
   // Get the weekly-check channel
-  const guild = await client.guilds.fetch(config.guildId);
-  const channel = await getOrCreateChannel(guild, {
-    name: 'weekly-check',
-    type: ChannelType.GuildText,
-    categoryName: 'Overlords',
-    configKey: 'weekly_check_channel_id',
-  });
+  let channel: TextChannel;
+  try {
+    const guild = await client.guilds.fetch(config.guildId);
+    channel = await getOrCreateChannel(guild, {
+      name: 'weekly-check',
+      type: ChannelType.GuildText,
+      categoryName: 'Overlords',
+      configKey: 'weekly_check_channel_id',
+    });
+  } catch (error) {
+    logger.error('WeeklyCheck', 'Failed to resolve weekly-check channel', error as Error);
+    return;
+  }
 
   try {
     await channel.send({

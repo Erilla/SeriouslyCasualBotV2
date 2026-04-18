@@ -1,6 +1,7 @@
 import {
   type Client,
   ChannelType,
+  type TextChannel,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -18,13 +19,19 @@ export async function sendAlertForRaidersWithNoUser(
   newUnlinkedRaiders: RaiderRow[],
   autoMatches: AutoMatch[],
 ): Promise<void> {
-  const guild = await client.guilds.fetch(config.guildId);
-  const channel = await getOrCreateChannel(guild, {
-    name: 'raider-setup',
-    type: ChannelType.GuildText,
-    categoryName: 'SeriouslyCasual Bot',
-    configKey: 'raider_setup_channel_id',
-  });
+  let channel: TextChannel;
+  try {
+    const guild = await client.guilds.fetch(config.guildId);
+    channel = await getOrCreateChannel(guild, {
+      name: 'raider-setup',
+      type: ChannelType.GuildText,
+      categoryName: 'SeriouslyCasual Bot',
+      configKey: 'raider_setup_channel_id',
+    });
+  } catch (error) {
+    logger.error('RaiderAlerts', 'Failed to resolve raider-setup channel', error as Error);
+    return;
+  }
 
   const db = getDatabase();
   const autoMatchMap = new Map(
