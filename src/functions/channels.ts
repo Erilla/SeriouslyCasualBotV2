@@ -245,11 +245,12 @@ async function resolveChannelImpl(
   }
 
   // 4. Create — categories cannot have a parent, so guard against passing one.
+  // createOptions is spread first so our explicit name/type/parent always win.
   const created = (await guild.channels.create({
+    ...opts.createOptions,
     name: opts.name,
     type: opts.type,
-    parent: opts.type === ChannelType.GuildCategory ? undefined : parentId,
-    ...opts.createOptions,
+    parent: opts.type === ChannelType.GuildCategory ? undefined : (parentId ?? opts.createOptions?.parent),
   })) as GuildBasedChannel;
 
   writeConfig(opts.configKey, created.id);
