@@ -100,6 +100,8 @@ async function handleQuestionResponse(message: Message, session: ApplicationSess
   db.prepare('INSERT INTO application_answers (application_id, question_id, answer) VALUES (?, ?, ?)')
     .run(session.applicationId, currentQuestion.id, message.content);
 
+  logger.debug('Applications', `Answer recorded for application #${session.applicationId}, question #${currentQuestion.id} (${session.questionIndex + 1}/${getQuestions().length})`);
+
   // Set character_name from the first answer
   if (session.questionIndex === 0) {
     db.prepare('UPDATE applications SET character_name = ? WHERE id = ?')
@@ -142,6 +144,8 @@ async function handleEditNumberResponse(message: Message, session: ApplicationSe
   session.editMode = 'awaiting_answer';
   session.editQuestionIndex = num - 1;
 
+  logger.debug('Applications', `User ${message.author.id} entered edit mode for question ${num} on application #${session.applicationId}`);
+
   const question = questions[num - 1];
   await message.author.send(`**Editing Answer ${num}:**\n${question.question}`);
 }
@@ -160,9 +164,11 @@ async function handleEditAnswerResponse(message: Message, session: ApplicationSe
   if (existingAnswer) {
     db.prepare('UPDATE application_answers SET answer = ? WHERE id = ?')
       .run(message.content, existingAnswer.id);
+    logger.info('Applications', `Edited answer for application #${session.applicationId}, question #${question.id}`);
   } else {
     db.prepare('INSERT INTO application_answers (application_id, question_id, answer) VALUES (?, ?, ?)')
       .run(session.applicationId, question.id, message.content);
+    logger.info('Applications', `Inserted edited answer for application #${session.applicationId}, question #${question.id} (no prior answer)`);
   }
 
   // Update character_name if first answer was edited
@@ -214,11 +220,10 @@ export async function showSummary(user: User, applicationId: number): Promise<vo
   // Split across messages if > 2000 chars
   const messages = splitMessage(summary);
 
-  for (let i = 0; i < messages.length - 1; i++) {
-    await user.send(messages[i]);
+  for (const msg of messages) {
+    await user.send(msg);
   }
 
-  // Add buttons to the last message
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`application:edit:${applicationId}`)
@@ -234,7 +239,11 @@ export async function showSummary(user: User, applicationId: number): Promise<vo
       .setStyle(ButtonStyle.Danger),
   );
 
-  await user.send({ content: messages[messages.length - 1], components: [row] });
+  const confirmPrompt =
+    'We try to review and respond to applications as quickly as we can. Please be warned that it can take up to a week for us to come to a decision.\n\n' +
+    'Would you like to submit your application?';
+
+  await user.send({ content: confirmPrompt, components: [row] });
 }
 
 /**

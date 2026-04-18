@@ -1,19 +1,27 @@
 import type Database from 'better-sqlite3';
 
 const DEFAULT_QUESTIONS = [
-  { question: 'What is your character name, realm, and class/spec?', sort_order: 1 },
-  { question: 'Tell us about your raiding experience and previous guilds.', sort_order: 2 },
-  { question: 'What logs do you have available? Please provide a WarcraftLogs link.', sort_order: 3 },
-  { question: 'What is your raid availability and can you commit to our schedule?', sort_order: 4 },
-  { question: 'Is there anything else you would like to tell us?', sort_order: 5 },
+  { question: "What class and (if you're a multi-role class) spec are you applying as?", sort_order: 1 },
+  { question: 'Please link your Raider.IO profile of the character you wish to apply with', sort_order: 2 },
+  { question: 'Tell us about yourself, this should include your age, location and any other aspects about your life that you are willing to share', sort_order: 3 },
+  { question: 'How did you find us and what made you want to apply to SeriouslyCasual? (Include any known SeriouslyCasual members here)', sort_order: 4 },
+  { question: 'What is your current and past experience in raiding at the highest level? This should only address MYTHIC progression obtained whilst the content was current! Please include logs where applicable and available', sort_order: 5 },
+  { question: 'We aim to achieve Cutting Edge in every raid tier. If you have not done this before, please include anything here that showcases your in game ability to a similar level (e.g. mythic plus logs, PvP achievements, notable heroic logs or any other challenging content)', sort_order: 6 },
+  { question: 'Could you commit to both a Wednesday and Sunday raid each week, and is there anything that might interfere with our raid schedule?', sort_order: 7 },
+  { question: "Do you have an offspec or any other classes you'd be able to play and willing to raid as? If so please provide logs (Mythic logs preferred)", sort_order: 8 },
+  { question: 'Would you like to include any further information to support your application? This is the final question after which you can submit all answers provided.', sort_order: 9 },
 ];
 
 const MOCK_ANSWERS = [
-  'Testcharacter, Silvermoon-EU, Warrior (Arms)',
-  'I have been raiding since Wrath of the Lich King. Most recently I was in <Eternal Radiance> on Silvermoon where we achieved Cutting Edge in the previous tier.',
-  'https://www.warcraftlogs.com/character/eu/silvermoon/testcharacter — 95th percentile parses across the board.',
-  'Yes, Wednesday and Sunday evenings suit me perfectly. I have no foreseeable schedule conflicts.',
-  'I am a quick learner, bring my own consumables, and always come prepared with boss research done in advance.',
+  'Warrior (Arms)',
+  'https://raider.io/characters/eu/silvermoon/testcharacter',
+  "I'm 28, based in the UK, work in software, and enjoy hiking on weekends.",
+  "Found you via Raider.IO recruitment listings. A friend who used to raid with you (Someguy) spoke highly of the guild's atmosphere.",
+  'Cutting Edge Mythic Queen Ansurek (Nerub-ar Palace), 6/8M Aberrus while current. Logs: https://www.warcraftlogs.com/character/eu/silvermoon/testcharacter',
+  "I've pushed 3.2k+ M+ rating this season and have heroic logs sitting at 90th+ percentile on most bosses.",
+  'Yes, both evenings work reliably. No known conflicts with the raid schedule.',
+  'I can swap to Protection for off-tank duties and have a geared resto druid alt (mythic logs available on request).',
+  "Thanks for considering my application — I'm keen to contribute and learn from the team.",
 ];
 
 export interface SeedApplicationResult {

@@ -74,5 +74,7 @@ export async function generateTranscript(
   const text = lines.join('\n');
   const buffer = Buffer.from(text, 'utf-8');
 
+  logger.info('Applications', `Transcript generated for channel ${channel.id}: ${allMessages.length} messages, ${buffer.length} bytes`);
+
   return { text, buffer };
 }

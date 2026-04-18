@@ -161,12 +161,11 @@ function buildManualSections(rows: AchievementsManualRow[]): AchievementSection[
   for (const [expansion, expRows] of grouped) {
     sections.push({
       expansionLabel: getExpansionName(expansion),
-      rows: expRows.map((r) => ({
-        raid: r.raid,
-        progress: r.progress,
-        result: r.result.replace(/\*\*/g, ''),
-        isCE: r.result.includes('CE'),
-      })),
+      rows: expRows.map((r) => {
+        const isCE = r.result.includes('CE');
+        const result = r.result.replace(/\*\*/g, '').replace(/^CE\s*/, '').trim();
+        return { raid: r.raid, progress: r.progress, result, isCE };
+      }).reverse(),
     });
   }
 
@@ -179,38 +178,49 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
   const sections: AchievementSection[] = [];
   let expansionId = 6;
 
+  logger.info('Achievements', 'Fetching API achievements starting from expansion 6');
+
   while (true) {
     let staticData;
     try {
       staticData = await getRaidStaticData(expansionId);
     } catch {
-      // 400 or other error means no more expansions
+      logger.debug('Achievements', `No data for expansion ${expansionId}, stopping`);
       break;
     }
 
     const raids = (staticData.raids ?? []) as RaidStaticRaid[];
     if (raids.length === 0) break;
 
-    // Sort raids by end date (ascending) so we process chronologically
+    const expName = getExpansionName(expansionId);
+    logger.info('Achievements', `Processing ${expName}: ${raids.length} raids found`);
+
+    // Sort raids by end date descending (most recent first, ongoing at top)
     const sortedRaids = [...raids].sort((a, b) => {
       const endA = a.ends?.eu ?? a.ends?.us ?? '';
       const endB = b.ends?.eu ?? b.ends?.us ?? '';
       if (!endA && !endB) return 0;
-      if (!endA) return 1;
-      if (!endB) return -1;
-      return endA.localeCompare(endB);
+      if (!endA) return -1; // ongoing raids sort to top
+      if (!endB) return 1;
+      return endB.localeCompare(endA);
     });
 
     const sectionRows: AchievementRow[] = [];
 
     for (const raid of sortedRaids) {
       // Skip Fated/Awakened raids
-      if (raid.name.startsWith('Fated') || raid.name.startsWith('Awakened')) continue;
+      if (raid.name.startsWith('Fated') || raid.name.startsWith('Awakened')) {
+        logger.debug('Achievements', `Skipping ${raid.name} (Fated/Awakened)`);
+        continue;
+      }
 
       try {
         const rankings = await getRaidRankings(raid.slug) as unknown as RaidRankingEntry[];
 
-        if (!rankings || rankings.length === 0) continue;
+        if (!rankings || rankings.length === 0) {
+          logger.debug('Achievements', `No rankings for ${raid.name}`);
+          continue;
+        }
 
         // Use the ranking entry with the most encounters defeated
         // Guard against encountersDefeated being an array (API may return either)
@@ -236,7 +246,9 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
 
         const progress = `${killedBosses}/${totalBosses}M`;
         const rank = typeof best.rank === 'number' ? best.rank : 0;
-        const result = isCE ? `CE WR ${rank}` : `WR ${rank}`;
+        const result = rank > 0 ? `WR ${rank}` : '';
+
+        logger.info('Achievements', `  ${raid.name}: ${progress} ${isCE ? 'CE' : ''} ${result}`);
 
         sectionRows.push({
           raid: raid.name,
@@ -245,13 +257,13 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
           isCE,
         });
       } catch (error) {
-        logger.debug('guild-info', `Failed to fetch rankings for ${raid.slug}: ${error}`);
+        logger.warn('Achievements', `Failed to fetch rankings for ${raid.name} (${raid.slug}): ${error}`);
       }
     }
 
     if (sectionRows.length > 0) {
       sections.push({
-        expansionLabel: getExpansionName(expansionId),
+        expansionLabel: expName,
         rows: sectionRows,
       });
     }
@@ -259,6 +271,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
     expansionId++;
   }
 
+  logger.info('Achievements', `Fetched ${sections.length} expansion sections with ${sections.reduce((sum, s) => sum + s.rows.length, 0)} total raids`);
   return sections;
 }
 
@@ -297,18 +310,24 @@ function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
 // ─── Image Rendering ────────────────────────────────────────────
 
 function renderAchievementsImage(sections: AchievementSection[], title: string): Buffer {
-  const PADDING = 24;
-  const ROW_HEIGHT = 28;
-  const HEADER_HEIGHT = 44;
-  const SECTION_GAP = 16;
-  const FONT_SIZE = 16;
-  const HEADER_FONT_SIZE = 18;
-  const WIDTH = 1000;
+  const PADDING = 32;
+  const ROW_HEIGHT = 38;
+  const HEADER_HEIGHT = 56;
+  const SECTION_GAP = 20;
+  const FONT_SIZE = 22;
+  const HEADER_FONT_SIZE = 24;
+  const WIDTH = 1400;
 
   // Column positions
   const COL_RAID = PADDING;
-  const COL_PROGRESS = 640;
-  const COL_RESULT = 800;
+  const COL_PROGRESS = 720;
+  const COL_CE = 900;
+  const COL_RESULT = 1060;
+
+  // CE badge dimensions
+  const CE_BADGE_W = 54;
+  const CE_BADGE_H = 26;
+  const CE_BADGE_RADIUS = 5;
 
   // Calculate total height
   let totalRows = 0;
@@ -331,6 +350,7 @@ function renderAchievementsImage(sections: AchievementSection[], title: string):
   ctx.font = `bold ${HEADER_FONT_SIZE}px sans-serif`;
   ctx.fillText('RAID', COL_RAID, PADDING + 20);
   ctx.fillText('PROGRESS', COL_PROGRESS, PADDING + 20);
+  ctx.fillText('CE', COL_CE + 10, PADDING + 20);
   ctx.fillText('WORLD RANK', COL_RESULT, PADDING + 20);
 
   // Header underline
@@ -360,6 +380,24 @@ function renderAchievementsImage(sections: AchievementSection[], title: string):
       ctx.fillText(row.raid, COL_RAID, y);
       ctx.fillText(row.progress, COL_PROGRESS, y);
       ctx.fillText(row.result, COL_RESULT, y);
+
+      // CE badge
+      if (row.isCE) {
+        const badgeX = COL_CE;
+        const badgeY = y - CE_BADGE_H + 4;
+
+        // Rounded rectangle background
+        ctx.beginPath();
+        ctx.roundRect(badgeX, badgeY, CE_BADGE_W, CE_BADGE_H, CE_BADGE_RADIUS);
+        ctx.fillStyle = '#248046';
+        ctx.fill();
+
+        // CE text centered in badge
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold 16px sans-serif`;
+        const textWidth = ctx.measureText('CE').width;
+        ctx.fillText('CE', badgeX + (CE_BADGE_W - textWidth) / 2, y - 2);
+      }
 
       y += ROW_HEIGHT;
     }

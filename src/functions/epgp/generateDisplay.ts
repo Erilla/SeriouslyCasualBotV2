@@ -2,6 +2,7 @@
  * Generate the 3-message CSS code block display for EPGP standings.
  */
 
+import { logger } from '../../services/logger.js';
 import { getAllPoints } from './calculatePoints.js';
 
 function pad(str: string, width: number): string {
@@ -20,10 +21,22 @@ function formatDate(isoString: string): string {
   return d.toUTCString();
 }
 
+/** Discord message content limit. */
+const MAX_MESSAGE_CHARS = 2000;
+/** Overhead from code block wrapper: ```css\n ... \n``` */
+const CODE_BLOCK_OVERHEAD = '```css\n'.length + '\n```'.length;
+
+export interface EpgpDisplay {
+  header: string;
+  bodies: string[];
+  footer: string;
+}
+
 export function generateDisplay(
   tierToken?: string | null,
   armourType?: string | null,
-): [string, string, string] {
+): EpgpDisplay {
+  logger.debug('EPGP', `Generating display (tierToken=${tierToken ?? 'none'}, armourType=${armourType ?? 'none'})`);
   const data = getAllPoints(tierToken, armourType);
 
   // ─── Header ─────────────────────────────────────────────
@@ -52,8 +65,27 @@ export function generateDisplay(
     lines.push(`${name} ${pad(epStr, 13)} ${pad(gpStr, 13)} ${prStr}`);
   }
 
-  const bodyContent = lines.length > 0 ? lines.join('\n') : 'No EPGP data available.';
-  const body = '```css\n' + bodyContent + '\n```';
+  // Split body into multiple messages if content exceeds Discord's 2000-char limit
+  const bodies: string[] = [];
+  if (lines.length === 0) {
+    bodies.push('```css\nNo EPGP data available.\n```');
+  } else {
+    const maxContentChars = MAX_MESSAGE_CHARS - CODE_BLOCK_OVERHEAD;
+    let current = '';
+
+    for (const line of lines) {
+      const candidate = current ? current + '\n' + line : line;
+      if (candidate.length > maxContentChars && current) {
+        bodies.push('```css\n' + current + '\n```');
+        current = line;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) {
+      bodies.push('```css\n' + current + '\n```');
+    }
+  }
 
   // ─── Footer ─────────────────────────────────────────────
   const lastUpload = data.lastUploadedDate ? formatDate(data.lastUploadedDate) : 'Never';
@@ -65,5 +97,6 @@ export function generateDisplay(
     `[Cutoff Date: ${cutoff}]\n` +
     '```';
 
-  return [header, body, footer];
+  logger.debug('EPGP', `Display generated with ${data.raiders.length} raiders across ${bodies.length} body message(s)`);
+  return { header, bodies, footer };
 }

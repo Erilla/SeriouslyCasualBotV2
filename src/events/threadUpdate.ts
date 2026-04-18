@@ -1,7 +1,7 @@
 import type { ThreadChannel } from 'discord.js';
 import { getDatabase } from '../database/db.js';
 import { logger } from '../services/logger.js';
-import type { TrialRow } from '../types/index.js';
+import type { ApplicationRow, TrialRow } from '../types/index.js';
 
 export default {
   name: 'threadUpdate',
@@ -19,19 +19,44 @@ export default {
       .prepare("SELECT * FROM trials WHERE thread_id = ? AND status IN ('active', 'promoted')")
       .get(newThread.id) as TrialRow | undefined;
 
-    if (!trial) return;
+    if (trial) {
+      // Unarchive the trial thread
+      try {
+        await newThread.setArchived(false);
+        logger.info(
+          'Trials',
+          `Unarchived trial thread for "${trial.character_name}" (#${trial.id})`,
+        );
+      } catch (error) {
+        logger.error(
+          'Trials',
+          `Failed to unarchive trial thread ${newThread.id}: ${error}`,
+          error as Error,
+        );
+      }
+      return;
+    }
 
-    // Unarchive the trial thread
+    // Check if this thread belongs to an active application
+    const application = db
+      .prepare(
+        "SELECT * FROM applications WHERE (forum_post_id = ? OR thread_id = ?) AND status IN ('in_progress', 'submitted', 'active')",
+      )
+      .get(newThread.id, newThread.id) as ApplicationRow | undefined;
+
+    if (!application) return;
+
+    // Unarchive the application thread
     try {
       await newThread.setArchived(false);
       logger.info(
-        'Trials',
-        `Unarchived trial thread for "${trial.character_name}" (#${trial.id})`,
+        'Applications',
+        `Unarchived application thread for "${application.character_name}" (#${application.id})`,
       );
     } catch (error) {
       logger.error(
-        'Trials',
-        `Failed to unarchive trial thread ${newThread.id}: ${error}`,
+        'Applications',
+        `Failed to unarchive application thread ${newThread.id}: ${error}`,
         error as Error,
       );
     }

@@ -63,6 +63,7 @@ export async function updateLootPost(client: Client, bossId: number): Promise<vo
 
     const message = await channel.messages.fetch(lootPost.message_id);
     await message.edit(postData);
+    logger.info('Loot', `Updated loot post for boss_id ${bossId} with ${responses.length} responses`);
   } catch (error) {
     logger.error('Loot', `Failed to update loot post for boss_id ${bossId}`, error as Error);
   }

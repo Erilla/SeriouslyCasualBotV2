@@ -3,6 +3,7 @@
  */
 
 import { getDatabase } from '../../database/db.js';
+import { logger } from '../../services/logger.js';
 import type { RaiderRow } from '../../types/index.js';
 import type { EpgpLootEntry } from './parseEpgpUpload.js';
 
@@ -16,6 +17,7 @@ function extractItemId(itemString: string): string | null {
 }
 
 export function processLoot(lootEntries: EpgpLootEntry[]): { inserted: number; duplicates: number; skipped: number } {
+  logger.debug('EPGP', `Processing ${lootEntries.length} loot entries`);
   const db = getDatabase();
 
   const findRaider = db.prepare(
@@ -39,6 +41,7 @@ export function processLoot(lootEntries: EpgpLootEntry[]): { inserted: number; d
       const raider = findRaider.get(entry.characterName, entry.realm) as RaiderRow | undefined;
 
       if (!raider) {
+        logger.debug('EPGP', `Loot entry skipped: raider not found for ${entry.characterName}-${entry.realm}`);
         skipped++;
         continue;
       }
@@ -60,5 +63,6 @@ export function processLoot(lootEntries: EpgpLootEntry[]): { inserted: number; d
 
   transaction();
 
+  logger.info('EPGP', `Loot processing complete: ${inserted} inserted, ${duplicates} duplicates, ${skipped} skipped`);
   return { inserted, duplicates, skipped };
 }

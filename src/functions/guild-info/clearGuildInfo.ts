@@ -63,7 +63,8 @@ export async function clearGuildInfo(client: Client): Promise<void> {
 }
 
 /**
- * Get the guild info channel from config, or create one if it doesn't exist.
+ * Get the guild info channel from config, or find an existing one by name.
+ * Only creates a new channel as a last resort.
  */
 export async function getOrCreateGuildInfoChannel(client: Client): Promise<TextChannel | null> {
   const db = getDatabase();
@@ -73,16 +74,31 @@ export async function getOrCreateGuildInfoChannel(client: Client): Promise<TextC
     const channel = await client.channels.fetch(row.value).catch(() => null);
     const sendable = asSendable(channel);
     if (sendable) return sendable;
-    logger.warn('guild-info', `Configured guild info channel ${row.value} not found, creating new one`);
+    logger.warn('guild-info', `Configured guild info channel ${row.value} not found, searching for existing channel`);
   }
 
-  // Auto-create the channel
   const guild = await client.guilds.fetch(config.guildId).catch(() => null);
   if (!guild) {
-    logger.error('guild-info', 'Could not fetch guild to create guild info channel');
+    logger.error('guild-info', 'Could not fetch guild to resolve guild info channel');
     return null;
   }
 
+  // Search for an existing channel by name before creating a new one
+  const channels = guild.channels.cache;
+  const existing = channels.find(
+    (ch) => (ch.name === 'welcome' || ch.name === 'guild-info') && ch.type === ChannelType.GuildText,
+  );
+
+  if (existing) {
+    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
+      'guild_info_channel_id',
+      existing.id,
+    );
+    logger.info('guild-info', `Using existing channel #${existing.name} (${existing.id}) for guild info`);
+    return existing as TextChannel;
+  }
+
+  // Last resort: create a new channel
   try {
     const newChannel = await guild.channels.create({
       name: 'guild-info',

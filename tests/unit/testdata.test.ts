@@ -122,7 +122,7 @@ describe('seedApplication', () => {
     seedApplication(db);
 
     const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
-    expect(count).toBe(5);
+    expect(count).toBe(9);
   });
 
   it('inserts one answer per question', () => {
@@ -150,7 +150,7 @@ describe('seedApplication', () => {
     seedApplication(db);
 
     const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
-    expect(count).toBe(5);
+    expect(count).toBe(9);
   });
 
   it('creates a second application without error when questions already exist', () => {

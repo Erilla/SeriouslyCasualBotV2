@@ -21,6 +21,7 @@ async function fetchCharacterClass(
     const data = (await response.json()) as { class: string };
     return data.class ?? null;
   } catch {
+    logger.debug('EPGP', `Failed to fetch class for ${name}-${realm}`);
     return null;
   }
 }
@@ -91,5 +92,6 @@ export async function processRoster(
     }
   }
 
+  logger.info('EPGP', `Roster processing complete: ${processed} processed, ${skipped} skipped, ${classUpdates.length} class lookups attempted`);
   return { processed, skipped };
 }

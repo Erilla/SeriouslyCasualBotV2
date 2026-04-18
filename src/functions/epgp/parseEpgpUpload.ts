@@ -2,6 +2,8 @@
  * Parse EPGP addon JSON upload format into structured data.
  */
 
+import { logger } from '../../services/logger.js';
+
 export interface EpgpRosterEntry {
   characterName: string;
   realm: string;
@@ -51,6 +53,7 @@ function splitNameRealm(nameRealm: string): { characterName: string; realm: stri
 }
 
 export function parseEpgpUpload(jsonString: string): EpgpUploadData {
+  logger.debug('EPGP', 'Parsing EPGP upload data');
   const raw = JSON.parse(jsonString) as RawUpload;
 
   const roster: EpgpRosterEntry[] = (raw.Roster ?? []).map((entry) => {
@@ -73,6 +76,8 @@ export function parseEpgpUpload(jsonString: string): EpgpUploadData {
       gp: entry[3],
     };
   });
+
+  logger.info('EPGP', `Parsed upload for guild "${raw.Guild}": ${roster.length} roster entries, ${loot.length} loot entries, decay=${raw.Decay_p}%`);
 
   return {
     guild: raw.Guild,
