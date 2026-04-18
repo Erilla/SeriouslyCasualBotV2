@@ -33,6 +33,15 @@ export default {
       logger.error('bot', `Failed to register commands: ${err.message}`, err);
     }
 
+    async function tryBootstrap(name: string, fn: () => Promise<void>): Promise<void> {
+      try {
+        await fn();
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error('bot', `Channel bootstrap failed for ${name}: ${err.message}`, err);
+      }
+    }
+
     const guild = await client.guilds.fetch(config.guildId).catch((err) => {
       logger.error(
         'bot',
@@ -43,7 +52,7 @@ export default {
     });
 
     if (guild) {
-      try {
+      await tryBootstrap('bot-logs', async () => {
         const botLogsChannel = await getOrCreateChannel(guild, {
           name: 'bot-logs',
           type: ChannelType.GuildText,
@@ -51,12 +60,9 @@ export default {
           configKey: 'bot_logs_channel_id',
         });
         logger.setDiscordChannel(botLogsChannel);
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        logger.error('bot', `Channel bootstrap failed for bot-logs: ${err.message}`, err);
-      }
+      });
 
-      try {
+      await tryBootstrap('bot-audit', async () => {
         const botAuditChannel = await getOrCreateChannel(guild, {
           name: 'bot-audit',
           type: ChannelType.GuildText,
@@ -64,12 +70,9 @@ export default {
           configKey: 'bot_audit_channel_id',
         });
         setAuditChannel(botAuditChannel);
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        logger.error('bot', `Channel bootstrap failed for bot-audit: ${err.message}`, err);
-      }
+      });
 
-      try {
+      await tryBootstrap('epgp-rankings', async () => {
         // Pre-resolve/cache the epgp-rankings channel ID; createDisplayPost reads it from config on demand.
         await getOrCreateChannel(guild, {
           name: 'epgp-rankings',
@@ -77,10 +80,7 @@ export default {
           categoryName: 'Raiders',
           configKey: 'epgp_rankings_channel_id',
         });
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        logger.error('bot', `Channel bootstrap failed for epgp-rankings: ${err.message}`, err);
-      }
+      });
 
       logger.info('bot', 'Channel bootstrap complete');
     }
