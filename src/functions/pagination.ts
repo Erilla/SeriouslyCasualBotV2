@@ -1,11 +1,11 @@
 import {
   EmbedBuilder,
+  Colors,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   type MessageActionRowComponentBuilder,
 } from 'discord.js';
-import { createEmbed } from '../utils.js';
 
 const DEFAULT_MAX_CHARS = 1800;
 
@@ -43,7 +43,12 @@ export function buildPageEmbed(
   page: number,
   totalPages: number,
 ): EmbedBuilder {
-  const embed = createEmbed(title).setDescription(content);
+  const embed = new EmbedBuilder()
+    .setColor(Colors.Green)
+    .setTimestamp()
+    .setFooter({ text: 'SeriouslyCasualBot' })
+    .setTitle(title)
+    .setDescription(content);
   if (totalPages > 1) {
     embed.setFooter({ text: `Page ${page}/${totalPages} | SeriouslyCasualBot` });
   }
