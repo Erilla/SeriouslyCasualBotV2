@@ -18,7 +18,7 @@ Every auto-created channel resolves through a single helper that:
 - Falls back to creating the channel under a configured parent category.
 - If the target category is missing from the guild, logs a warning and creates the channel parent-less (does not auto-create categories).
 
-**Single exception:** the `Applications` category is the only category the bot may create, because the Applications domain requires it structurally.
+The helper creates whatever channel type it's asked for (text / forum / category) through the same code path. By policy, only the `Applications` entry is resolved with `type: GuildCategory`, so that remains the single category the bot will ever create — the constraint is enforced by convention at the call sites, not by a branch inside the helper.
 
 ## Channel → Category Map
 
@@ -65,13 +65,12 @@ export async function getOrCreateChannel(
 ### Resolution order
 
 1. **Stored config ID.** If `config[configKey]` is set, fetch. If the channel exists and its type matches, return it.
-2. **Name lookup.** Search `guild.channels.cache` for a channel matching `opts.name` (or any `aliasNames`), case-insensitive, with the expected type. If found, write its ID to `config[configKey]` and return it.
+2. **Name lookup.** Search `guild.channels.cache` for a channel matching `opts.name` (or any `aliasNames`), case-insensitive. If a match exists with the expected type, write its ID to `config[configKey]` and return it. If a name match exists but its type is wrong (e.g., a text channel named `trial-reviews` when a forum is expected), log a `WARN` naming the conflicting channel and continue to step 3.
 3. **Parent category resolution.**
-   - If `categoryName` is `null`: skip; parent will be undefined.
+   - If `categoryName` is `null`: skip; parent stays undefined. (Used by the `Applications` category entry, which has no parent.)
    - Call `getCategoryByName(guild, categoryName)`.
-   - If the category is found: use its ID as the parent.
-   - If missing and `configKey === 'applications_category_id'`: create the category, store its ID, use it as the parent. (Only allowed auto-category-create.)
-   - If missing otherwise: log a `WARN`, proceed with no parent.
+   - If found: use its ID as the parent.
+   - If missing: log a `WARN` (deduplicated per process), proceed with no parent. The helper never creates a category to serve as someone else's parent — the `Applications` category works only because it's requested as a top-level channel of type `GuildCategory`, so its creation happens in step 4 via the normal create path.
 4. **Create.** `guild.channels.create({ name, type, parent, ...createOptions })`. Write the new ID to `config[configKey]`. Return the channel.
 
 ### Logging
