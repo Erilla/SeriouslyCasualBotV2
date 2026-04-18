@@ -1,6 +1,5 @@
 import {
   type Client,
-  type TextChannel,
   ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
@@ -20,12 +19,12 @@ export async function sendAlertForRaidersWithNoUser(
   autoMatches: AutoMatch[],
 ): Promise<void> {
   const guild = await client.guilds.fetch(config.guildId);
-  const channel = (await getOrCreateChannel(guild, {
+  const channel = await getOrCreateChannel(guild, {
     name: 'raider-setup',
     type: ChannelType.GuildText,
     categoryName: 'SeriouslyCasual Bot',
     configKey: 'raider_setup_channel_id',
-  })) as TextChannel;
+  });
 
   const db = getDatabase();
   const autoMatchMap = new Map(

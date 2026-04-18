@@ -1,4 +1,4 @@
-import { type Client, type TextChannel, ChannelType } from 'discord.js';
+import { type Client, ChannelType } from 'discord.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
@@ -7,13 +7,13 @@ import { addLootPost } from './addLootPost.js';
 
 export async function checkRaidExpansions(client: Client): Promise<void> {
   const guild = await client.guilds.fetch(config.guildId);
-  const channel = (await getOrCreateChannel(guild, {
+  const channel = await getOrCreateChannel(guild, {
     name: 'loot',
     type: ChannelType.GuildText,
     categoryName: 'Raiders',
     configKey: 'loot_channel_id',
     aliasNames: ['loot-priorities'],
-  })) as TextChannel;
+  });
 
   const now = new Date();
   let expansion = 9;

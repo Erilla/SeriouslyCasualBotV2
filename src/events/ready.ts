@@ -1,4 +1,4 @@
-import { ChannelType, type Client, type TextChannel } from 'discord.js';
+import { ChannelType, type Client } from 'discord.js';
 import { config } from '../config.js';
 import { logger } from '../services/logger.js';
 import { getOrCreateChannel } from '../functions/channels.js';
@@ -42,7 +42,7 @@ export default {
         categoryName: 'SeriouslyCasual Bot',
         configKey: 'bot_logs_channel_id',
       });
-      logger.setDiscordChannel(botLogsChannel as TextChannel);
+      logger.setDiscordChannel(botLogsChannel);
 
       const botAuditChannel = await getOrCreateChannel(guild, {
         name: 'bot-audit',
@@ -50,7 +50,7 @@ export default {
         categoryName: 'SeriouslyCasual Bot',
         configKey: 'bot_audit_channel_id',
       });
-      setAuditChannel(botAuditChannel as TextChannel);
+      setAuditChannel(botAuditChannel);
 
       // Pre-resolve/cache the epgp-rankings channel ID; createDisplayPost reads it from config on demand.
       await getOrCreateChannel(guild, {

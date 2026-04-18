@@ -30,7 +30,7 @@ async function getRaidersLoungeChannel(client: Client): Promise<TextChannel | nu
       aliasNames: ['raiderslounge'],
       createOptions: { topic: 'Raider signup alerts and discussion' },
     });
-    return channel as TextChannel;
+    return channel;
   } catch (error) {
     logger.error('AlertSignups', 'Failed to resolve raiders-lounge channel', error as Error);
     return null;

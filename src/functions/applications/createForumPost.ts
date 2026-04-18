@@ -27,12 +27,12 @@ export async function createForumPost(
 ): Promise<CreateForumPostResult> {
   let forum: ForumChannel;
   try {
-    forum = (await getOrCreateChannel(guild, {
+    forum = await getOrCreateChannel(guild, {
       name: 'application-log',
       type: ChannelType.GuildForum,
       categoryName: 'Application-logs',
       configKey: 'application_log_forum_id',
-    })) as ForumChannel;
+    });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`);

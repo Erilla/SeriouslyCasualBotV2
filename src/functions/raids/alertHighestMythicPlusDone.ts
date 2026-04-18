@@ -1,4 +1,4 @@
-import { type Client, type TextChannel, ChannelType, AttachmentBuilder } from 'discord.js';
+import { type Client, ChannelType, AttachmentBuilder } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { getHistoricalData, type WowAuditHistoricalEntry } from '../../services/wowaudit.js';
 import { getWeeklyMythicPlusRuns } from '../../services/raiderio.js';
@@ -159,12 +159,12 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
 
   // Get the weekly-check channel
   const guild = await client.guilds.fetch(config.guildId);
-  const channel = (await getOrCreateChannel(guild, {
+  const channel = await getOrCreateChannel(guild, {
     name: 'weekly-check',
     type: ChannelType.GuildText,
     categoryName: 'Overlords',
     configKey: 'weekly_check_channel_id',
-  })) as TextChannel;
+  });
 
   try {
     await channel.send({

@@ -2,8 +2,10 @@ import {
   ChannelType,
   type Guild,
   type CategoryChannel,
+  type ForumChannel,
   type GuildBasedChannel,
   type GuildChannelCreateOptions,
+  type TextChannel,
 } from 'discord.js';
 import { getDatabase } from '../database/db.js';
 import { logger } from '../services/logger.js';
@@ -49,6 +51,18 @@ function deleteConfig(key: string): void {
   getDatabase().prepare('DELETE FROM config WHERE key = ?').run(key);
 }
 
+export function getOrCreateChannel(
+  guild: Guild,
+  opts: GetOrCreateChannelOptions & { type: ChannelType.GuildText },
+): Promise<TextChannel>;
+export function getOrCreateChannel(
+  guild: Guild,
+  opts: GetOrCreateChannelOptions & { type: ChannelType.GuildForum },
+): Promise<ForumChannel>;
+export function getOrCreateChannel(
+  guild: Guild,
+  opts: GetOrCreateChannelOptions & { type: ChannelType.GuildCategory },
+): Promise<CategoryChannel>;
 export async function getOrCreateChannel(
   guild: Guild,
   opts: GetOrCreateChannelOptions,

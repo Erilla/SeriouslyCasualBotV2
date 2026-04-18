@@ -98,7 +98,7 @@ async function getOrCreateTrialForum(client: Client): Promise<ForumChannel> {
     configKey: 'trial_reviews_forum_id',
   });
 
-  return forum as ForumChannel;
+  return forum;
 }
 
 /**

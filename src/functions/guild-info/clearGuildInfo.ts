@@ -68,13 +68,13 @@ export async function clearGuildInfo(client: Client): Promise<void> {
 export async function getOrCreateGuildInfoChannel(client: Client): Promise<TextChannel | null> {
   try {
     const guild = await client.guilds.fetch(config.guildId);
-    const channel = (await getOrCreateChannel(guild, {
+    const channel = await getOrCreateChannel(guild, {
       name: 'guild-info',
       type: ChannelType.GuildText,
       categoryName: null,
       configKey: 'guild_info_channel_id',
       aliasNames: ['welcome'],
-    })) as TextChannel;
+    });
     return channel;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
