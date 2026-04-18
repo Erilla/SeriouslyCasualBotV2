@@ -10,7 +10,7 @@ import { seedTrial } from '../../src/functions/testdata/seedTrial.js';
 import { seedEpgp } from '../../src/functions/testdata/seedEpgp.js';
 import { seedLoot } from '../../src/functions/testdata/seedLoot.js';
 import { seedLootDiscord } from '../../src/functions/testdata/discord/seedLootDiscord.js';
-import { resetData } from '../../src/functions/testdata/resetData.js';
+import { resetData, ResetDiscordError } from '../../src/functions/testdata/resetData.js';
 import type { Client } from 'discord.js';
 
 let db: Database.Database;
@@ -517,7 +517,7 @@ describe('seedLootDiscord (graceful degradation)', () => {
 // ─── resetData ───────────────────────────────────────────────────────────────
 
 describe('resetData', () => {
-  it('clears all data and re-seeds defaults', () => {
+  it('clears all data and re-seeds defaults', async () => {
     // Seed some data first
     seedDatabase(db);
     seedRaiders(db);
@@ -529,8 +529,8 @@ describe('resetData', () => {
     expect((db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count).toBeGreaterThan(0);
     expect((db.prepare('SELECT COUNT(*) as count FROM loot_posts').get() as { count: number }).count).toBeGreaterThan(0);
 
-    // Reset
-    resetData(db);
+    // Reset (no client → DB-only path)
+    await resetData(db);
 
     // All user data cleared
     expect((db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count).toBe(0);
@@ -540,51 +540,51 @@ describe('resetData', () => {
     expect((db.prepare('SELECT COUNT(*) as count FROM trial_alerts').get() as { count: number }).count).toBe(0);
   });
 
-  it('re-seeds default guild_info_content after reset', () => {
-    resetData(db);
+  it('re-seeds default guild_info_content after reset', async () => {
+    await resetData(db);
 
     const count = (db.prepare('SELECT COUNT(*) as count FROM guild_info_content').get() as { count: number }).count;
     expect(count).toBeGreaterThan(0);
   });
 
-  it('re-seeds schedule defaults after reset', () => {
-    resetData(db);
+  it('re-seeds schedule defaults after reset', async () => {
+    await resetData(db);
 
     const days = (db.prepare('SELECT COUNT(*) as count FROM schedule_days').get() as { count: number }).count;
     expect(days).toBeGreaterThan(0);
   });
 
-  it('re-seeds default_messages after reset', () => {
-    resetData(db);
+  it('re-seeds default_messages after reset', async () => {
+    await resetData(db);
 
     const msgs = (db.prepare('SELECT COUNT(*) as count FROM default_messages').get() as { count: number }).count;
     expect(msgs).toBeGreaterThan(0);
   });
 
-  it('re-seeds the 9 default application questions after reset', () => {
+  it('re-seeds the 9 default application questions after reset', async () => {
     // Pollute the DB first so we know the count didn't just carry over
     seedApplication(db);
 
-    resetData(db);
+    await resetData(db);
 
     const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
     expect(count).toBe(9);
   });
 
-  it('can be called on an already-empty database', () => {
-    expect(() => resetData(db)).not.toThrow();
+  it('can be called on an already-empty database', async () => {
+    await expect(resetData(db)).resolves.toBeDefined();
   });
 
-  it('allows seeding data again after reset', () => {
+  it('allows seeding data again after reset', async () => {
     seedRaiders(db);
-    resetData(db);
+    await resetData(db);
     expect(() => seedRaiders(db)).not.toThrow();
 
     const count = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count;
     expect(count).toBe(15);
   });
 
-  it('does not trip FK constraints when a trial references an application', () => {
+  it('does not trip FK constraints when a trial references an application', async () => {
     // Production turns foreign_keys ON (see src/database/db.ts). The default
     // test DB does not, which is why #39 slipped past the existing tests.
     // Build a fresh DB with FKs enabled and reproduce the seed_all shape:
@@ -596,7 +596,7 @@ describe('resetData', () => {
     const app = seedApplication(fkDb, { status: 'accepted' });
     seedTrial(fkDb, { applicationId: app.applicationId });
 
-    expect(() => resetData(fkDb)).not.toThrow();
+    await expect(resetData(fkDb)).resolves.toBeDefined();
 
     expect(
       (fkDb.prepare('SELECT COUNT(*) as count FROM trials').get() as { count: number }).count,
@@ -607,5 +607,71 @@ describe('resetData', () => {
     ).toBe(0);
 
     fkDb.close();
+  });
+
+  it('returns { discord: null } when no client is provided', async () => {
+    const result = await resetData(db);
+    expect(result.discord).toBeNull();
+  });
+
+  it('does NOT wipe the DB when Discord cleanup errors (rollback)', async () => {
+    // Seed some data that should survive the aborted reset.
+    seedRaiders(db);
+    seedApplication(db);
+    const raidersBefore = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count;
+    const appsBefore = (db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }).count;
+    expect(raidersBefore).toBeGreaterThan(0);
+    expect(appsBefore).toBeGreaterThan(0);
+
+    // Pretend there's a loot_posts row so there's at least one artifact to
+    // try to delete. resetDiscordArtifacts will fail to fetch the parent
+    // channel and that failure will surface as a real error (not a 404),
+    // which should abort the reset.
+    db.prepare(`INSERT INTO loot_posts (boss_id, boss_name, channel_id, message_id) VALUES (?, ?, ?, ?)`)
+      .run(99999, 'mock', 'parent-channel-id', 'some-message-id');
+
+    // Minimal mock: guild.fetch resolves, guild.channels.fetch rejects with a
+    // non-404 error.
+    const mockGuild = {
+      channels: {
+        fetch: async () => {
+          throw new Error('simulated rate limit or permission error');
+        },
+      },
+    };
+    const mockClient = {
+      guilds: {
+        fetch: async () => mockGuild,
+      },
+    } as unknown as Client;
+
+    await expect(resetData(db, mockClient)).rejects.toBeInstanceOf(ResetDiscordError);
+
+    // DB state should be untouched.
+    const raidersAfter = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count;
+    const appsAfter = (db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }).count;
+    expect(raidersAfter).toBe(raidersBefore);
+    expect(appsAfter).toBe(appsBefore);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM loot_posts').get() as { count: number }).count,
+    ).toBe(1);
+  });
+
+  it('wipes the DB when Discord cleanup succeeds (empty artifact set)', async () => {
+    seedRaiders(db);
+
+    // Mock client that successfully fetches a guild with no artifacts to
+    // delete (there are no rows referencing Discord IDs).
+    const mockClient = {
+      guilds: { fetch: async () => ({ channels: { fetch: async () => null } }) },
+    } as unknown as Client;
+
+    const result = await resetData(db, mockClient);
+
+    expect(result.discord).not.toBeNull();
+    expect(result.discord?.errors).toEqual([]);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count,
+    ).toBe(0);
   });
 });
