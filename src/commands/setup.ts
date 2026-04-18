@@ -9,25 +9,34 @@ import { getDatabase } from '../database/db.js';
 import { requireOfficer } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 
-const EXPECTED_CHANNEL_TYPE: Record<string, ChannelType> = {
-  guild_info_channel_id: ChannelType.GuildText,
-  bot_logs_channel_id: ChannelType.GuildText,
-  bot_audit_channel_id: ChannelType.GuildText,
-  raider_setup_channel_id: ChannelType.GuildText,
-  weekly_check_channel_id: ChannelType.GuildText,
-  epgp_rankings_channel_id: ChannelType.GuildText,
-  loot_channel_id: ChannelType.GuildText,
-  raiders_lounge_channel_id: ChannelType.GuildText,
-  application_log_forum_id: ChannelType.GuildForum,
-  trial_reviews_forum_id: ChannelType.GuildForum,
-  applications_category_id: ChannelType.GuildCategory,
+const CHANNEL_CONFIG: Record<string, { label: string; type: ChannelType }> = {
+  guild_info_channel_id: { label: 'Guild Info', type: ChannelType.GuildText },
+  bot_logs_channel_id: { label: 'Bot Logs', type: ChannelType.GuildText },
+  bot_audit_channel_id: { label: 'Bot Audit', type: ChannelType.GuildText },
+  raider_setup_channel_id: { label: 'Raider Setup', type: ChannelType.GuildText },
+  weekly_check_channel_id: { label: 'Weekly Check', type: ChannelType.GuildText },
+  epgp_rankings_channel_id: { label: 'EPGP Rankings', type: ChannelType.GuildText },
+  loot_channel_id: { label: 'Loot', type: ChannelType.GuildText },
+  raiders_lounge_channel_id: { label: 'Raiders Lounge', type: ChannelType.GuildText },
+  application_log_forum_id: { label: 'Application Log Forum', type: ChannelType.GuildForum },
+  trial_reviews_forum_id: { label: 'Trial Reviews Forum', type: ChannelType.GuildForum },
+  applications_category_id: { label: 'Applications Category', type: ChannelType.GuildCategory },
 };
 
-const CHANNEL_TYPE_LABEL: Record<number, string> = {
+const CHANNEL_TYPE_LABEL: Partial<Record<ChannelType, string>> = {
   [ChannelType.GuildText]: 'text channel',
   [ChannelType.GuildForum]: 'forum channel',
   [ChannelType.GuildCategory]: 'category',
 };
+
+const CHANNEL_CHOICES = Object.entries(CHANNEL_CONFIG).map(([value, { label }]) => ({
+  name: label,
+  value,
+}));
+
+const ALLOWED_CHANNEL_TYPES = [
+  ...new Set(Object.values(CHANNEL_CONFIG).map((c) => c.type)),
+] as (ChannelType.GuildText | ChannelType.GuildForum | ChannelType.GuildCategory)[];
 
 export default {
   data: new SlashCommandBuilder()
@@ -43,30 +52,14 @@ export default {
             .setName('key')
             .setDescription('Channel purpose')
             .setRequired(true)
-            .addChoices(
-              { name: 'Guild Info', value: 'guild_info_channel_id' },
-              { name: 'Bot Logs', value: 'bot_logs_channel_id' },
-              { name: 'Bot Audit', value: 'bot_audit_channel_id' },
-              { name: 'Raider Setup', value: 'raider_setup_channel_id' },
-              { name: 'Weekly Check', value: 'weekly_check_channel_id' },
-              { name: 'EPGP Rankings', value: 'epgp_rankings_channel_id' },
-              { name: 'Loot', value: 'loot_channel_id' },
-              { name: 'Raiders Lounge', value: 'raiders_lounge_channel_id' },
-              { name: 'Application Log Forum', value: 'application_log_forum_id' },
-              { name: 'Trial Reviews Forum', value: 'trial_reviews_forum_id' },
-              { name: 'Applications Category', value: 'applications_category_id' },
-            ),
+            .addChoices(...CHANNEL_CHOICES),
         )
         .addChannelOption((opt) =>
           opt
             .setName('channel')
             .setDescription('The channel')
             .setRequired(true)
-            .addChannelTypes(
-              ChannelType.GuildText,
-              ChannelType.GuildForum,
-              ChannelType.GuildCategory,
-            ),
+            .addChannelTypes(...ALLOWED_CHANNEL_TYPES),
         ),
     )
     .addSubcommand((sub) =>
@@ -95,11 +88,11 @@ export default {
     if (subcommand === 'set_channel') {
       const key = interaction.options.getString('key', true);
       const channel = interaction.options.getChannel('channel', true);
+      const expected = CHANNEL_CONFIG[key];
 
-      const expectedType = EXPECTED_CHANNEL_TYPE[key];
-      if (channel.type !== expectedType) {
+      if (channel.type !== expected.type) {
         await interaction.reply({
-          content: `**${key}** must be a ${CHANNEL_TYPE_LABEL[expectedType]}, but ${channel} is a ${CHANNEL_TYPE_LABEL[channel.type] ?? 'different channel type'}.`,
+          content: `**${key}** must be a ${CHANNEL_TYPE_LABEL[expected.type]}, but ${channel} is a ${CHANNEL_TYPE_LABEL[channel.type] ?? 'different channel type'}.`,
           flags: MessageFlags.Ephemeral,
         });
         return;
