@@ -163,7 +163,7 @@ New file: `tests/unit/channels.test.ts`. All tests use mocked `Guild` / `channel
 | Alias match | `aliasNames: ['welcome']` matches a channel named `welcome` |
 | Parent category resolved | `create` called with `parent: <category.id>` |
 | Missing category warn | `create` called with no parent; `logger.warn` invoked |
-| Applications category auto-create | On missing category + `configKey === 'applications_category_id'`: new category created |
+| Applications category creation uses the normal create path | Passing `type: GuildCategory` with `categoryName: null` goes through step 4 and creates a category; no special `configKey`-based branch exists in the helper |
 | Duplicate names warn | Picks first match; warn lists all matched IDs |
 | Wrong-typed existing channel | Ignored; new correctly-typed channel created; warn logged |
 
