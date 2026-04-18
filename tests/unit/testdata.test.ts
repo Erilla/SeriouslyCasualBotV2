@@ -4,6 +4,8 @@ import { createTables } from '../../src/database/schema.js';
 import { seedDatabase } from '../../src/database/seed.js';
 import { seedRaiders } from '../../src/functions/testdata/seedRaiders.js';
 import { seedApplication } from '../../src/functions/testdata/seedApplication.js';
+import { seedApplicationQuestions } from '../../src/functions/testdata/seedApplicationQuestions.js';
+import { seedApplicationVariety } from '../../src/functions/testdata/seedApplicationVariety.js';
 import { seedTrial } from '../../src/functions/testdata/seedTrial.js';
 import { seedEpgp } from '../../src/functions/testdata/seedEpgp.js';
 import { seedLoot } from '../../src/functions/testdata/seedLoot.js';
@@ -94,6 +96,33 @@ describe('seedRaiders', () => {
   });
 });
 
+// ─── seedApplicationQuestions ────────────────────────────────────────────────
+
+describe('seedApplicationQuestions', () => {
+  it('inserts the 9 default questions when table is empty', () => {
+    const result = seedApplicationQuestions(db);
+    expect(result.inserted).toBe(9);
+
+    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    expect(count).toBe(9);
+  });
+
+  it('is idempotent — does not insert again when questions already exist', () => {
+    seedApplicationQuestions(db);
+    const second = seedApplicationQuestions(db);
+
+    expect(second.inserted).toBe(0);
+    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    expect(count).toBe(9);
+  });
+
+  it('questions are ordered by sort_order starting at 1', () => {
+    seedApplicationQuestions(db);
+    const rows = db.prepare('SELECT sort_order FROM application_questions ORDER BY sort_order').all() as Array<{ sort_order: number }>;
+    expect(rows.map((r) => r.sort_order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+});
+
 // ─── seedApplication ─────────────────────────────────────────────────────────
 
 describe('seedApplication', () => {
@@ -158,6 +187,82 @@ describe('seedApplication', () => {
     const r2 = seedApplication(db);
 
     expect(r2.applicationId).toBeGreaterThan(r1.applicationId);
+  });
+
+  it('respects options.characterName, options.userId, and options.status', () => {
+    const result = seedApplication(db, {
+      characterName: 'CustomChar',
+      userId: 'custom-user-id',
+      status: 'accepted',
+    });
+
+    const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(result.applicationId) as {
+      character_name: string;
+      applicant_user_id: string;
+      status: string;
+    };
+    expect(app.character_name).toBe('CustomChar');
+    expect(app.applicant_user_id).toBe('custom-user-id');
+    expect(app.status).toBe('accepted');
+  });
+
+  it('respects options.answerCount for partial answer lists', () => {
+    const result = seedApplication(db, { answerCount: 3 });
+    expect(result.answersInserted).toBe(3);
+
+    const answers = db.prepare('SELECT * FROM application_answers WHERE application_id = ?').all(result.applicationId);
+    expect(answers).toHaveLength(3);
+  });
+
+  it('skips votes for in_progress status by default', () => {
+    const result = seedApplication(db, { status: 'in_progress', answerCount: 2 });
+    expect(result.votesInserted).toBe(0);
+
+    const votes = db.prepare('SELECT * FROM application_votes WHERE application_id = ?').all(result.applicationId);
+    expect(votes).toHaveLength(0);
+  });
+
+  it('skips votes for abandoned status by default', () => {
+    const result = seedApplication(db, { status: 'abandoned' });
+    expect(result.votesInserted).toBe(0);
+  });
+});
+
+// ─── seedApplicationVariety ──────────────────────────────────────────────────
+
+describe('seedApplicationVariety', () => {
+  it('inserts 5 applications, one per status', () => {
+    const result = seedApplicationVariety(db);
+
+    expect(result.applicationIds).toHaveLength(5);
+
+    const rows = db.prepare('SELECT status, COUNT(*) as count FROM applications GROUP BY status').all() as Array<{ status: string; count: number }>;
+    const byStatus = Object.fromEntries(rows.map((r) => [r.status, r.count]));
+
+    expect(byStatus.in_progress).toBe(1);
+    expect(byStatus.submitted).toBe(1);
+    expect(byStatus.accepted).toBe(1);
+    expect(byStatus.rejected).toBe(1);
+    expect(byStatus.abandoned).toBe(1);
+  });
+
+  it('in_progress application has 3 answers and 0 votes', () => {
+    seedApplicationVariety(db);
+
+    const app = db.prepare("SELECT id FROM applications WHERE status = 'in_progress'").get() as { id: number };
+    const answers = db.prepare('SELECT * FROM application_answers WHERE application_id = ?').all(app.id);
+    const votes = db.prepare('SELECT * FROM application_votes WHERE application_id = ?').all(app.id);
+
+    expect(answers).toHaveLength(3);
+    expect(votes).toHaveLength(0);
+  });
+
+  it('abandoned application has 0 votes', () => {
+    seedApplicationVariety(db);
+
+    const app = db.prepare("SELECT id FROM applications WHERE status = 'abandoned'").get() as { id: number };
+    const votes = db.prepare('SELECT * FROM application_votes WHERE application_id = ?').all(app.id);
+    expect(votes).toHaveLength(0);
   });
 });
 
@@ -249,6 +354,22 @@ describe('seedTrial', () => {
     for (const alert of futureAlerts) {
       expect(alert.alert_date > today).toBe(true);
     }
+  });
+
+  it('stores application_id when provided', () => {
+    const appResult = seedApplication(db, { status: 'accepted' });
+
+    const trialResult = seedTrial(db, { applicationId: appResult.applicationId });
+
+    const trial = db.prepare('SELECT application_id FROM trials WHERE id = ?').get(trialResult.trialId) as { application_id: number };
+    expect(trial.application_id).toBe(appResult.applicationId);
+  });
+
+  it('application_id is NULL when not provided', () => {
+    const result = seedTrial(db);
+
+    const trial = db.prepare('SELECT application_id FROM trials WHERE id = ?').get(result.trialId) as { application_id: number | null };
+    expect(trial.application_id).toBeNull();
   });
 });
 
@@ -418,6 +539,16 @@ describe('resetData', () => {
 
     const msgs = (db.prepare('SELECT COUNT(*) as count FROM default_messages').get() as { count: number }).count;
     expect(msgs).toBeGreaterThan(0);
+  });
+
+  it('re-seeds the 9 default application questions after reset', () => {
+    // Pollute the DB first so we know the count didn't just carry over
+    seedApplication(db);
+
+    resetData(db);
+
+    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    expect(count).toBe(9);
   });
 
   it('can be called on an already-empty database', () => {

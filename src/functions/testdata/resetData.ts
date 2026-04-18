@@ -1,9 +1,10 @@
 import type Database from 'better-sqlite3';
 import { seedDatabase } from '../../database/seed.js';
+import { seedApplicationQuestions } from './seedApplicationQuestions.js';
 
 /**
  * Wipes all data from all tables in correct FK order (children before parents),
- * then re-seeds defaults via seedDatabase().
+ * then re-seeds defaults via seedDatabase() and the 9 default application questions.
  */
 export function resetData(db: Database.Database): void {
   const tx = db.transaction(() => {
@@ -51,4 +52,5 @@ export function resetData(db: Database.Database): void {
   // tables will be empty — acceptable for a dev-only command since /testdata reset
   // can simply be re-run, but worth knowing if you're debugging a half-seeded state.
   seedDatabase(db);
+  seedApplicationQuestions(db);
 }
