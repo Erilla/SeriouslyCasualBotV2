@@ -216,7 +216,7 @@ describe('trial-alerts — scheduled-job flow', () => {
     // 3. With a real thread, at least one alert is marked alerted = 1
     // -----------------------------------------------------------------------
 
-    it('marks alerts as alerted = 1 after sending to a real Discord thread', async () => {
+    it('marks alerts as alerted = 1 after sending to a real Discord thread', async (testCtx) => {
       const ctx = getE2EContext();
 
       const trialId = getTrialId();
@@ -231,7 +231,9 @@ describe('trial-alerts — scheduled-job flow', () => {
       if (!trial?.thread_id) {
         // Sandbox hit the active-thread limit — skip rather than fail.
         // The Tier A tests cover the no-thread path exhaustively.
-        console.warn('[trial-alerts Tier B] thread_id is null — sandbox thread limit reached; skipping Tier B assertion');
+        testCtx.skip(
+          'sandbox active-thread limit reached; no real thread_id to exercise Tier B',
+        );
         return;
       }
 
