@@ -22,6 +22,11 @@ export const config = {
   warcraftLogsClientSecret: required('WARCRAFTLOGS_CLIENT_SECRET'),
   warcraftLogsGuildId: required('WARCRAFTLOGS_GUILD_ID'),
   raiderIoGuildIds: required('RAIDERIO_GUILD_IDS'),
+  // Optional: signup quip generator falls back to a static V1 corpus when unset.
+  // Read lazily so tests that toggle the env var between cases see the change.
+  get geminiApiKey() {
+    return process.env.GEMINI_API_KEY ?? '';
+  },
   logLevel: optional('LOG_LEVEL', 'INFO') as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
   nodeEnv: optional('NODE_ENV', 'development'),
   get isDevelopment() {

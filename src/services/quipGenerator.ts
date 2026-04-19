@@ -1,4 +1,5 @@
 import { logger } from './logger.js';
+import { config } from '../config.js';
 
 // V1 quip corpus — handwritten + OpenAI-generated examples that shaped the
 // tone. Kept in-file so fallback still feels like "our" quips when the API
@@ -13,8 +14,6 @@ const V1_SAMPLE_QUIPS: readonly string[] = [
   "Bing's checklist: snacks, buffs, and raid sign-ups. Don't make him hunt you down for the last one!",
   "Warzania's decree: Thou shalt sign up for the raid or face the wrath of a thousand guildies!",
 ];
-
-const FALLBACK_QUIP = 'Sign up for the next raid!';
 
 // Rough upper bound on a quip. Gemini sometimes rambles if left unbounded;
 // anything longer than this is almost certainly a format failure (e.g. the
@@ -47,13 +46,12 @@ export interface GenerateQuipOptions {
  * same fallback two alerts in a row (in practice, random is enough).
  */
 export async function generateSignupQuip(options: GenerateQuipOptions): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  if (!config.geminiApiKey) {
     return randomFallback();
   }
 
   try {
-    const quip = await callGemini(apiKey, options);
+    const quip = await callGemini(config.geminiApiKey, options);
     if (quip) return quip;
   } catch (err) {
     logger.warn(
@@ -68,7 +66,6 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
 // ─── Internals ──────────────────────────────────────────────────────────
 
 function randomFallback(): string {
-  if (V1_SAMPLE_QUIPS.length === 0) return FALLBACK_QUIP;
   const index = Math.floor(Math.random() * V1_SAMPLE_QUIPS.length);
   return V1_SAMPLE_QUIPS[index];
 }
@@ -163,6 +160,12 @@ async function callGemini(
 // Gemini sometimes wraps its answer in quotes, returns a numbered list
 // with multiple options, or prefaces with "Here's one:". Strip the obvious
 // junk. If anything weird remains we'll fall through to the length guard.
+//
+// The model occasionally uses typographic/"smart" quotes instead of ASCII.
+// Cover both ends: "..." / '...' / “...” / ‘...’
+const OPEN_QUOTES = new Set(['"', "'", '\u201C', '\u2018']);
+const CLOSE_QUOTES = new Set(['"', "'", '\u201D', '\u2019']);
+
 function normalizeQuip(raw: string): string {
   // Take the first non-empty line without materializing the rest.
   const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0);
@@ -171,8 +174,12 @@ function normalizeQuip(raw: string): string {
   // Drop "1. " / "- " / "* " list prefixes.
   s = s.replace(/^(?:\d+\.\s+|-\s+|\*\s+)/, '');
 
-  // Drop surrounding single or double quotes.
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith('\'') && s.endsWith('\''))) {
+  // Drop a single surrounding quote pair — ASCII or smart. We don't try to
+  // match open-with-close (e.g. "..." closed by ’); anything that symmetric
+  // gets stripped.
+  const first = s[0];
+  const last = s[s.length - 1];
+  if (first && last && OPEN_QUOTES.has(first) && CLOSE_QUOTES.has(last)) {
     s = s.slice(1, -1).trim();
   }
 

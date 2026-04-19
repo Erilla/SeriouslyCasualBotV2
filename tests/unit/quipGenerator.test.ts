@@ -52,6 +52,27 @@ describe('generateSignupQuip', () => {
     expect(quip).toBe('Sign up or face the wrath of Warzania!');
   });
 
+  it('strips surrounding smart (curly) quotes', async () => {
+    // Gemini often returns \u201Ctext\u201D instead of plain "text"; the
+    // normalizer needs to cover both shapes.
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        candidates: [
+          {
+            content: { parts: [{ text: '\u201CRaid sign-ups: late doesn\u2019t count.\u201D' }] },
+          },
+        ],
+      }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(quip).toBe('Raid sign-ups: late doesn\u2019t count.');
+  });
+
   it('takes only the first line when Gemini returns a numbered list', async () => {
     process.env.GEMINI_API_KEY = 'test-key';
 
