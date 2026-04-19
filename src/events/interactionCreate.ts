@@ -36,6 +36,12 @@ import { updateLootPost } from '../functions/loot/updateLootPost.js';
 import { generateLootPost } from '../functions/loot/generateLootPost.js';
 import type { LootPostRow, LootResponseRow } from '../types/index.js';
 import { getCachedPage, buildPageEmbed, buildPageButtons } from '../functions/pagination.js';
+import {
+  buttonHandlers,
+  modalHandlers,
+  userSelectHandlers,
+  dispatch,
+} from '../interactions/registry.js';
 
 export default {
   name: 'interactionCreate',
@@ -69,6 +75,8 @@ export default {
     // Button handlers
     if (interaction.isButton()) {
       const customId = interaction.customId;
+
+      if (await dispatch(buttonHandlers, 'button', interaction, customId)) return;
 
       try {
         // raider:confirm_link:{characterName}:{userId}
@@ -502,6 +510,8 @@ export default {
     if (interaction.isUserSelectMenu()) {
       const customId = interaction.customId;
 
+      if (await dispatch(userSelectHandlers, 'select', interaction, customId)) return;
+
       try {
         // raider:select_user:{characterName}
         if (customId.startsWith('raider:select_user:')) {
@@ -550,6 +560,8 @@ export default {
     // Modal submit handlers
     if (interaction.isModalSubmit()) {
       const customId = interaction.customId;
+
+      if (await dispatch(modalHandlers, 'modal', interaction, customId)) return;
 
       try {
         // application:modal:accept_message

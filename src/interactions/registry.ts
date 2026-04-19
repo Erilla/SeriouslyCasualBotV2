@@ -3,7 +3,6 @@ import type {
   ModalSubmitInteraction,
   UserSelectMenuInteraction,
 } from 'discord.js';
-import { logger } from '../services/logger.js';
 import { requireOfficer, wrapErrors, type InteractionKind } from './middleware.js';
 
 export type ButtonHandler = {
@@ -36,17 +35,14 @@ export async function dispatch<I extends AnyInteraction>(
   kind: InteractionKind,
   interaction: I,
   customId: string,
-): Promise<void> {
+): Promise<boolean> {
   const handler = handlers.find(
     h => customId === h.prefix || customId.startsWith(h.prefix + ':'),
   );
 
-  if (!handler) {
-    logger.warn('interaction', `Unhandled ${kind}: ${customId}`);
-    return;
-  }
+  if (!handler) return false;
 
-  if (handler.officerOnly && !(await requireOfficer(interaction))) return;
+  if (handler.officerOnly && !(await requireOfficer(interaction))) return true;
 
   const tail = customId === handler.prefix ? '' : customId.slice(handler.prefix.length + 1);
   const params = tail ? tail.split(':') : [];
@@ -56,6 +52,7 @@ export async function dispatch<I extends AnyInteraction>(
   await wrapErrors(kind, customId, interaction, () =>
     (handler.handle as (i: I, p: string[]) => Promise<void>)(interaction, params),
   );
+  return true;
 }
 
 export const buttonHandlers: ButtonHandler[] = [];
