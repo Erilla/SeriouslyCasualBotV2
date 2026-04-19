@@ -46,29 +46,34 @@ interface ArtifactRow {
 function collectArtifactIds(db: Database.Database): ArtifactRow[] {
   const rows: ArtifactRow[] = [];
 
-  // Per-applicant text channels (app-{name} under Applications category).
-  for (const r of db
-    .prepare(`SELECT channel_id FROM applications WHERE channel_id IS NOT NULL`)
-    .all() as { channel_id: string }[]) {
-    rows.push({ kind: 'application:channel', id: r.channel_id });
-  }
+  // One query for all three application-owned references, filtering out
+  // rows that have nothing to clean.
+  const applications = db
+    .prepare(
+      `SELECT channel_id, forum_post_id, thread_id
+         FROM applications
+        WHERE channel_id IS NOT NULL OR forum_post_id IS NOT NULL OR thread_id IS NOT NULL`,
+    )
+    .all() as {
+    channel_id: string | null;
+    forum_post_id: string | null;
+    thread_id: string | null;
+  }[];
 
-  // Forum threads (applications log).
-  for (const r of db
-    .prepare(`SELECT forum_post_id FROM applications WHERE forum_post_id IS NOT NULL`)
-    .all() as { forum_post_id: string }[]) {
-    rows.push({ kind: 'application:forum_thread', id: r.forum_post_id });
-  }
-
-  // thread_id for applications is usually the same as forum_post_id (the
-  // initial forum thread is the post). Include distinct values only so we
-  // don't issue a duplicate delete.
-  const seenForumIds = new Set(rows.filter((x) => x.kind === 'application:forum_thread').map((x) => x.id));
-  for (const r of db
-    .prepare(`SELECT thread_id FROM applications WHERE thread_id IS NOT NULL`)
-    .all() as { thread_id: string }[]) {
-    if (!seenForumIds.has(r.thread_id)) {
-      rows.push({ kind: 'application:thread', id: r.thread_id });
+  const seenForumIds = new Set<string>();
+  for (const app of applications) {
+    if (app.channel_id) {
+      rows.push({ kind: 'application:channel', id: app.channel_id });
+    }
+    if (app.forum_post_id) {
+      rows.push({ kind: 'application:forum_thread', id: app.forum_post_id });
+      seenForumIds.add(app.forum_post_id);
+    }
+    // thread_id on applications is usually the same value as forum_post_id
+    // (the initial thread of a forum post is the post). Dedupe so we don't
+    // issue two deletes for the same channel id.
+    if (app.thread_id && !seenForumIds.has(app.thread_id)) {
+      rows.push({ kind: 'application:thread', id: app.thread_id });
     }
   }
 
@@ -124,16 +129,10 @@ async function deleteChannelOrThread(
   guild: Guild,
   id: string,
 ): Promise<'deleted' | 'missing'> {
-  let channel: GuildBasedChannel | null;
+  // guild.channels.delete(id) hits Discord's DELETE endpoint directly — no
+  // need to fetch-then-delete. Missing channels just come back as 10003.
   try {
-    channel = await guild.channels.fetch(id);
-  } catch (err) {
-    if (isMissing(err)) return 'missing';
-    throw err;
-  }
-  if (!channel) return 'missing';
-  try {
-    await channel.delete();
+    await guild.channels.delete(id);
     return 'deleted';
   } catch (err) {
     if (isMissing(err)) return 'missing';
@@ -153,10 +152,9 @@ async function deleteMessage(
     if (isMissing(err)) return 'missing';
     throw err;
   }
-  if (!parent || !('messages' in parent)) return 'missing';
+  if (!parent || !parent.isTextBased()) return 'missing';
   try {
-    const msg = await parent.messages.fetch(messageId);
-    await msg.delete();
+    await parent.messages.delete(messageId);
     return 'deleted';
   } catch (err) {
     if (isMissing(err)) return 'missing';
