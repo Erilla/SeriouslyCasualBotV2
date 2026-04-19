@@ -4,6 +4,7 @@ import type {
   UserSelectMenuInteraction,
 } from 'discord.js';
 import { requireOfficer, wrapErrors, type InteractionKind } from './middleware.js';
+import * as pagination from './pagination.js';
 
 export type ButtonHandler = {
   prefix: string;
@@ -55,6 +56,8 @@ export async function dispatch<I extends AnyInteraction>(
   return true;
 }
 
-export const buttonHandlers: ButtonHandler[] = [];
+export const buttonHandlers: ButtonHandler[] = [
+  ...pagination.buttons,
+];
 export const modalHandlers: ModalHandler[] = [];
 export const userSelectHandlers: UserSelectHandler[] = [];
