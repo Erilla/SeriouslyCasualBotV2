@@ -28,10 +28,7 @@ describe('/setup', () => {
 
     // Build a fake channel object to pass as the "channel" option value.
     // The handler only reads .id and .name from it.
-    const targetChannel = {
-      id: channel.id,
-      name: (channel as { name?: string }).name ?? 'general',
-    };
+    const targetChannel = channel;
 
     const iact = fakeChatInput({
       client: ctx.client,
@@ -72,10 +69,7 @@ describe('/setup', () => {
   it('set_channel — running twice with the same channel overwrites cleanly (no duplicates)', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
-    const targetChannel = {
-      id: channel.id,
-      name: (channel as { name?: string }).name ?? 'general',
-    };
+    const targetChannel = channel;
 
     const makeInteraction = () =>
       fakeChatInput({
@@ -183,10 +177,7 @@ describe('/setup', () => {
   it('get_config — lists a key that was previously set via set_channel', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
-    const targetChannel = {
-      id: channel.id,
-      name: (channel as { name?: string }).name ?? 'general',
-    };
+    const targetChannel = channel;
 
     // First, set a channel.
     const setIact = fakeChatInput({
