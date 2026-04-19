@@ -8,15 +8,17 @@ import { seedApplicationQuestions } from './seedApplicationQuestions.js';
  */
 export function resetData(db: Database.Database): void {
   const tx = db.transaction(() => {
-    // Children first to satisfy FK constraints
+    // Children first to satisfy FK constraints.
+    // trials.application_id → applications.id, so the whole trial chain
+    // must be gone before we touch applications.
+    db.prepare('DELETE FROM trial_alerts').run();
+    db.prepare('DELETE FROM promote_alerts').run();
+    db.prepare('DELETE FROM trials').run();
+
     db.prepare('DELETE FROM application_answers').run();
     db.prepare('DELETE FROM application_votes').run();
     db.prepare('DELETE FROM applications').run();
     db.prepare('DELETE FROM application_questions').run();
-
-    db.prepare('DELETE FROM trial_alerts').run();
-    db.prepare('DELETE FROM promote_alerts').run();
-    db.prepare('DELETE FROM trials').run();
 
     db.prepare('DELETE FROM loot_responses').run();
     db.prepare('DELETE FROM loot_posts').run();

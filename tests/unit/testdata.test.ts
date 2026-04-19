@@ -583,4 +583,29 @@ describe('resetData', () => {
     const count = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count;
     expect(count).toBe(15);
   });
+
+  it('does not trip FK constraints when a trial references an application', () => {
+    // Production turns foreign_keys ON (see src/database/db.ts). The default
+    // test DB does not, which is why #39 slipped past the existing tests.
+    // Build a fresh DB with FKs enabled and reproduce the seed_all shape:
+    // an accepted application with a trial that references it.
+    const fkDb = new Database(':memory:');
+    fkDb.pragma('foreign_keys = ON');
+    createTables(fkDb);
+
+    const app = seedApplication(fkDb, { status: 'accepted' });
+    seedTrial(fkDb, { applicationId: app.applicationId });
+
+    expect(() => resetData(fkDb)).not.toThrow();
+
+    expect(
+      (fkDb.prepare('SELECT COUNT(*) as count FROM trials').get() as { count: number }).count,
+    ).toBe(0);
+    expect(
+      (fkDb.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number })
+        .count,
+    ).toBe(0);
+
+    fkDb.close();
+  });
 });
