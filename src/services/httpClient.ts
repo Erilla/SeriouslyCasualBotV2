@@ -1,7 +1,7 @@
 import type { ServiceName } from './apiHealth.js';
 import {
   recordOutcome, noteFailure, noteSuccess,
-  isBreakerOpen, onBreakerTrialResult, getBreakerState,
+  isBreakerOpen, onBreakerTrialResult, tryClaimTrialSlot,
 } from './apiHealth.js';
 
 export type { ServiceName };
@@ -62,10 +62,11 @@ export async function httpRequest<T>(
     throw new CircuitOpenError(service);
   }
 
-  // isBreakerOpen already transitioned state and (for half_open) claimed the
-  // trial slot. If the breaker is half_open here, this call is the trial and
-  // must resolve it via onBreakerTrialResult on every exit path.
-  const breakerWasHalfOpen = getBreakerState(service) === 'half_open';
+  // If state is half_open, atomically claim the single trial slot.
+  // tryClaimTrialSlot returns true iff this call is the trial; subsequent
+  // concurrent callers see isBreakerOpen === true (trialInFlight=true) and
+  // fast-fail at the check above.
+  const breakerWasHalfOpen = tryClaimTrialSlot(service);
 
   const timeoutMs = opts?.timeoutMs ?? 10_000;
   const maxRetries = opts?.maxRetries ?? 2;
@@ -97,6 +98,14 @@ export async function httpRequest<T>(
       clearTimeout(timeoutId);
     } catch (err) {
       clearTimeout(timeoutId);
+      // Caller explicitly aborted. Propagate their abort verbatim and don't
+      // retry. Release the trial slot (if any) so the breaker doesn't get
+      // stuck. Don't record this as a service failure — it's a caller
+      // cancellation, not an upstream problem.
+      if (init?.signal?.aborted) {
+        if (breakerWasHalfOpen) onBreakerTrialResult(service, false);
+        throw err;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
       lastError = e;
@@ -209,13 +218,13 @@ function parseRetryAfter(header: string | null): number | null {
 }
 
 function computeBackoffMs(attemptJustCompleted: number): number {
-  // attemptJustCompleted is 1 after the first attempt, 2 after the second.
-  // Backoff waits BEFORE the next attempt: base * 2^(n-1) + jitter(0..base/2).
+  // attemptJustCompleted is 1 after the first attempt, 2 after the second,
+  // so exponent is always >= 0. Wait: base * 2^(n-1) + proportional jitter.
   const base = 500;
   const exponent = attemptJustCompleted - 1;
   const computed = base * Math.pow(2, exponent);
   const jitter = Math.random() * (base * Math.pow(2, exponent - 1));
-  return Math.floor(computed + (exponent >= 0 ? jitter : 0));
+  return Math.floor(computed + jitter);
 }
 
 function sleep(ms: number): Promise<void> {

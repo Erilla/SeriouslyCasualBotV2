@@ -129,7 +129,8 @@ export async function getTrialLogs(characterName: string): Promise<string[]> {
       )
       .map((report) => report.code);
 
-    return matchingCodes.reverse();
+    // WCL's attendance.data is already newest-first; don't reverse.
+    return matchingCodes;
   } catch (error) {
     if (error instanceof HttpError || error instanceof CircuitOpenError) {
       logger.warn(

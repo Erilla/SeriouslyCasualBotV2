@@ -11,6 +11,7 @@ import {
   noteSuccess,
   onBreakerTrialResult,
   getBreakerState,
+  tryClaimTrialSlot,
 } from '../../src/services/apiHealth.js';
 
 beforeEach(() => {
@@ -139,14 +140,17 @@ describe('apiHealth breaker', () => {
     for (let i = 0; i < 5; i++) noteFailure('raiderio');
     vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
 
-    // First call transitions to half_open and claims the trial slot.
+    // Observing (pure) doesn't block: state is half_open, no trial yet.
     expect(isBreakerOpen('raiderio')).toBe(false);
-    // Concurrent calls while the trial is still in flight are rejected.
-    expect(isBreakerOpen('raiderio')).toBe(true);
-    expect(isBreakerOpen('raiderio')).toBe(true);
 
-    // Resolving the trial clears the slot; next caller can claim a new trial
-    // only after the breaker cycles back to open and half-opens again.
+    // Claim the trial slot explicitly.
+    expect(tryClaimTrialSlot('raiderio')).toBe(true);
+
+    // Concurrent callers now see the breaker as blocked.
+    expect(isBreakerOpen('raiderio')).toBe(true);
+    expect(tryClaimTrialSlot('raiderio')).toBe(false);
+
+    // Resolving the trial clears the slot and closes the breaker.
     onBreakerTrialResult('raiderio', true);
     expect(getBreakerState('raiderio')).toBe('closed');
     expect(isBreakerOpen('raiderio')).toBe(false);
@@ -156,14 +160,16 @@ describe('apiHealth breaker', () => {
     for (let i = 0; i < 5; i++) noteFailure('raiderio');
     vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
 
-    expect(isBreakerOpen('raiderio')).toBe(false); // claim trial
+    expect(isBreakerOpen('raiderio')).toBe(false);
+    expect(tryClaimTrialSlot('raiderio')).toBe(true);
     onBreakerTrialResult('raiderio', false); // trial fails → reopen
     expect(getBreakerState('raiderio')).toBe('open');
 
     // Past the new cooldown, another trial slot should be claimable.
     vi.setSystemTime(new Date('2026-04-19T12:02:00Z'));
     expect(isBreakerOpen('raiderio')).toBe(false);
-    expect(isBreakerOpen('raiderio')).toBe(true); // only one at a time
+    expect(tryClaimTrialSlot('raiderio')).toBe(true);
+    expect(tryClaimTrialSlot('raiderio')).toBe(false);
   });
 });
 
@@ -177,8 +183,8 @@ describe('apiHealth getBreakerState', () => {
     expect(getBreakerState('raiderio')).toBe('half_open');
     expect(getBreakerState('raiderio')).toBe('half_open');
 
-    // isBreakerOpen is what claims the slot.
-    expect(isBreakerOpen('raiderio')).toBe(false); // claims
-    expect(isBreakerOpen('raiderio')).toBe(true); // second is rejected
+    // tryClaimTrialSlot is what claims the slot.
+    expect(tryClaimTrialSlot('raiderio')).toBe(true);
+    expect(tryClaimTrialSlot('raiderio')).toBe(false);
   });
 });

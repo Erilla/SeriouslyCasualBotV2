@@ -187,25 +187,28 @@ export function noteSuccess(service: ServiceName): void {
   svc.breaker.consecutiveFailures = 0;
 }
 
-// Returns true when the call should be rejected. For half_open, atomically
-// claims the single trial slot: the first caller proceeds (returns false,
-// flagged as the trial via trialInFlight=true) and subsequent concurrent
-// callers are rejected until onBreakerTrialResult clears the flag.
+// Pure predicate: true when the breaker should block a new call. Applies
+// the lazy open→half_open transition (a state-machine advance, not a
+// trial claim). 'half_open' with a trial already in flight also blocks.
 export function isBreakerOpen(service: ServiceName): boolean {
   const svc = state.get(service);
   if (!svc) return false;
-
   maybeTransitionToHalfOpen(svc);
-
   if (svc.breaker.state === 'open') return true;
-
-  if (svc.breaker.state === 'half_open') {
-    if (svc.breaker.trialInFlight) return true;
-    svc.breaker.trialInFlight = true;
-    return false;
-  }
-
+  if (svc.breaker.state === 'half_open' && svc.breaker.trialInFlight) return true;
   return false;
+}
+
+// Atomically claim the single half_open trial slot. Returns true if
+// claimed (caller is the trial), false otherwise (state is closed, or
+// state is half_open but another trial is already in flight).
+export function tryClaimTrialSlot(service: ServiceName): boolean {
+  const svc = state.get(service);
+  if (!svc) return false;
+  if (svc.breaker.state !== 'half_open') return false;
+  if (svc.breaker.trialInFlight) return false;
+  svc.breaker.trialInFlight = true;
+  return true;
 }
 
 // Lightweight breaker-state query for the httpClient's wasTrial decision.
