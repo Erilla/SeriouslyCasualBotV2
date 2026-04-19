@@ -261,12 +261,19 @@ export default {
       let description = lines.join('\n');
       const EMBED_DESC_LIMIT = 4096;
       if (description.length > EMBED_DESC_LIMIT) {
-        // Truncate on a line boundary where possible and flag the truncation
-        // explicitly so triggers don't silently disappear from the list.
-        const notice = '\n\n_…list truncated; see /test trigger autocomplete for the rest._';
+        // Walk lines and stop before overflow; no mid-line slice possible.
+        // The `action` option uses a static choice list (capped at 25), so a
+        // trigger missing from this description is also missing from the
+        // dropdown — point the user at the source for the full set.
+        const notice = '\n\n_…list truncated; see TRIGGERS in `src/commands/test.ts` for the full set._';
         const budget = EMBED_DESC_LIMIT - notice.length;
-        const lastNewline = description.lastIndexOf('\n', budget);
-        description = description.slice(0, lastNewline > 0 ? lastNewline : budget) + notice;
+        let truncated = '';
+        for (const line of lines) {
+          const candidate = truncated ? `${truncated}\n${line}` : line;
+          if (candidate.length > budget) break;
+          truncated = candidate;
+        }
+        description = truncated + notice;
       }
       const embed = new EmbedBuilder()
         .setTitle(`Available triggers (${Object.keys(TRIGGERS).length})`)
