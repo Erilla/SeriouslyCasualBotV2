@@ -165,47 +165,48 @@ const TRIGGERS: Record<string, TriggerDef> = {
   },
 };
 
-// Discord caps slash-command choice names at 100 chars. Fail fast at module
-// load if a label ever drifts past that so the command doesn't silently fail
-// to register. Fix the label rather than silently slicing — a truncated name
-// can collide with another label's prefix.
-for (const [key, def] of Object.entries(TRIGGERS)) {
-  if (def.label.length > 100) {
-    throw new Error(
-      `/test trigger: label for "${key}" is ${def.label.length} chars (max 100). Shorten the label.`,
-    );
-  }
-}
-
-const TRIGGER_CHOICES = Object.entries(TRIGGERS).map(([value, def]) => ({
-  name: def.label,
-  value,
-}));
-
-// Hard-fail at module load if we ever drift past Discord's 25-choice limit.
-if (TRIGGER_CHOICES.length > 25) {
-  throw new Error(
-    `/test trigger has ${TRIGGER_CHOICES.length} choices but Discord allows max 25; switch to autocomplete.`,
-  );
-}
-
-// Fail fast on duplicate choice names — Discord rejects the registration
-// silently otherwise.
+// Build the choice list with graceful degradation. Each TRIGGERS entry must
+// satisfy Discord's constraints: name ≤ 100 chars, names unique, and ≤ 25
+// choices total. Previously the module threw on a violation, which crashed
+// the whole bot on startup for a single bad trigger. Now we warn and skip
+// the offending entry so the rest of the command still registers. Developers
+// see the warn and fix the TRIGGERS map; users see the still-working command.
+const TRIGGER_CHOICES: { name: string; value: string }[] = [];
 {
   const seenNames = new Set<string>();
-  for (const { name } of TRIGGER_CHOICES) {
-    if (seenNames.has(name)) {
-      throw new Error(`/test trigger choice name "${name}" is duplicated; tighten labels in TRIGGERS.`);
+  for (const [key, def] of Object.entries(TRIGGERS)) {
+    if (def.label.length > 100) {
+      logger.warn(
+        'TestTrigger',
+        `Skipping trigger "${key}": label is ${def.label.length} chars (Discord max 100). Shorten the label to register it.`,
+      );
+      continue;
     }
-    seenNames.add(name);
+    if (seenNames.has(def.label)) {
+      logger.warn(
+        'TestTrigger',
+        `Skipping trigger "${key}": duplicate label "${def.label}". Tighten labels in TRIGGERS.`,
+      );
+      continue;
+    }
+    if (TRIGGER_CHOICES.length >= 25) {
+      logger.warn(
+        'TestTrigger',
+        `Skipping trigger "${key}": Discord allows max 25 choices; switch to autocomplete instead of the choice list.`,
+      );
+      continue;
+    }
+    seenNames.add(def.label);
+    TRIGGER_CHOICES.push({ name: def.label, value: key });
   }
 }
 
-// Discord's code-block terminator is three backticks. If an error message
-// contains the same sequence, the reply's formatting breaks. Replace with a
-// visually similar but inert substitute.
+// Zero-width space between the three backticks neutralizes a triple-backtick
+// sequence inside an error message without visually mangling it the way
+// replacing with ''' does. The code block closes cleanly.
+const ZWSP = '\u200B';
 function sanitizeForCodeBlock(text: string): string {
-  return text.replace(/```/g, "'''");
+  return text.replace(/```/g, `\`\`${ZWSP}\``);
 }
 
 function formatDuration(ms: number): string {
