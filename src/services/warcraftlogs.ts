@@ -93,7 +93,6 @@ const ATTENDANCE_QUERY = `
 
 /**
  * Fetch WarcraftLogs report codes where `characterName` was present.
- * Returns codes in reverse chronological order (newest first).
  * Returns empty array on any HTTP error or open circuit (fail-soft).
  */
 export async function getTrialLogs(characterName: string): Promise<string[]> {
@@ -129,8 +128,12 @@ export async function getTrialLogs(characterName: string): Promise<string[]> {
       )
       .map((report) => report.code);
 
-    // WCL's attendance.data is already newest-first; don't reverse.
-    return matchingCodes;
+    // Preserve V1 ordering behavior. The exact natural order of WCL's
+    // attendance.data isn't contractually documented; .reverse() has been
+    // in place since V1 and consumers (`generateTrialLogsContent`) number
+    // the output as "1. Report <code>" — flipping the order here would
+    // silently change what reviewers see.
+    return matchingCodes.reverse();
   } catch (error) {
     if (error instanceof HttpError || error instanceof CircuitOpenError) {
       logger.warn(

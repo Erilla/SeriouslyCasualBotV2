@@ -56,6 +56,12 @@ export async function httpRequest<T>(
   init?: RequestInit,
   opts?: HttpRequestOptions,
 ): Promise<T> {
+  // Respect caller's abort signal before doing any work. Don't touch the
+  // breaker or record outcomes — the caller decided not to run this at all.
+  if (init?.signal?.aborted) {
+    throw init.signal.reason ?? new DOMException('Aborted', 'AbortError');
+  }
+
   if (isBreakerOpen(service)) {
     recordOutcome(service, 'circuit_rejected', {
       msg: `Circuit open for ${service}`,
@@ -174,7 +180,10 @@ export async function httpRequest<T>(
       });
     }
 
-    const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
+    const retryAfterMs = parseRetryAfter(
+      response.headers.get('retry-after'),
+      response.headers.get('date'),
+    );
     if (retryAfterMs !== null && retryAfterMs > RETRY_AFTER_CAP_MS) {
       // Upstream told us to wait longer than our cap; treat as final failure.
       const outcome = sawRateLimit ? 'rate_limited' : 'failed';
@@ -223,7 +232,7 @@ function onFinalFailure(service: ServiceName, wasTrial: boolean): void {
   if (wasTrial) onBreakerTrialResult(service, false);
 }
 
-function parseRetryAfter(header: string | null): number | null {
+function parseRetryAfter(header: string | null, serverDateHeader: string | null): number | null {
   if (!header) return null;
   const trimmed = header.trim();
   const seconds = Number(trimmed);
@@ -232,7 +241,12 @@ function parseRetryAfter(header: string | null): number | null {
   }
   const asDate = Date.parse(trimmed);
   if (!Number.isNaN(asDate)) {
-    return Math.max(0, asDate - Date.now());
+    // Compute the offset against the server's own Date header when present
+    // so we're robust to clock skew between this process and the upstream.
+    // Fall back to local time if the server didn't provide a Date header.
+    const serverNowMs = serverDateHeader ? Date.parse(serverDateHeader) : NaN;
+    const referenceMs = Number.isNaN(serverNowMs) ? Date.now() : serverNowMs;
+    return Math.max(0, asDate - referenceMs);
   }
   return null;
 }
