@@ -35,14 +35,17 @@ export async function alertOfficers(title: string, detail: string): Promise<void
 
   if (!auditChannel) return;
 
-  const row = getDatabase()
-    .prepare('SELECT value FROM config WHERE key = ?')
-    .get('officer_role_id') as { value: string } | undefined;
-
-  const mention = row ? `<@&${row.value}> ` : '';
-  const content = `${mention}**${title}**\n${detail}`;
-
+  // Callers fire-and-forget this with `void`, so any throw from the DB query
+  // or the Discord call becomes an unhandled rejection. The entire function
+  // must be non-throwing — log and swallow.
   try {
+    const row = getDatabase()
+      .prepare('SELECT value FROM config WHERE key = ?')
+      .get('officer_role_id') as { value: string } | undefined;
+
+    const mention = row ? `<@&${row.value}> ` : '';
+    const content = `${mention}**${title}**\n${detail}`;
+
     await auditChannel.send({
       content,
       allowedMentions: row ? { roles: [row.value] } : { parse: [] },
