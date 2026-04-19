@@ -56,12 +56,6 @@ export async function httpRequest<T>(
   init?: RequestInit,
   opts?: HttpRequestOptions,
 ): Promise<T> {
-  // Respect caller's abort signal before doing any work. Don't touch the
-  // breaker or record outcomes — the caller decided not to run this at all.
-  if (init?.signal?.aborted) {
-    throw init.signal.reason ?? new DOMException('Aborted', 'AbortError');
-  }
-
   if (isBreakerOpen(service)) {
     recordOutcome(service, 'circuit_rejected', {
       msg: `Circuit open for ${service}`,
@@ -104,9 +98,11 @@ export async function httpRequest<T>(
       response = await fetch(url, { ...init, signal });
     } catch (err) {
       clearTimeout(timeoutId);
-      // Caller explicitly aborted. Propagate verbatim, don't retry, and
-      // release (not fail) the trial slot — caller cancellation isn't a
-      // service failure and shouldn't reset the cooldown.
+      // fetch threw AbortError but we don't know which signal caused it —
+      // caller-supplied `init.signal` or our internal timeout. Check
+      // init.signal.aborted to distinguish: if the caller aborted, don't
+      // retry and don't punish the service; release the trial slot and
+      // propagate verbatim.
       if (init?.signal?.aborted) {
         if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
         throw err;
@@ -137,12 +133,14 @@ export async function httpRequest<T>(
         return data;
       } catch (err) {
         clearTimeout(timeoutId);
-        // Caller aborted during body parse → propagate, release trial slot.
+        // Distinguish caller-abort from our timeout. response.json() throws
+        // AbortError for either; the flags on the underlying controllers are
+        // what tell us which signal fired. Must check the caller signal
+        // first — if both are aborted, caller-intent wins.
         if (init?.signal?.aborted) {
           if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
           throw err;
         }
-        // Our timeout fired during body parse → treat as transient timeout.
         if (abortController.signal.aborted) {
           const e = err instanceof Error ? err : new Error(String(err));
           lastError = e;
