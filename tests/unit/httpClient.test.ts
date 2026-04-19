@@ -153,3 +153,95 @@ describe('httpRequest — timeout', () => {
     expect(init?.signal).toBeDefined();
   });
 });
+
+describe('httpRequest — retry loop', () => {
+  it.each([429, 500, 502, 503, 504])(
+    'retries on %s up to maxRetries+1 attempts',
+    async (status) => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        mockResponse({ ok: false, status, statusText: 'x' }),
+      );
+      globalThis.fetch = fetchMock;
+
+      const promise = httpRequest('raiderio', 'https://x.test/').catch((e) => e);
+      await vi.advanceTimersByTimeAsync(5_000);
+      const err = await promise;
+
+      expect(err).toBeInstanceOf(HttpError);
+      expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+    },
+  );
+
+  it('succeeds on retry and records `retried`', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse({ ok: false, status: 503, statusText: 'x' }))
+      .mockResolvedValueOnce(mockResponse({ ok: true, json: { ok: 1 } }));
+
+    const promise = httpRequest<{ ok: number }>('raiderio', 'https://x.test/');
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await promise;
+
+    expect(result).toEqual({ ok: 1 });
+    const s = getSummary('raiderio');
+    expect(s.totals.ok).toBe(1);
+    expect(s.totals.retried).toBe(1);
+  });
+
+  it('records `rate_limited` when any attempt saw a 429 and the call ultimately fails', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      mockResponse({ ok: false, status: 429, statusText: 'Too Many Requests' }),
+    );
+
+    const promise = httpRequest('raiderio', 'https://x.test/').catch((e) => e);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await promise;
+
+    const s = getSummary('raiderio');
+    expect(s.totals.rateLimited).toBe(1);
+    expect(s.totals.failed).toBe(0);
+  });
+
+  it('records `timeout` when any attempt timed out and the call ultimately fails', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const err = new Error('aborted');
+            (err as Error & { name: string }).name = 'AbortError';
+            reject(err);
+          });
+        }),
+    );
+
+    const promise = httpRequest('raiderio', 'https://x.test/', undefined, {
+      timeoutMs: 50,
+    }).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await promise;
+
+    const s = getSummary('raiderio');
+    expect(s.totals.timeouts).toBe(1);
+  });
+
+  it('does not retry on 404', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse({ ok: false, status: 404, statusText: 'Not Found' }),
+    );
+    globalThis.fetch = fetchMock;
+
+    await httpRequest('raiderio', 'https://x.test/').catch(() => {});
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on network throw (TypeError)', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    globalThis.fetch = fetchMock;
+
+    const promise = httpRequest('raiderio', 'https://x.test/').catch(() => {});
+    await vi.advanceTimersByTimeAsync(5_000);
+    await promise;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});

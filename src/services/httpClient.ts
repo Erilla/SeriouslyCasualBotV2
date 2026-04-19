@@ -52,64 +52,120 @@ export async function httpRequest<T>(
   opts?: HttpRequestOptions,
 ): Promise<T> {
   const timeoutMs = opts?.timeoutMs ?? 10_000;
+  const maxRetries = opts?.maxRetries ?? 2;
   const parseJson = opts?.parseJson ?? true;
-  const attempts = 1;
 
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const signal = init?.signal
-    ? mergeSignals([init.signal, timeoutSignal])
-    : timeoutSignal;
+  let attempt = 0;
+  let sawRateLimit = false;
+  let sawTimeout = false;
+  let lastError: Error | undefined;
+  let lastStatus: number | undefined;
 
-  let response: Response;
-  try {
-    response = await fetch(url, { ...init, signal });
-  } catch (err) {
-    const e = err instanceof Error ? err : new Error(String(err));
-    const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
-    const outcome = isTimeout ? 'timeout' : 'failed';
-    recordOutcome(service, outcome, { msg: e.message });
-    noteFailure(service);
-    throw new HttpError({
-      service, attempts,
-      message: isTimeout
-        ? `${service} request timed out after ${timeoutMs}ms`
-        : `${service} request failed: ${e.message}`,
-      lastError: e,
-    });
+  while (attempt <= maxRetries) {
+    attempt += 1;
+    // NOTE: AbortController + setTimeout (rather than AbortSignal.timeout)
+    // avoids a fake-timer interaction bug in Node where a fired
+    // AbortSignal.timeout prevents subsequent setTimeout-based fake timers
+    // from advancing correctly in the same promise chain.
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      abortController.abort();
+    }, timeoutMs);
+    const signal = init?.signal
+      ? mergeSignals([init.signal, abortController.signal])
+      : abortController.signal;
+
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, signal });
+      clearTimeout(timeoutId);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const e = err instanceof Error ? err : new Error(String(err));
+      const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
+      lastError = e;
+      if (isTimeout) sawTimeout = true;
+
+      if (attempt > maxRetries) break;
+      await sleep(computeBackoffMs(attempt));
+      continue;
+    }
+
+    if (response.ok) {
+      if (!parseJson) {
+        finishSuccess(service, attempt);
+        return undefined as T;
+      }
+      try {
+        const data = (await response.json()) as T;
+        finishSuccess(service, attempt);
+        return data;
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        // JSON parse errors are not transient.
+        recordOutcome(service, 'failed', { msg: `JSON parse error: ${e.message}` });
+        noteFailure(service);
+        throw new HttpError({
+          service, attempts: attempt,
+          message: `${service} JSON parse error: ${e.message}`, lastError: e,
+        });
+      }
+    }
+
+    lastStatus = response.status;
+    if (response.status === 429) sawRateLimit = true;
+
+    if (!RETRYABLE_STATUSES.has(response.status)) {
+      // Non-retryable HTTP error.
+      recordOutcome(service, 'failed', {
+        msg: `${response.status} ${response.statusText}`,
+        status: response.status,
+      });
+      noteFailure(service);
+      throw new HttpError({
+        service, attempts: attempt, status: response.status,
+        message: `${service} API error: ${response.status} ${response.statusText}`,
+      });
+    }
+
+    if (attempt > maxRetries) break;
+    await sleep(computeBackoffMs(attempt));
   }
 
-  if (!response.ok) {
-    recordOutcome(service, 'failed', {
-      msg: `${response.status} ${response.statusText}`,
-      status: response.status,
-    });
-    noteFailure(service);
-    throw new HttpError({
-      service, attempts, status: response.status,
-      message: `${service} API error: ${response.status} ${response.statusText}`,
-    });
-  }
+  // Exhausted retries.
+  const outcome = sawRateLimit ? 'rate_limited' : sawTimeout ? 'timeout' : 'failed';
+  const msg = lastError
+    ? lastError.message
+    : lastStatus !== undefined
+    ? `${lastStatus}`
+    : 'unknown error';
+  recordOutcome(service, outcome, { msg, status: lastStatus });
+  noteFailure(service);
+  throw new HttpError({
+    service, attempts: attempt, status: lastStatus,
+    message: `${service} request failed after ${attempt} attempt(s): ${msg}`,
+    lastError,
+  });
+}
 
-  if (!parseJson) {
-    recordOutcome(service, 'ok');
-    noteSuccess(service);
-    return undefined as T;
-  }
+function finishSuccess(service: ServiceName, attempt: number): void {
+  recordOutcome(service, 'ok');
+  if (attempt > 1) recordOutcome(service, 'retried');
+  noteSuccess(service);
+}
 
-  try {
-    const data = (await response.json()) as T;
-    recordOutcome(service, 'ok');
-    noteSuccess(service);
-    return data;
-  } catch (err) {
-    const e = err instanceof Error ? err : new Error(String(err));
-    recordOutcome(service, 'failed', { msg: `JSON parse error: ${e.message}` });
-    noteFailure(service);
-    throw new HttpError({
-      service, attempts,
-      message: `${service} JSON parse error: ${e.message}`, lastError: e,
-    });
-  }
+function computeBackoffMs(attemptJustCompleted: number): number {
+  // attemptJustCompleted is 1 after the first attempt, 2 after the second.
+  // Backoff waits BEFORE the next attempt: base * 2^(n-1) + jitter(0..base/2).
+  const base = 500;
+  const exponent = attemptJustCompleted - 1;
+  const computed = base * Math.pow(2, exponent);
+  const jitter = Math.random() * (base * Math.pow(2, exponent - 1));
+  return Math.floor(computed + (exponent >= 0 ? jitter : 0));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Combines an external abort signal with a timeout signal. Aborts when
