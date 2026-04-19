@@ -6,7 +6,29 @@ export function testDbPath(): string {
   return loadE2EEnv().testDbPath;
 }
 
+// Single cached readonly connection per worker — assertion helpers can
+// query it directly without opening/closing a handle per query. Invalidated
+// by wipeTestDb before the file is unlinked.
+let cachedReadonly: Database.Database | null = null;
+
+export function getReadonlyTestDb(): Database.Database {
+  if (!cachedReadonly) {
+    cachedReadonly = new Database(testDbPath(), { readonly: true, fileMustExist: true });
+  }
+  return cachedReadonly;
+}
+
+function closeReadonly(): void {
+  if (cachedReadonly) {
+    cachedReadonly.close();
+    cachedReadonly = null;
+  }
+}
+
 export async function wipeTestDb(): Promise<void> {
+  // Release our own readonly handle first so the unlink doesn't fight it.
+  closeReadonly();
+
   const path = testDbPath();
   // Remove WAL-mode auxiliary files first, then the main DB file.
   // On Windows, SQLite WAL mode keeps the -shm file locked briefly after
@@ -21,8 +43,10 @@ export async function wipeTestDb(): Promise<void> {
   if (!existsSync(path)) return;
 
   // Retry the main file up to 5 times with brief yielding pauses.
-  // better-sqlite3 releases OS handles synchronously on close(), but
-  // Windows may return EBUSY for one or two scheduler ticks afterward.
+  // better-sqlite3 releases OS handles synchronously on close(), but on
+  // Windows the filesystem itself can return EBUSY for one or two scheduler
+  // ticks after close — this retry handles that OS-level timing, not a
+  // connection leak on our side (closeDatabase + closeReadonly both ran).
   let lastErr: unknown;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
@@ -36,6 +60,7 @@ export async function wipeTestDb(): Promise<void> {
   throw lastErr;
 }
 
+/** @deprecated Use getReadonlyTestDb() — callers must not close the returned handle. */
 export function openTestDbReadonly(): Database.Database {
-  return new Database(testDbPath(), { readonly: true, fileMustExist: true });
+  return getReadonlyTestDb();
 }

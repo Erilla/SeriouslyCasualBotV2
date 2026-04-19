@@ -1,22 +1,12 @@
-import { openTestDbReadonly } from './db.js';
+import { getReadonlyTestDb } from './db.js';
 import type { TextBasedChannel, GuildMember, Role, Message } from 'discord.js';
 
 export function queryOne<T = unknown>(sql: string, params: unknown[] = []): T | undefined {
-  const db = openTestDbReadonly();
-  try {
-    return db.prepare(sql).get(...params) as T | undefined;
-  } finally {
-    db.close();
-  }
+  return getReadonlyTestDb().prepare(sql).get(...params) as T | undefined;
 }
 
 export function queryAll<T = unknown>(sql: string, params: unknown[] = []): T[] {
-  const db = openTestDbReadonly();
-  try {
-    return db.prepare(sql).all(...params) as T[];
-  } finally {
-    db.close();
-  }
+  return getReadonlyTestDb().prepare(sql).all(...params) as T[];
 }
 
 export async function findRecentMessage(
