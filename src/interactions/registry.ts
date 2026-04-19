@@ -8,6 +8,7 @@ import * as pagination from './pagination.js';
 import * as loot from './loot.js';
 import * as raider from './raider.js';
 import * as trial from './trial.js';
+import * as application from './application.js';
 
 export type ButtonHandler = {
   prefix: string;
@@ -64,9 +65,11 @@ export const buttonHandlers: ButtonHandler[] = [
   ...loot.buttons,
   ...raider.buttons,
   ...trial.buttons,
+  ...application.buttons,
 ];
 export const modalHandlers: ModalHandler[] = [
   ...trial.modals,
+  ...application.modals,
 ];
 export const userSelectHandlers: UserSelectHandler[] = [
   ...raider.userSelects,
