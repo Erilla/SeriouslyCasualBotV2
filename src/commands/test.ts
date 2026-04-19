@@ -2,6 +2,7 @@ import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
   type Client,
+  EmbedBuilder,
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js';
@@ -159,6 +160,9 @@ const TRIGGERS: Record<string, TriggerDef> = {
 };
 
 const TRIGGER_CHOICES = Object.entries(TRIGGERS).map(([value, def]) => ({
+  // Discord caps choice names at 100 chars. Slicing keeps registration from
+  // failing if a future label drifts long; the uniqueness check below is what
+  // actually matters — duplicate names would break command registration.
   name: def.label.slice(0, 100),
   value,
 }));
@@ -168,6 +172,25 @@ if (TRIGGER_CHOICES.length > 25) {
   throw new Error(
     `/test trigger has ${TRIGGER_CHOICES.length} choices but Discord allows max 25; switch to autocomplete.`,
   );
+}
+
+// And fail fast if two actions ever end up with the same (sliced) choice name,
+// since Discord rejects the command registration silently in that case.
+{
+  const seenNames = new Set<string>();
+  for (const { name } of TRIGGER_CHOICES) {
+    if (seenNames.has(name)) {
+      throw new Error(`/test trigger choice name "${name}" is duplicated; tighten labels in TRIGGERS.`);
+    }
+    seenNames.add(name);
+  }
+}
+
+// Discord's code-block terminator is three backticks. If an error message
+// contains the same sequence, the reply's formatting breaks. Replace with a
+// visually similar but inert substitute.
+function sanitizeForCodeBlock(text: string): string {
+  return text.replace(/```/g, "'''");
 }
 
 function formatDuration(ms: number): string {
@@ -212,12 +235,17 @@ export default {
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'list') {
+      // Use an embed so we can keep adding triggers without bumping into
+      // Discord's 2000-char message limit. Embed description caps at 4096.
       const lines = Object.values(TRIGGERS).map((t) => `- **${t.label}** — ${t.description}`);
-      lines.push('', `**/test fire_trial_alert trial_id:<n>** — fire pending review alerts for trial #n immediately.`);
-      await interaction.reply({
-        content: `**Available triggers (${Object.keys(TRIGGERS).length}):**\n${lines.join('\n')}`,
-        flags: MessageFlags.Ephemeral,
-      });
+      lines.push(
+        '',
+        `**/test fire_trial_alert trial_id:<n>** — fire pending review alerts for trial #n immediately.`,
+      );
+      const embed = new EmbedBuilder()
+        .setTitle(`Available triggers (${Object.keys(TRIGGERS).length})`)
+        .setDescription(lines.join('\n').slice(0, 4096));
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -245,7 +273,7 @@ export default {
         const elapsed = formatDuration(Date.now() - started);
         logger.error('TestTrigger', `${action} failed after ${elapsed}: ${error.message}`, error);
         await interaction.editReply({
-          content: `✗ **${def.label}** failed after ${elapsed}.\n\`\`\`\n${error.message.slice(0, 1500)}\n\`\`\``,
+          content: `✗ **${def.label}** failed after ${elapsed}.\n\`\`\`\n${sanitizeForCodeBlock(error.message).slice(0, 1500)}\n\`\`\``,
         });
       }
       return;
@@ -282,7 +310,7 @@ export default {
         const elapsed = formatDuration(Date.now() - started);
         logger.error('TestTrigger', `fire_trial_alert ${trialId} failed after ${elapsed}: ${error.message}`, error);
         await interaction.editReply({
-          content: `✗ fire_trial_alert #${trialId} failed after ${elapsed}.\n\`\`\`\n${error.message.slice(0, 1500)}\n\`\`\``,
+          content: `✗ fire_trial_alert #${trialId} failed after ${elapsed}.\n\`\`\`\n${sanitizeForCodeBlock(error.message).slice(0, 1500)}\n\`\`\``,
         });
       }
       return;
