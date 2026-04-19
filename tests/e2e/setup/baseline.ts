@@ -7,7 +7,10 @@ import testdataCmd from '../../../src/commands/testdata.js';
 import type { ChatInputCommandInteraction, TextBasedChannel } from 'discord.js';
 
 export async function resetAndSeed(options: { discord?: boolean } = {}): Promise<void> {
-  const { discord = true } = options;
+  // Default to DB-only seeding. Tests that actually verify Discord-side
+  // artifacts (e.g. applications-vote flow clicking a real seeded forum
+  // thread) opt in with { discord: true }.
+  const { discord = false } = options;
   const { client, guild, officer } = getE2EContext();
   const env = loadE2EEnv();
 
@@ -24,18 +27,9 @@ export async function resetAndSeed(options: { discord?: boolean } = {}): Promise
     );
   }
 
-  const reset = fakeChatInput({
-    client,
-    guild,
-    channel: channel as TextBasedChannel,
-    member: officer,
-    user: officer.user,
-    commandName: 'testdata',
-    subcommand: 'reset',
-    options: { confirm: true },
-  });
-  await testdataCmd.execute(reset as unknown as ChatInputCommandInteraction);
-
+  // We just wipeTestDb'd and initDatabase'd — invoking /testdata reset here
+  // would wipe a fresh schema against its own freshly-seeded defaults, which
+  // is wasted work. Jump straight to seed_all.
   const seedAll = fakeChatInput({
     client,
     guild,

@@ -67,7 +67,3 @@ export async function wipeTestDb(): Promise<void> {
   throw lastErr;
 }
 
-/** @deprecated Use getReadonlyTestDb() — callers must not close the returned handle. */
-export function openTestDbReadonly(): Database.Database {
-  return getReadonlyTestDb();
-}
