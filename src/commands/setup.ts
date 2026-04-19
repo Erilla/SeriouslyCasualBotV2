@@ -188,13 +188,20 @@ export default {
 
       let content = `**Bot Configuration**\n\n${sections.join('\n\n')}`;
       if (content.length > DISCORD_MESSAGE_LIMIT) {
-        // Truncate on a line boundary so we don't slice mid-<#id> mention
-        // and leave a broken markdown tag in the output. Reference the
-        // real table name (config, not bot_config).
+        // Build the output line-by-line instead. Hard-slicing at the
+        // character budget could cut through a `<#id>` or `<@&id>` mention
+        // and leave broken markdown in the reply. Walk lines and stop
+        // when adding the next one would overflow.
         const notice = '\n\n_…output truncated; query the `config` table directly for the full dump._';
         const budget = DISCORD_MESSAGE_LIMIT - notice.length;
-        const cut = content.lastIndexOf('\n', budget);
-        content = content.slice(0, cut > 0 ? cut : budget) + notice;
+        const lines = content.split('\n');
+        let truncated = '';
+        for (const line of lines) {
+          const candidate = truncated ? `${truncated}\n${line}` : line;
+          if (candidate.length > budget) break;
+          truncated = candidate;
+        }
+        content = truncated + notice;
       }
 
       await interaction.reply({ content, flags: MessageFlags.Ephemeral });
