@@ -245,3 +245,71 @@ describe('httpRequest — retry loop', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('httpRequest — Retry-After', () => {
+  it('honours Retry-After in seconds', async () => {
+    const sleepStart = Date.now();
+    let observedGap = 0;
+
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockResponse({
+          ok: false, status: 429, statusText: 'x',
+          headers: { 'Retry-After': '5' },
+        }),
+      )
+      .mockImplementationOnce(async () => {
+        observedGap = Date.now() - sleepStart;
+        return mockResponse({ ok: true, json: {} });
+      });
+
+    const promise = httpRequest('raiderio', 'https://x.test/');
+    await vi.advanceTimersByTimeAsync(6_000);
+    await promise;
+
+    expect(observedGap).toBeGreaterThanOrEqual(5_000);
+  });
+
+  it('honours Retry-After as HTTP-date', async () => {
+    const sleepStart = Date.now();
+    const futureDate = new Date(sleepStart + 2_000).toUTCString();
+    let observedGap = 0;
+
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockResponse({
+          ok: false, status: 503, statusText: 'x',
+          headers: { 'Retry-After': futureDate },
+        }),
+      )
+      .mockImplementationOnce(async () => {
+        observedGap = Date.now() - sleepStart;
+        return mockResponse({ ok: true, json: {} });
+      });
+
+    const promise = httpRequest('raiderio', 'https://x.test/');
+    await vi.advanceTimersByTimeAsync(3_000);
+    await promise;
+
+    expect(observedGap).toBeGreaterThanOrEqual(2_000);
+  });
+
+  it('treats Retry-After > 30s as final failure without waiting', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse({
+        ok: false, status: 429, statusText: 'x',
+        headers: { 'Retry-After': '120' },
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    const err = await httpRequest('raiderio', 'https://x.test/').catch((e) => e);
+    expect(err).toBeInstanceOf(HttpError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const s = getSummary('raiderio');
+    expect(s.totals.rateLimited).toBe(1);
+  });
+});

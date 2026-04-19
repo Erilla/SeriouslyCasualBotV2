@@ -41,6 +41,7 @@ export class CircuitOpenError extends Error {
 }
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRY_AFTER_CAP_MS = 30_000;
 // NOTE: httpRequest assumes all calls are idempotent. All current callers
 // (Raider.io/wowaudit GETs, WarcraftLogs OAuth client_credentials POST and
 // GraphQL read queries) are safe to retry. Adding a non-idempotent caller
@@ -116,7 +117,6 @@ export async function httpRequest<T>(
     if (response.status === 429) sawRateLimit = true;
 
     if (!RETRYABLE_STATUSES.has(response.status)) {
-      // Non-retryable HTTP error.
       recordOutcome(service, 'failed', {
         msg: `${response.status} ${response.statusText}`,
         status: response.status,
@@ -128,8 +128,24 @@ export async function httpRequest<T>(
       });
     }
 
+    const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
+    if (retryAfterMs !== null && retryAfterMs > RETRY_AFTER_CAP_MS) {
+      // Upstream told us to wait longer than our cap; treat as final failure.
+      const outcome = sawRateLimit ? 'rate_limited' : 'failed';
+      recordOutcome(service, outcome, {
+        msg: `Retry-After ${Math.round(retryAfterMs / 1_000)}s exceeds ${RETRY_AFTER_CAP_MS / 1_000}s cap`,
+        status: response.status,
+      });
+      noteFailure(service);
+      throw new HttpError({
+        service, attempts: attempt, status: response.status,
+        message: `${service} Retry-After exceeds ${RETRY_AFTER_CAP_MS / 1_000}s cap`,
+      });
+    }
+
     if (attempt > maxRetries) break;
-    await sleep(computeBackoffMs(attempt));
+    const waitMs = retryAfterMs !== null ? retryAfterMs : computeBackoffMs(attempt);
+    await sleep(waitMs);
   }
 
   // Exhausted retries.
@@ -152,6 +168,20 @@ function finishSuccess(service: ServiceName, attempt: number): void {
   recordOutcome(service, 'ok');
   if (attempt > 1) recordOutcome(service, 'retried');
   noteSuccess(service);
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  const trimmed = header.trim();
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.floor(seconds * 1_000);
+  }
+  const asDate = Date.parse(trimmed);
+  if (!Number.isNaN(asDate)) {
+    return Math.max(0, asDate - Date.now());
+  }
+  return null;
 }
 
 function computeBackoffMs(attemptJustCompleted: number): number {
