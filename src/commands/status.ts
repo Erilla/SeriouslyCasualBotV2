@@ -59,7 +59,7 @@ function formatApiHealthLine(label: string, summary: ServiceSummary): string {
   }
 
   let line = `**${label}**  ${breakerEmoji(breaker)} ${breaker}  ·  ${successPart}  ·  ${failureParts.join(', ')}`;
-  if (lastError) {
+  if (lastError && totalFailures > 0) {
     const hh = String(lastError.at.getUTCHours()).padStart(2, '0');
     const mm = String(lastError.at.getUTCMinutes()).padStart(2, '0');
     const statusPart = lastError.status ? `${lastError.status} ` : '';
