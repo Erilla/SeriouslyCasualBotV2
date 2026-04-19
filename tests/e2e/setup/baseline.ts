@@ -15,7 +15,14 @@ export async function resetAndSeed(options: { discord?: boolean } = {}): Promise
   await wipeTestDb();
   initDatabase(env.testDbPath);
 
-  const channel = guild.systemChannel ?? guild.channels.cache.find((c) => c.isTextBased())!;
+  const channel =
+    guild.systemChannel ?? guild.channels.cache.find((c) => c.isTextBased());
+  if (!channel) {
+    throw new Error(
+      `Sandbox guild ${guild.id} has no system channel and no text-based channel — ` +
+      `cannot synthesize /testdata interaction for baseline reset.`,
+    );
+  }
 
   const reset = fakeChatInput({
     client,

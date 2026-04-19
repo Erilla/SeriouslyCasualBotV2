@@ -33,11 +33,18 @@ export async function wipeTestDb(): Promise<void> {
   // Remove WAL-mode auxiliary files first, then the main DB file.
   // On Windows, SQLite WAL mode keeps the -shm file locked briefly after
   // db.close(), which can cascade to an EBUSY on the main file.
-  // Strategy: delete auxiliaries (silently), then retry the main file.
+  // Strategy: delete auxiliaries, then retry the main file. We don't fail
+  // the whole wipe if an auxiliary delete hits EBUSY — it'll be unlinked
+  // on the next attempt or overwritten when SQLite reopens — but any other
+  // error should surface so a real permissions/IO problem isn't silent.
   for (const suffix of ['-wal', '-shm']) {
     const p = path + suffix;
-    if (existsSync(p)) {
-      try { unlinkSync(p); } catch { /* auxiliary — ignore */ }
+    if (!existsSync(p)) continue;
+    try {
+      unlinkSync(p);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EBUSY' && code !== 'ENOENT') throw err;
     }
   }
   if (!existsSync(path)) return;

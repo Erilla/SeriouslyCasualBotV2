@@ -1,5 +1,9 @@
-import { Client, GatewayIntentBits, Partials, type Guild, type GuildMember } from 'discord.js';
+import { Client, Collection, GatewayIntentBits, Partials, type Guild, type GuildMember } from 'discord.js';
+import { readdirSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { loadE2EEnv } from './env.js';
+import type { BotClient, Command } from '../../../src/types/index.js';
 
 export interface E2EContext {
   client: Client;
@@ -25,7 +29,13 @@ export async function bootstrapE2E(): Promise<E2EContext> {
       GatewayIntentBits.MessageContent,
     ],
     partials: [Partials.Channel],
-  });
+  }) as BotClient;
+
+  // Populate client.commands the same way src/index.ts does, so handlers that
+  // read interaction.client.commands (e.g. /help iterating the collection)
+  // work without per-test monkey-patching.
+  client.commands = new Collection<string, Command>();
+  await loadCommands(client);
 
   await new Promise<void>((resolve, reject) => {
     client.once('ready', () => resolve());
@@ -62,4 +72,18 @@ export async function shutdownE2E(): Promise<void> {
 export function getE2EContext(): E2EContext {
   if (!context) throw new Error('bootstrapE2E() must be called before getE2EContext()');
   return context;
+}
+
+async function loadCommands(client: BotClient): Promise<void> {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const commandsDir = join(here, '..', '..', '..', 'src', 'commands');
+  const files = readdirSync(commandsDir).filter(
+    (f) => f.endsWith('.ts') || f.endsWith('.js'),
+  );
+  for (const file of files) {
+    const mod = await import(pathToFileURL(join(commandsDir, file)).href);
+    const cmd = mod.default as Command | undefined;
+    if (!cmd?.data || !cmd?.execute) continue;
+    client.commands.set(cmd.data.name, cmd);
+  }
 }

@@ -1,5 +1,5 @@
 import type {
-  Client, Guild, GuildMember, TextBasedChannel, User,
+  Client, Guild, GuildMember, TextBasedChannel, User, Role, Attachment,
   InteractionReplyOptions, InteractionEditReplyOptions,
   ModalBuilder, Message, MessageEditOptions,
 } from 'discord.js';
@@ -15,11 +15,11 @@ export interface OptionsShim {
   getString(name: string, required?: boolean): string | null;
   getInteger(name: string, required?: boolean): number | null;
   getBoolean(name: string, required?: boolean): boolean | null;
-  getUser(name: string, required?: boolean): unknown;
-  getMember(name: string): unknown;
-  getChannel(name: string, required?: boolean): unknown;
-  getRole(name: string, required?: boolean): unknown;
-  getAttachment(name: string, required?: boolean): unknown;
+  getUser(name: string, required?: boolean): User | null;
+  getMember(name: string): GuildMember | null;
+  getChannel(name: string, required?: boolean): TextBasedChannel | null;
+  getRole(name: string, required?: boolean): Role | null;
+  getAttachment(name: string, required?: boolean): Attachment | null;
 }
 
 export function buildOptionsShim(init: OptionsShimInit): OptionsShim {
