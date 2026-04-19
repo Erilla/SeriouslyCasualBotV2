@@ -29,13 +29,28 @@ export async function refreshLinkingMessages(client: Client): Promise<void> {
     return;
   }
 
+  // The bot stays a member of the configured guild while running, so the
+  // cache is the source of truth. Hitting the REST /guilds/:id endpoint on
+  // every 10-min tick would be a waste. Fetch only as a safety net if the
+  // cache hasn't populated yet (shouldn't happen after clientReady).
+  const guild =
+    client.guilds.cache.get(config.guildId) ??
+    (await client.guilds.fetch(config.guildId).catch(() => null));
+  if (!guild) {
+    logger.error(
+      'RefreshLinks',
+      'Failed to resolve guild for raider-setup refresh',
+      new Error(`guild ${config.guildId} not in cache and fetch failed`),
+    );
+    return;
+  }
+
   // getOrCreateChannel self-heals a stale ID: fetch-by-ID fails → clear
   // config → name lookup → writeConfig with the current channel's ID.
   // Without this, a once-valid ID that points at a deleted channel would
   // warn every 10 minutes until an admin re-ran /setup set_channel (#36).
   let channel: TextChannel;
   try {
-    const guild = await client.guilds.fetch(config.guildId);
     channel = await getOrCreateChannel(guild, {
       name: 'raider-setup',
       type: ChannelType.GuildText,
