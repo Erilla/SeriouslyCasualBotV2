@@ -1,5 +1,8 @@
 import type { ServiceName } from './apiHealth.js';
-import { recordOutcome, noteFailure, noteSuccess } from './apiHealth.js';
+import {
+  recordOutcome, noteFailure, noteSuccess,
+  isBreakerOpen, onBreakerTrialResult, getSummary,
+} from './apiHealth.js';
 
 export type { ServiceName };
 
@@ -52,6 +55,16 @@ export async function httpRequest<T>(
   init?: RequestInit,
   opts?: HttpRequestOptions,
 ): Promise<T> {
+  if (isBreakerOpen(service)) {
+    recordOutcome(service, 'circuit_rejected', {
+      msg: `Circuit open for ${service}`,
+    });
+    throw new CircuitOpenError(service);
+  }
+
+  // If the breaker is in half_open, this call is the trial.
+  const breakerWasHalfOpen = getSummary(service).breaker === 'half_open';
+
   const timeoutMs = opts?.timeoutMs ?? 10_000;
   const maxRetries = opts?.maxRetries ?? 2;
   const parseJson = opts?.parseJson ?? true;
@@ -94,18 +107,19 @@ export async function httpRequest<T>(
 
     if (response.ok) {
       if (!parseJson) {
-        finishSuccess(service, attempt);
+        finishSuccess(service, attempt, breakerWasHalfOpen);
         return undefined as T;
       }
       try {
         const data = (await response.json()) as T;
-        finishSuccess(service, attempt);
+        finishSuccess(service, attempt, breakerWasHalfOpen);
         return data;
       } catch (err) {
         const e = err instanceof Error ? err : new Error(String(err));
         // JSON parse errors are not transient.
         recordOutcome(service, 'failed', { msg: `JSON parse error: ${e.message}` });
         noteFailure(service);
+        onFinalFailure(service, breakerWasHalfOpen);
         throw new HttpError({
           service, attempts: attempt,
           message: `${service} JSON parse error: ${e.message}`, lastError: e,
@@ -122,6 +136,7 @@ export async function httpRequest<T>(
         status: response.status,
       });
       noteFailure(service);
+      onFinalFailure(service, breakerWasHalfOpen);
       throw new HttpError({
         service, attempts: attempt, status: response.status,
         message: `${service} API error: ${response.status} ${response.statusText}`,
@@ -137,6 +152,7 @@ export async function httpRequest<T>(
         status: response.status,
       });
       noteFailure(service);
+      onFinalFailure(service, breakerWasHalfOpen);
       throw new HttpError({
         service, attempts: attempt, status: response.status,
         message: `${service} Retry-After exceeds ${RETRY_AFTER_CAP_MS / 1_000}s cap`,
@@ -157,6 +173,7 @@ export async function httpRequest<T>(
     : 'unknown error';
   recordOutcome(service, outcome, { msg, status: lastStatus });
   noteFailure(service);
+  onFinalFailure(service, breakerWasHalfOpen);
   throw new HttpError({
     service, attempts: attempt, status: lastStatus,
     message: `${service} request failed after ${attempt} attempt(s): ${msg}`,
@@ -164,10 +181,15 @@ export async function httpRequest<T>(
   });
 }
 
-function finishSuccess(service: ServiceName, attempt: number): void {
+function finishSuccess(service: ServiceName, attempt: number, wasTrial: boolean): void {
   recordOutcome(service, 'ok');
   if (attempt > 1) recordOutcome(service, 'retried');
   noteSuccess(service);
+  if (wasTrial) onBreakerTrialResult(service, true);
+}
+
+function onFinalFailure(service: ServiceName, wasTrial: boolean): void {
+  if (wasTrial) onBreakerTrialResult(service, false);
 }
 
 function parseRetryAfter(header: string | null): number | null {

@@ -3,8 +3,9 @@ import { __resetForTests } from '../../src/services/apiHealth.js';
 import {
   httpRequest,
   HttpError,
+  CircuitOpenError,
 } from '../../src/services/httpClient.js';
-import { getSummary } from '../../src/services/apiHealth.js';
+import { getSummary, isBreakerOpen } from '../../src/services/apiHealth.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -311,5 +312,55 @@ describe('httpRequest — Retry-After', () => {
 
     const s = getSummary('raiderio');
     expect(s.totals.rateLimited).toBe(1);
+  });
+});
+
+describe('httpRequest — circuit breaker integration', () => {
+  it('opens the breaker after 5 consecutive failed calls', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      mockResponse({ ok: false, status: 404, statusText: 'x' }),
+    );
+
+    for (let i = 0; i < 5; i++) {
+      await httpRequest('raiderio', 'https://x.test/').catch(() => {});
+    }
+    expect(isBreakerOpen('raiderio')).toBe(true);
+  });
+
+  it('fast-fails with CircuitOpenError while open, without calling fetch', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      mockResponse({ ok: false, status: 404, statusText: 'x' }),
+    );
+    for (let i = 0; i < 5; i++) {
+      await httpRequest('raiderio', 'https://x.test/').catch(() => {});
+    }
+
+    const callCountBefore = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    await expect(
+      httpRequest('raiderio', 'https://x.test/'),
+    ).rejects.toBeInstanceOf(CircuitOpenError);
+
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callCountBefore);
+    expect(getSummary('raiderio').totals.circuitRejected).toBe(1);
+  });
+
+  it('half_open -> closed on a successful trial call', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      mockResponse({ ok: false, status: 500, statusText: 'x' }),
+    );
+    const kick = async () => {
+      const p = httpRequest('raiderio', 'https://x.test/').catch(() => {});
+      await vi.advanceTimersByTimeAsync(5_000);
+      return p;
+    };
+    for (let i = 0; i < 5; i++) await kick();
+    expect(getSummary('raiderio').breaker).toBe('open');
+
+    // Fast-forward past 60s cooldown.
+    vi.setSystemTime(new Date(Date.now() + 61_000));
+    globalThis.fetch = vi.fn().mockResolvedValue(mockResponse({ ok: true, json: {} }));
+
+    await httpRequest('raiderio', 'https://x.test/');
+    expect(getSummary('raiderio').breaker).toBe('closed');
   });
 });
