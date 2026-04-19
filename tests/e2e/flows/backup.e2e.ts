@@ -38,7 +38,7 @@
  *    files are pruned so that at most MAX_BACKUPS remain.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, readdirSync, unlinkSync, writeFileSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 import { statSync } from 'fs';
@@ -52,14 +52,15 @@ import { dailyBackup } from '../../../src/functions/backups/dailyBackup.js';
 const BACKUP_DIR = resolve(process.cwd(), 'backups');
 const MAX_BACKUPS = 7;
 
-/** Today's ISO date string, matching the filename format used by dailyBackup. */
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0]!;
-}
+// Freeze the clock to a known instant so the filename `dailyBackup` computes
+// from `new Date()` and the one the test asserts on can never disagree across
+// a midnight boundary while the backup is in flight.
+const FROZEN_NOW = new Date('2026-06-15T12:00:00Z');
+const FROZEN_DATE_STR = '2026-06-15';
 
-/** Full path to today's expected backup file. */
+/** Full path to the frozen-date expected backup file. */
 function todayFile(): string {
-  return join(BACKUP_DIR, `db-${todayStr()}.sqlite`);
+  return join(BACKUP_DIR, `db-${FROZEN_DATE_STR}.sqlite`);
 }
 
 // ---------------------------------------------------------------------------
@@ -86,9 +87,13 @@ describe('backup — dailyBackup scheduled-job flow', () => {
     await resetAndSeed({ discord: false });
     // Remove any leftover backup files from a previous run.
     cleanBackupDir();
+    // Freeze Date to mid-day UTC so filename generation is deterministic.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(FROZEN_NOW);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     // Always clean up so the working directory stays tidy.
     cleanBackupDir();
   });
@@ -165,7 +170,7 @@ describe('backup — dailyBackup scheduled-job flow', () => {
     expect(after.length).toBeLessThanOrEqual(MAX_BACKUPS);
 
     // Today's backup must still be present (it is the newest, should not be pruned).
-    expect(after).toContain(`db-${todayStr()}.sqlite`);
+    expect(after).toContain(`db-${FROZEN_DATE_STR}.sqlite`);
 
     // The oldest synthetic file (2024-01-01) must have been deleted.
     expect(after).not.toContain('db-2024-01-01.sqlite');

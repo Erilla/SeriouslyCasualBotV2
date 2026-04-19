@@ -52,7 +52,7 @@ export function buildOptionsShim(init: OptionsShimInit): OptionsShim {
 }
 
 export interface FakeReply {
-  options: InteractionReplyOptions | string;
+  options: InteractionReplyOptions | InteractionEditReplyOptions | string;
   ephemeral: boolean;
 }
 
@@ -139,16 +139,16 @@ export function fakeChatInput(init: FakeChatInputInit): FakeChatInput {
       return undefined;
     },
     async editReply(opts) {
-      fake.__editedReply = { options: opts as InteractionReplyOptions, ephemeral: false };
+      fake.__editedReply = { options: opts, ephemeral: false };
       return { id: 'fake-edited-reply' };
     },
     async followUp(opts) {
       const ephemeral = isEphemeral(opts);
       fake.__followUps.push({ options: opts, ephemeral });
       // If non-ephemeral, pipe to channel.send so real Discord reflects it.
-      if (!ephemeral && 'send' in init.channel) {
+      if (!ephemeral && init.channel.isSendable()) {
         const payload = typeof opts === 'string' ? { content: opts } : opts;
-        await (init.channel as TextBasedChannel & { send: (p: unknown) => Promise<unknown> }).send(payload);
+        await init.channel.send(payload);
       }
       return { id: 'fake-follow-up' };
     },
@@ -243,9 +243,9 @@ export function fakeButton(init: FakeButtonInit): FakeButton {
     async followUp(opts) {
       const ephemeral = isEphemeral(opts);
       fake.__followUps.push({ options: opts, ephemeral });
-      if (!ephemeral && 'send' in init.channel) {
+      if (!ephemeral && init.channel.isSendable()) {
         const payload = typeof opts === 'string' ? { content: opts } : opts;
-        await (init.channel as TextBasedChannel & { send: (p: unknown) => Promise<unknown> }).send(payload);
+        await init.channel.send(payload);
       }
       return { id: 'fake-follow-up' };
     },
@@ -321,15 +321,15 @@ export function fakeModalSubmit(init: FakeModalSubmitInit): FakeModalSubmit {
       return undefined;
     },
     async editReply(opts) {
-      fake.__editedReply = { options: opts as InteractionReplyOptions, ephemeral: false };
+      fake.__editedReply = { options: opts, ephemeral: false };
       return { id: 'fake-edited-reply' };
     },
     async followUp(opts) {
       const ephemeral = isEphemeral(opts);
       fake.__followUps.push({ options: opts, ephemeral });
-      if (!ephemeral && 'send' in init.channel) {
+      if (!ephemeral && init.channel.isSendable()) {
         const payload = typeof opts === 'string' ? { content: opts } : opts;
-        await (init.channel as TextBasedChannel & { send: (p: unknown) => Promise<unknown> }).send(payload);
+        await init.channel.send(payload);
       }
       return { id: 'fake-follow-up' };
     },

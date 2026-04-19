@@ -6,7 +6,7 @@ export function testDbPath(): string {
   return loadE2EEnv().testDbPath;
 }
 
-export function wipeTestDb(): void {
+export async function wipeTestDb(): Promise<void> {
   const path = testDbPath();
   // Remove WAL-mode auxiliary files first, then the main DB file.
   // On Windows, SQLite WAL mode keeps the -shm file locked briefly after
@@ -30,9 +30,7 @@ export function wipeTestDb(): void {
       return; // success
     } catch (err) {
       lastErr = err;
-      // Spin-wait a few microseconds to yield to the OS scheduler.
-      const end = Date.now() + 20;
-      while (Date.now() < end) { /* busy-wait */ }
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
   }
   throw lastErr;

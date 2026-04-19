@@ -12,7 +12,7 @@ export async function resetAndSeed(options: { discord?: boolean } = {}): Promise
   const env = loadE2EEnv();
 
   closeDatabase();
-  wipeTestDb();
+  await wipeTestDb();
   initDatabase(env.testDbPath);
 
   const channel = guild.systemChannel ?? guild.channels.cache.find((c) => c.isTextBased())!;
