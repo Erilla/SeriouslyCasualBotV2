@@ -7,6 +7,7 @@ import { requireOfficer, wrapErrors, type InteractionKind } from './middleware.j
 import * as pagination from './pagination.js';
 import * as loot from './loot.js';
 import * as raider from './raider.js';
+import * as trial from './trial.js';
 
 export type ButtonHandler = {
   prefix: string;
@@ -62,8 +63,11 @@ export const buttonHandlers: ButtonHandler[] = [
   ...pagination.buttons,
   ...loot.buttons,
   ...raider.buttons,
+  ...trial.buttons,
 ];
-export const modalHandlers: ModalHandler[] = [];
+export const modalHandlers: ModalHandler[] = [
+  ...trial.modals,
+];
 export const userSelectHandlers: UserSelectHandler[] = [
   ...raider.userSelects,
 ];
