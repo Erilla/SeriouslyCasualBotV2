@@ -36,6 +36,7 @@ import { updateLootPost } from '../functions/loot/updateLootPost.js';
 import { generateLootPost } from '../functions/loot/generateLootPost.js';
 import type { LootPostRow, LootResponseRow } from '../types/index.js';
 import { getCachedPage, buildPageEmbed, buildPageButtons } from '../functions/pagination.js';
+import { CircuitOpenError } from '../services/httpClient.js';
 
 export default {
   name: 'interactionCreate',
@@ -57,7 +58,11 @@ export default {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error('interaction', `Command ${interaction.commandName} failed: ${err.message}`, err);
 
-        const reply = { content: 'There was an error executing this command.', flags: MessageFlags.Ephemeral } as const;
+        const message =
+          err instanceof CircuitOpenError
+            ? `⚠️ ${err.service} is currently unreachable (circuit open). Try again in ~60s.`
+            : 'There was an error executing this command.';
+        const reply = { content: message, flags: MessageFlags.Ephemeral } as const;
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp(reply).catch(() => {});
         } else {
