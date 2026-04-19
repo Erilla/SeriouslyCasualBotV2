@@ -4,6 +4,7 @@ import { getE2EContext } from '../setup/bootstrap.js';
 import { fakeChatInput } from '../setup/synthesizer.js';
 import { resetAndSeed } from '../setup/baseline.js';
 import { queryOne } from '../setup/assertions.js';
+import { getDatabase } from '../../../src/database/db.js';
 import trialsCmd from '../../../src/commands/trials.js';
 
 // ---------------------------------------------------------------------------
@@ -27,10 +28,17 @@ function firstEmbedDescription(reply: { options: unknown }): string {
 // Helper: get the thread_id for the seeded trial.
 // ---------------------------------------------------------------------------
 function getSeededTrialThreadId(): string | null {
-  const row = queryOne<{ thread_id: string | null }>(
-    "SELECT thread_id FROM trials WHERE status = 'active' LIMIT 1",
+  const row = queryOne<{ id: number; thread_id: string | null }>(
+    "SELECT id, thread_id FROM trials WHERE status = 'active' LIMIT 1",
   );
-  return row?.thread_id ?? null;
+  if (!row) return null;
+  if (row.thread_id) return row.thread_id;
+  // Seed ran but the Discord thread wasn't created (e.g. sandbox forum full).
+  // Patch in a placeholder so DB-level assertions still work — the handler
+  // only uses thread_id as a lookup key into trials.
+  const placeholder = `test-placeholder-${Date.now()}-${row.id}`;
+  getDatabase().prepare('UPDATE trials SET thread_id = ? WHERE id = ?').run(placeholder, row.id);
+  return placeholder;
 }
 
 // ---------------------------------------------------------------------------
