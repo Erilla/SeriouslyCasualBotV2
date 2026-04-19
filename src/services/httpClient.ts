@@ -1,7 +1,7 @@
 import type { ServiceName } from './apiHealth.js';
 import {
   recordOutcome, noteFailure, noteSuccess,
-  isBreakerOpen, onBreakerTrialResult, getSummary,
+  isBreakerOpen, onBreakerTrialResult, getBreakerState,
 } from './apiHealth.js';
 
 export type { ServiceName };
@@ -62,8 +62,10 @@ export async function httpRequest<T>(
     throw new CircuitOpenError(service);
   }
 
-  // If the breaker is in half_open, this call is the trial.
-  const breakerWasHalfOpen = getSummary(service).breaker === 'half_open';
+  // isBreakerOpen already transitioned state and (for half_open) claimed the
+  // trial slot. If the breaker is half_open here, this call is the trial and
+  // must resolve it via onBreakerTrialResult on every exit path.
+  const breakerWasHalfOpen = getBreakerState(service) === 'half_open';
 
   const timeoutMs = opts?.timeoutMs ?? 10_000;
   const maxRetries = opts?.maxRetries ?? 2;
@@ -86,7 +88,7 @@ export async function httpRequest<T>(
       abortController.abort();
     }, timeoutMs);
     const signal = init?.signal
-      ? mergeSignals([init.signal, abortController.signal])
+      ? AbortSignal.any([init.signal, abortController.signal])
       : abortController.signal;
 
     let response: Response;
@@ -218,18 +220,4 @@ function computeBackoffMs(attemptJustCompleted: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Combines an external abort signal with a timeout signal. Aborts when
-// either fires.
-function mergeSignals(signals: AbortSignal[]): AbortSignal {
-  const controller = new AbortController();
-  for (const s of signals) {
-    if (s.aborted) {
-      controller.abort(s.reason);
-      return controller.signal;
-    }
-    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
-  }
-  return controller.signal;
 }

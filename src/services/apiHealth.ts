@@ -27,6 +27,7 @@ interface ServiceState {
     state: BreakerState;
     openedAt?: Date;
     consecutiveFailures: number;
+    trialInFlight: boolean;
   };
 }
 
@@ -62,7 +63,7 @@ function emptyBucketCounts(): Record<Outcome, number> {
 function freshState(): ServiceState {
   return {
     buckets: [],
-    breaker: { state: 'closed', consecutiveFailures: 0 },
+    breaker: { state: 'closed', consecutiveFailures: 0, trialInFlight: false },
   };
 }
 
@@ -186,20 +187,42 @@ export function noteSuccess(service: ServiceName): void {
   svc.breaker.consecutiveFailures = 0;
 }
 
+// Returns true when the call should be rejected. For half_open, atomically
+// claims the single trial slot: the first caller proceeds (returns false,
+// flagged as the trial via trialInFlight=true) and subsequent concurrent
+// callers are rejected until onBreakerTrialResult clears the flag.
 export function isBreakerOpen(service: ServiceName): boolean {
   const svc = state.get(service);
   if (!svc) return false;
 
   maybeTransitionToHalfOpen(svc);
 
-  // Only 'open' blocks; 'half_open' and 'closed' permit a request attempt.
-  return svc.breaker.state === 'open';
+  if (svc.breaker.state === 'open') return true;
+
+  if (svc.breaker.state === 'half_open') {
+    if (svc.breaker.trialInFlight) return true;
+    svc.breaker.trialInFlight = true;
+    return false;
+  }
+
+  return false;
+}
+
+// Lightweight breaker-state query for the httpClient's wasTrial decision.
+// Avoids the full bucket aggregation that getSummary does.
+export function getBreakerState(service: ServiceName): BreakerState {
+  const svc = state.get(service);
+  if (!svc) return 'closed';
+  maybeTransitionToHalfOpen(svc);
+  return svc.breaker.state;
 }
 
 export function onBreakerTrialResult(service: ServiceName, success: boolean): void {
   const svc = state.get(service);
   if (!svc) return;
   if (svc.breaker.state !== 'half_open') return;
+
+  svc.breaker.trialInFlight = false;
 
   if (success) {
     svc.breaker.state = 'closed';

@@ -10,6 +10,7 @@ import {
   noteFailure,
   noteSuccess,
   onBreakerTrialResult,
+  getBreakerState,
 } from '../../src/services/apiHealth.js';
 
 beforeEach(() => {
@@ -132,5 +133,52 @@ describe('apiHealth breaker', () => {
     expect(isBreakerOpen('raiderio')).toBe(true);
     vi.setSystemTime(new Date('2026-04-19T12:02:00Z'));
     expect(isBreakerOpen('raiderio')).toBe(false);
+  });
+
+  it('rejects concurrent calls while a half_open trial is in flight', () => {
+    for (let i = 0; i < 5; i++) noteFailure('raiderio');
+    vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
+
+    // First call transitions to half_open and claims the trial slot.
+    expect(isBreakerOpen('raiderio')).toBe(false);
+    // Concurrent calls while the trial is still in flight are rejected.
+    expect(isBreakerOpen('raiderio')).toBe(true);
+    expect(isBreakerOpen('raiderio')).toBe(true);
+
+    // Resolving the trial clears the slot; next caller can claim a new trial
+    // only after the breaker cycles back to open and half-opens again.
+    onBreakerTrialResult('raiderio', true);
+    expect(getBreakerState('raiderio')).toBe('closed');
+    expect(isBreakerOpen('raiderio')).toBe(false);
+  });
+
+  it('clears trialInFlight on failed trial so the next cooldown can re-claim', () => {
+    for (let i = 0; i < 5; i++) noteFailure('raiderio');
+    vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
+
+    expect(isBreakerOpen('raiderio')).toBe(false); // claim trial
+    onBreakerTrialResult('raiderio', false); // trial fails → reopen
+    expect(getBreakerState('raiderio')).toBe('open');
+
+    // Past the new cooldown, another trial slot should be claimable.
+    vi.setSystemTime(new Date('2026-04-19T12:02:00Z'));
+    expect(isBreakerOpen('raiderio')).toBe(false);
+    expect(isBreakerOpen('raiderio')).toBe(true); // only one at a time
+  });
+});
+
+describe('apiHealth getBreakerState', () => {
+  it('returns current state and applies lazy open->half_open transition without claiming the trial', () => {
+    for (let i = 0; i < 5; i++) noteFailure('raiderio');
+    expect(getBreakerState('raiderio')).toBe('open');
+
+    vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
+    // Observer transitions state but does not claim the trial slot.
+    expect(getBreakerState('raiderio')).toBe('half_open');
+    expect(getBreakerState('raiderio')).toBe('half_open');
+
+    // isBreakerOpen is what claims the slot.
+    expect(isBreakerOpen('raiderio')).toBe(false); // claims
+    expect(isBreakerOpen('raiderio')).toBe(true); // second is rejected
   });
 });
