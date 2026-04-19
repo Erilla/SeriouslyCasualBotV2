@@ -107,7 +107,7 @@ export async function httpRequest<T>(
         if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
         throw err;
       }
-      const e = err instanceof Error ? err : new Error(String(err));
+      const e = asError(err);
       const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
       lastError = e;
       if (isTimeout) sawTimeout = true;
@@ -142,16 +142,19 @@ export async function httpRequest<T>(
           throw err;
         }
         if (abortController.signal.aborted) {
-          const e = err instanceof Error ? err : new Error(String(err));
+          const e = asError(err);
           lastError = e;
           sawTimeout = true;
           if (attempt > maxRetries) break;
           await sleep(computeBackoffMs(attempt));
           continue;
         }
-        // Genuine JSON parse error — not transient.
-        const e = err instanceof Error ? err : new Error(String(err));
-        recordOutcome(service, 'failed', { msg: `JSON parse error: ${e.message}` });
+        // Genuine JSON parse error — not transient. Still honor outcome
+        // classification in case earlier attempts saw 429 / timeout.
+        const e = asError(err);
+        recordOutcome(service, classifyFinalFailure(sawRateLimit, sawTimeout), {
+          msg: `JSON parse error: ${e.message}`,
+        });
         noteFailure(service);
         onFinalFailure(service, breakerWasHalfOpen);
         throw new HttpError({
@@ -166,7 +169,7 @@ export async function httpRequest<T>(
     if (response.status === 429) sawRateLimit = true;
 
     if (!RETRYABLE_STATUSES.has(response.status)) {
-      recordOutcome(service, 'failed', {
+      recordOutcome(service, classifyFinalFailure(sawRateLimit, sawTimeout), {
         msg: `${response.status} ${response.statusText}`,
         status: response.status,
       });
@@ -184,8 +187,7 @@ export async function httpRequest<T>(
     );
     if (retryAfterMs !== null && retryAfterMs > RETRY_AFTER_CAP_MS) {
       // Upstream told us to wait longer than our cap; treat as final failure.
-      const outcome = sawRateLimit ? 'rate_limited' : 'failed';
-      recordOutcome(service, outcome, {
+      recordOutcome(service, classifyFinalFailure(sawRateLimit, sawTimeout), {
         msg: `Retry-After ${Math.round(retryAfterMs / 1_000)}s exceeds ${RETRY_AFTER_CAP_MS / 1_000}s cap`,
         status: response.status,
       });
@@ -203,13 +205,15 @@ export async function httpRequest<T>(
   }
 
   // Exhausted retries.
-  const outcome = sawRateLimit ? 'rate_limited' : sawTimeout ? 'timeout' : 'failed';
   const msg = lastError
     ? lastError.message
     : lastStatus !== undefined
     ? `${lastStatus}`
     : 'unknown error';
-  recordOutcome(service, outcome, { msg, status: lastStatus });
+  recordOutcome(service, classifyFinalFailure(sawRateLimit, sawTimeout), {
+    msg,
+    status: lastStatus,
+  });
   noteFailure(service);
   onFinalFailure(service, breakerWasHalfOpen);
   throw new HttpError({
@@ -228,6 +232,22 @@ function finishSuccess(service: ServiceName, attempt: number, wasTrial: boolean)
 
 function onFinalFailure(service: ServiceName, wasTrial: boolean): void {
   if (wasTrial) onBreakerTrialResult(service, false);
+}
+
+function asError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
+}
+
+// Outcome precedence for a final failure: if any attempt was rate-limited,
+// classify as rate_limited; otherwise if any timed out, timeout; else failed.
+// Matches the spec's outcome classification table.
+function classifyFinalFailure(
+  sawRateLimit: boolean,
+  sawTimeout: boolean,
+): 'rate_limited' | 'timeout' | 'failed' {
+  if (sawRateLimit) return 'rate_limited';
+  if (sawTimeout) return 'timeout';
+  return 'failed';
 }
 
 function parseRetryAfter(header: string | null, serverDateHeader: string | null): number | null {

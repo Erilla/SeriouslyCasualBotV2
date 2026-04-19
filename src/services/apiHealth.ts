@@ -74,6 +74,13 @@ function currentMinute(): number {
   return Math.floor(Date.now() / 60_000);
 }
 
+function evict(svc: ServiceState): void {
+  const cutoff = currentMinute() - WINDOW_MINUTES + 1;
+  while (svc.buckets.length > 0 && svc.buckets[0].minuteEpoch < cutoff) {
+    svc.buckets.shift();
+  }
+}
+
 function getOrCreateBucket(svc: ServiceState): MinuteBucket {
   const minute = currentMinute();
   let bucket = svc.buckets[svc.buckets.length - 1];
@@ -81,19 +88,8 @@ function getOrCreateBucket(svc: ServiceState): MinuteBucket {
     bucket = { minuteEpoch: minute, counts: emptyBucketCounts() };
     svc.buckets.push(bucket);
   }
-  // Evict buckets older than WINDOW_MINUTES
-  const cutoff = minute - WINDOW_MINUTES + 1;
-  while (svc.buckets.length > 0 && svc.buckets[0].minuteEpoch < cutoff) {
-    svc.buckets.shift();
-  }
+  evict(svc);
   return bucket;
-}
-
-function evict(svc: ServiceState): void {
-  const cutoff = currentMinute() - WINDOW_MINUTES + 1;
-  while (svc.buckets.length > 0 && svc.buckets[0].minuteEpoch < cutoff) {
-    svc.buckets.shift();
-  }
 }
 
 export function recordOutcome(
@@ -155,11 +151,9 @@ export function getSummary(service: ServiceName): ServiceSummary {
 }
 
 export function getAllSummaries(): Record<ServiceName, ServiceSummary> {
-  return {
-    raiderio: getSummary('raiderio'),
-    warcraftlogs: getSummary('warcraftlogs'),
-    wowaudit: getSummary('wowaudit'),
-  };
+  return Object.fromEntries(
+    SERVICES.map((s) => [s, getSummary(s)]),
+  ) as Record<ServiceName, ServiceSummary>;
 }
 
 // Test-only: reset all in-memory state.
