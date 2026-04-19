@@ -31,10 +31,6 @@ import { markForPromotion } from '../functions/trial-review/markForPromotion.js'
 import { closeTrial } from '../functions/trial-review/closeTrial.js';
 import { changeTrialInfo } from '../functions/trial-review/changeTrialInfo.js';
 import { createTrialReviewThread } from '../functions/trial-review/createTrialReviewThread.js';
-import { updateLootResponse } from '../functions/loot/updateLootResponse.js';
-import { updateLootPost } from '../functions/loot/updateLootPost.js';
-import { generateLootPost } from '../functions/loot/generateLootPost.js';
-import type { LootPostRow, LootResponseRow } from '../types/index.js';
 import {
   buttonHandlers,
   modalHandlers,
@@ -400,73 +396,6 @@ export default {
           }
         }
 
-        // loot:{responseType}:{bossId} - Loot priority button
-        if (customId.startsWith('loot:')) {
-          const [, responseType, bossIdStr] = customId.split(':');
-          const bossId = parseInt(bossIdStr, 10);
-
-          // Validate raider exists
-          const db = getDatabase();
-          const raider = db
-            .prepare('SELECT * FROM raiders WHERE discord_user_id = ?')
-            .get(interaction.user.id) as RaiderRow | undefined;
-
-          if (!raider) {
-            await interaction.reply({
-              content: 'Could not find a character linked to your Discord account. Please contact an officer!',
-              flags: MessageFlags.Ephemeral,
-            });
-            return;
-          }
-
-          await updateLootResponse(interaction.client, responseType, bossId, interaction.user.id);
-
-          // Build updated post data for the interaction update
-          const lootPost = db
-            .prepare('SELECT * FROM loot_posts WHERE boss_id = ?')
-            .get(bossId) as LootPostRow | undefined;
-
-          if (lootPost) {
-            const responses = db
-              .prepare('SELECT * FROM loot_responses WHERE loot_post_id = ?')
-              .all(lootPost.id) as LootResponseRow[];
-
-            const raiders = db
-              .prepare('SELECT * FROM raiders WHERE discord_user_id IS NOT NULL')
-              .all() as RaiderRow[];
-
-            const userToCharacter = new Map<string, string>();
-            for (const r of raiders) {
-              if (r.discord_user_id && !userToCharacter.has(r.discord_user_id)) {
-                userToCharacter.set(r.discord_user_id, r.character_name);
-              }
-            }
-
-            const grouped: Record<string, string[]> = {
-              major: [],
-              minor: [],
-              wantIn: [],
-              wantOut: [],
-            };
-
-            for (const response of responses) {
-              const charName = userToCharacter.get(response.user_id) ?? 'Unknown';
-              if (grouped[response.response_type]) {
-                grouped[response.response_type].push(charName);
-              }
-            }
-
-            const playerResponses = {
-              major: grouped.major.length > 0 ? grouped.major.join('\n') : '*None*',
-              minor: grouped.minor.length > 0 ? grouped.minor.join('\n') : '*None*',
-              wantIn: grouped.wantIn.length > 0 ? grouped.wantIn.join('\n') : '*None*',
-              wantOut: grouped.wantOut.length > 0 ? grouped.wantOut.join('\n') : '*None*',
-            };
-
-            const postData = generateLootPost(lootPost.boss_name, bossId, playerResponses);
-            await interaction.update(postData);
-          }
-        }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error('interaction', `Button handler failed (${customId}): ${err.message}`, err);

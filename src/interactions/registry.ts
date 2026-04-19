@@ -5,6 +5,7 @@ import type {
 } from 'discord.js';
 import { requireOfficer, wrapErrors, type InteractionKind } from './middleware.js';
 import * as pagination from './pagination.js';
+import * as loot from './loot.js';
 
 export type ButtonHandler = {
   prefix: string;
@@ -58,6 +59,7 @@ export async function dispatch<I extends AnyInteraction>(
 
 export const buttonHandlers: ButtonHandler[] = [
   ...pagination.buttons,
+  ...loot.buttons,
 ];
 export const modalHandlers: ModalHandler[] = [];
 export const userSelectHandlers: UserSelectHandler[] = [];
