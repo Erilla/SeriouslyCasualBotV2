@@ -80,7 +80,6 @@ export async function resetData(
     db.prepare('DELETE FROM schedule_config').run();
 
     db.prepare('DELETE FROM achievements_manual').run();
-    db.prepare('DELETE FROM signup_messages').run();
     db.prepare('DELETE FROM default_messages').run();
     db.prepare('DELETE FROM settings').run();
     db.prepare('DELETE FROM config').run();

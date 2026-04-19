@@ -213,11 +213,6 @@ export interface AchievementsManualRow {
   sort_order: number;
 }
 
-export interface SignupMessageRow {
-  id: number;
-  message: string;
-}
-
 export interface DefaultMessageRow {
   key: string;
   message: string;
