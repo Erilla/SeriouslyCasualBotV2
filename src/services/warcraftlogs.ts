@@ -1,10 +1,16 @@
 import { config } from '../config.js';
 import { logger } from './logger.js';
+import { httpRequest, HttpError, CircuitOpenError } from './httpClient.js';
 
 // ─── Token Cache ─────────────────────────────────────────────
 
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
+
+interface TokenResponse {
+  access_token: string;
+  expires_in: number;
+}
 
 async function getAccessToken(): Promise<string> {
   const now = Date.now();
@@ -15,29 +21,22 @@ async function getAccessToken(): Promise<string> {
 
   const body = new URLSearchParams({ grant_type: 'client_credentials' });
 
-  const response = await fetch('https://www.warcraftlogs.com/oauth/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization:
-        'Basic ' +
-        Buffer.from(
-          `${config.warcraftLogsClientId}:${config.warcraftLogsClientSecret}`,
-        ).toString('base64'),
+  const data = await httpRequest<TokenResponse>(
+    'warcraftlogs',
+    'https://www.warcraftlogs.com/oauth/token',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization:
+          'Basic ' +
+          Buffer.from(
+            `${config.warcraftLogsClientId}:${config.warcraftLogsClientSecret}`,
+          ).toString('base64'),
+      },
+      body: body.toString(),
     },
-    body: body.toString(),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `WarcraftLogs OAuth error: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const data = (await response.json()) as {
-    access_token: string;
-    expires_in: number;
-  };
+  );
 
   cachedToken = data.access_token;
   // Expire 60 seconds early to avoid edge cases
@@ -95,13 +94,14 @@ const ATTENDANCE_QUERY = `
 /**
  * Fetch WarcraftLogs report codes where `characterName` was present.
  * Returns codes in reverse chronological order (newest first).
- * Returns empty array on error.
+ * Returns empty array on any HTTP error or open circuit (fail-soft).
  */
 export async function getTrialLogs(characterName: string): Promise<string[]> {
   try {
     const token = await getAccessToken();
 
-    const response = await fetch(
+    const result = await httpRequest<GuildAttendanceResponse>(
+      'warcraftlogs',
       'https://www.warcraftlogs.com/api/v2/client',
       {
         method: 'POST',
@@ -118,18 +118,8 @@ export async function getTrialLogs(characterName: string): Promise<string[]> {
       },
     );
 
-    if (!response.ok) {
-      logger.warn(
-        'WarcraftLogs',
-        `API error: ${response.status} ${response.statusText}`,
-      );
-      return [];
-    }
-
-    const result = (await response.json()) as GuildAttendanceResponse;
     const reports = result.data.guildData.guild.attendance.data;
 
-    // Filter reports where the character was present (presence === 1)
     const matchingCodes = reports
       .filter((report) =>
         report.players.some(
@@ -139,14 +129,15 @@ export async function getTrialLogs(characterName: string): Promise<string[]> {
       )
       .map((report) => report.code);
 
-    // Reverse chronological order (API returns newest first, but reverse to be safe)
     return matchingCodes.reverse();
   } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    logger.warn(
-      'WarcraftLogs',
-      `Failed to fetch trial logs for "${characterName}": ${err.message}`,
-    );
-    return [];
+    if (error instanceof HttpError || error instanceof CircuitOpenError) {
+      logger.warn(
+        'WarcraftLogs',
+        `Failed to fetch trial logs for "${characterName}": ${error.message}`,
+      );
+      return [];
+    }
+    throw error;
   }
 }
