@@ -33,6 +33,19 @@ const ROLE_CONFIG: Record<string, { label: string }> = {
   raider_role_id: { label: 'Raider' },
 };
 
+// Build the set of keys get_config already renders explicitly once, at module
+// load, rather than on every invocation.
+const KNOWN_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  ...Object.keys(CHANNEL_CONFIG),
+  ...Object.keys(ROLE_CONFIG),
+]);
+
+// Discord rejects message content over 2000 chars. get_config renders a fixed
+// number of known rows plus any stale/legacy keys from the config table, so
+// long values or many unknown keys can push us close. Guard with room to
+// spare for the truncation notice itself.
+const DISCORD_MESSAGE_LIMIT = 2000;
+
 function channelTypeLabel(type: ChannelType): string {
   switch (type) {
     case ChannelType.GuildText: return 'text channel';
@@ -144,26 +157,25 @@ export default {
     }
 
     if (subcommand === 'get_config') {
-      const rows = db.prepare('SELECT key, value FROM config').all() as { key: string; value: string }[];
+      // ORDER BY key keeps the "Other (unknown keys)" section deterministic
+      // when we iterate `rows` below. Known keys are rendered in CHANNEL_CONFIG
+      // / ROLE_CONFIG insertion order, independent of this ordering.
+      const rows = db
+        .prepare('SELECT key, value FROM config ORDER BY key')
+        .all() as { key: string; value: string }[];
       const byKey = new Map(rows.map((r) => [r.key, r.value]));
 
-      const renderChannel = (key: string, label: string): string => {
+      const renderEntry = (key: string, label: string, mentionPrefix: '#' | '@&'): string => {
         const value = byKey.get(key);
-        return value ? `- **${label}** (${key}): <#${value}>` : `- **${label}** (${key}): *(not set)*`;
-      };
-      const renderRole = (key: string, label: string): string => {
-        const value = byKey.get(key);
-        return value ? `- **${label}** (${key}): <@&${value}>` : `- **${label}** (${key}): *(not set)*`;
+        return value
+          ? `- **${label}** (${key}): <${mentionPrefix}${value}>`
+          : `- **${label}** (${key}): *(not set)*`;
       };
 
-      const channelLines = Object.entries(CHANNEL_CONFIG).map(([k, { label }]) => renderChannel(k, label));
-      const roleLines = Object.entries(ROLE_CONFIG).map(([k, { label }]) => renderRole(k, label));
-
-      // Surface anything that's in the config table but not in our known sets
-      // (e.g. legacy keys from before a rename). Helps the admin spot stale rows.
-      const knownKeys = new Set([...Object.keys(CHANNEL_CONFIG), ...Object.keys(ROLE_CONFIG)]);
+      const channelLines = Object.entries(CHANNEL_CONFIG).map(([k, { label }]) => renderEntry(k, label, '#'));
+      const roleLines = Object.entries(ROLE_CONFIG).map(([k, { label }]) => renderEntry(k, label, '@&'));
       const unknownLines = rows
-        .filter((r) => !knownKeys.has(r.key))
+        .filter((r) => !KNOWN_CONFIG_KEYS.has(r.key))
         .map((r) => `- **${r.key}**: \`${r.value}\``);
 
       const sections = [
@@ -174,10 +186,13 @@ export default {
         sections.push(`**Other (unknown keys)**\n${unknownLines.join('\n')}`);
       }
 
-      await interaction.reply({
-        content: `**Bot Configuration**\n\n${sections.join('\n\n')}`,
-        flags: MessageFlags.Ephemeral,
-      });
+      let content = `**Bot Configuration**\n\n${sections.join('\n\n')}`;
+      if (content.length > DISCORD_MESSAGE_LIMIT) {
+        const truncationNotice = '\n\n_…output truncated; see \`bot_config\` table directly._';
+        content = content.slice(0, DISCORD_MESSAGE_LIMIT - truncationNotice.length) + truncationNotice;
+      }
+
+      await interaction.reply({ content, flags: MessageFlags.Ephemeral });
     }
   },
 };
