@@ -108,13 +108,20 @@ async function callGemini(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
+    // Send the key in the x-goog-api-key header rather than as a query
+    // param. Query params are routinely captured in server access logs and
+    // client-side network panels, and a leaked key on the free tier still
+    // maps to an identifiable Google account.
+    const response = await fetch(GEMINI_ENDPOINT, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: buildPrompt(options) }] }],
         generationConfig: {
-          temperature: 1.0,
+          temperature: 0.9,
           topP: 0.95,
           maxOutputTokens: 120,
         },
@@ -154,11 +161,9 @@ async function callGemini(
 // with multiple options, or prefaces with "Here's one:". Strip the obvious
 // junk. If anything weird remains we'll fall through to the length guard.
 function normalizeQuip(raw: string): string {
-  let s = raw.trim();
-
-  // If multiple newline-separated lines, take the first non-empty one.
-  const lines = s.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
-  if (lines.length > 0) s = lines[0];
+  // Take the first non-empty line without materializing the rest.
+  const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0);
+  let s = (firstLine ?? raw).trim();
 
   // Drop "1. " / "- " / "* " list prefixes.
   s = s.replace(/^(?:\d+\.\s+|-\s+|\*\s+)/, '');
