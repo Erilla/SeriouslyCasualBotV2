@@ -6,7 +6,8 @@ import { loadE2EEnv } from './env.js';
 import testdataCmd from '../../../src/commands/testdata.js';
 import type { ChatInputCommandInteraction, TextBasedChannel } from 'discord.js';
 
-export async function resetAndSeed(): Promise<void> {
+export async function resetAndSeed(options: { discord?: boolean } = {}): Promise<void> {
+  const { discord = true } = options;
   const { client, guild, officer } = getE2EContext();
   const env = loadE2EEnv();
 
@@ -36,7 +37,7 @@ export async function resetAndSeed(): Promise<void> {
     user: officer.user,
     commandName: 'testdata',
     subcommand: 'seed_all',
-    options: { discord: true },
+    options: { discord },
   });
   await testdataCmd.execute(seedAll as unknown as ChatInputCommandInteraction);
 }
