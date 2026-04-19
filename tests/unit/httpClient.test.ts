@@ -116,3 +116,40 @@ describe('httpRequest — non-retryable failures', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('httpRequest — timeout', () => {
+  it('aborts the request after timeoutMs and throws HttpError', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            signal.addEventListener('abort', () => {
+              const err = new Error('aborted');
+              (err as Error & { name: string }).name = 'AbortError';
+              reject(err);
+            });
+          }
+        }),
+    );
+
+    const promise = httpRequest('raiderio', 'https://x.test/', undefined, {
+      timeoutMs: 100,
+      maxRetries: 0,
+    });
+
+    await vi.advanceTimersByTimeAsync(101);
+    await expect(promise).rejects.toBeInstanceOf(HttpError);
+  });
+
+  it('passes caller-provided signal alongside timeout', async () => {
+    const abortController = new AbortController();
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({ ok: true, json: {} }));
+    globalThis.fetch = fetchMock;
+
+    await httpRequest('raiderio', 'https://x.test/', { signal: abortController.signal });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
+    expect(init?.signal).toBeDefined();
+  });
+});

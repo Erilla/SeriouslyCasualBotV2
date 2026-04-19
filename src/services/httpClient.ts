@@ -51,18 +51,30 @@ export async function httpRequest<T>(
   init?: RequestInit,
   opts?: HttpRequestOptions,
 ): Promise<T> {
+  const timeoutMs = opts?.timeoutMs ?? 10_000;
   const parseJson = opts?.parseJson ?? true;
   const attempts = 1;
 
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = init?.signal
+    ? mergeSignals([init.signal, timeoutSignal])
+    : timeoutSignal;
+
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await fetch(url, { ...init, signal });
   } catch (err) {
     const e = err instanceof Error ? err : new Error(String(err));
-    recordOutcome(service, 'failed', { msg: e.message });
+    const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
+    const outcome = isTimeout ? 'timeout' : 'failed';
+    recordOutcome(service, outcome, { msg: e.message });
     noteFailure(service);
     throw new HttpError({
-      service, attempts, message: `${service} request failed: ${e.message}`, lastError: e,
+      service, attempts,
+      message: isTimeout
+        ? `${service} request timed out after ${timeoutMs}ms`
+        : `${service} request failed: ${e.message}`,
+      lastError: e,
     });
   }
 
@@ -98,4 +110,18 @@ export async function httpRequest<T>(
       message: `${service} JSON parse error: ${e.message}`, lastError: e,
     });
   }
+}
+
+// Combines an external abort signal with a timeout signal. Aborts when
+// either fires.
+function mergeSignals(signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const s of signals) {
+    if (s.aborted) {
+      controller.abort(s.reason);
+      return controller.signal;
+    }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
 }
