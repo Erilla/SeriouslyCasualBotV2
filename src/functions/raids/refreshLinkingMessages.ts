@@ -43,7 +43,11 @@ export async function refreshLinkingMessages(client: Client): Promise<void> {
       configKey: 'raider_setup_channel_id',
     });
   } catch (error) {
-    logger.error('RefreshLinks', 'Failed to resolve raider-setup channel', error as Error);
+    logger.error(
+      'RefreshLinks',
+      'Failed to resolve raider-setup channel',
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return;
   }
 
