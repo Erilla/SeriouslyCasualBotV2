@@ -85,9 +85,13 @@ const TRIGGERS: Record<string, TriggerDef> = {
   // ─── Dynamic / startup work ────────────────────────────────
   rescheduleAllAlerts: {
     label: 'Startup: rescheduleAllAlerts',
-    description: 'Rebuild in-memory timers for every pending trial alert.',
+    // rescheduleAllAlerts is synchronous but kicks off past-due alert fires
+    // in the background via void fireAlert(...). Flag that in the reply so
+    // the reported duration isn't mistaken for actual work done.
+    description: 'Rebuild in-memory timers for pending trial alerts. Past-due alerts fire asynchronously — the reported duration covers scheduling only.',
     handler: async (client) => {
       rescheduleAllAlerts(client);
+      return 'timers rebuilt; any past-due alerts are firing in the background';
     },
   },
   resumeSessions: {
@@ -144,26 +148,37 @@ const TRIGGERS: Record<string, TriggerDef> = {
   },
   warcraftlogsPing: {
     label: 'Probe: warcraftlogs',
-    description: 'Fetch logs for a single character to verify credentials/endpoint.',
+    description: 'Fetch logs for an existing raider to verify credentials/endpoint. Requires at least one raider in the DB.',
     handler: async () => {
-      // Pick any raider to probe with. If no raiders exist, pick a well-known
-      // test character so the probe still exercises auth + the query path.
       const db = getDatabase();
       const row = db
         .prepare(`SELECT character_name FROM raiders LIMIT 1`)
         .get() as { character_name: string } | undefined;
-      const probeName = row?.character_name ?? 'Testcharacter';
-      const logs = await getTrialLogs(probeName);
-      return `ok (${logs.length} report(s) for ${probeName})`;
+      if (!row) {
+        // Probing with a fabricated name exercises auth but floods logs with
+        // "character not found" noise. Surface the empty state instead.
+        throw new Error('No raiders in DB to probe with — seed one first');
+      }
+      const logs = await getTrialLogs(row.character_name);
+      return `ok (${logs.length} report(s) for ${row.character_name})`;
     },
   },
 };
 
+// Discord caps slash-command choice names at 100 chars. Fail fast at module
+// load if a label ever drifts past that so the command doesn't silently fail
+// to register. Fix the label rather than silently slicing — a truncated name
+// can collide with another label's prefix.
+for (const [key, def] of Object.entries(TRIGGERS)) {
+  if (def.label.length > 100) {
+    throw new Error(
+      `/test trigger: label for "${key}" is ${def.label.length} chars (max 100). Shorten the label.`,
+    );
+  }
+}
+
 const TRIGGER_CHOICES = Object.entries(TRIGGERS).map(([value, def]) => ({
-  // Discord caps choice names at 100 chars. Slicing keeps registration from
-  // failing if a future label drifts long; the uniqueness check below is what
-  // actually matters — duplicate names would break command registration.
-  name: def.label.slice(0, 100),
+  name: def.label,
   value,
 }));
 
@@ -174,8 +189,8 @@ if (TRIGGER_CHOICES.length > 25) {
   );
 }
 
-// And fail fast if two actions ever end up with the same (sliced) choice name,
-// since Discord rejects the command registration silently in that case.
+// Fail fast on duplicate choice names — Discord rejects the registration
+// silently otherwise.
 {
   const seenNames = new Set<string>();
   for (const { name } of TRIGGER_CHOICES) {
@@ -242,9 +257,19 @@ export default {
         '',
         `**/test fire_trial_alert trial_id:<n>** — fire pending review alerts for trial #n immediately.`,
       );
+      let description = lines.join('\n');
+      const EMBED_DESC_LIMIT = 4096;
+      if (description.length > EMBED_DESC_LIMIT) {
+        // Truncate on a line boundary where possible and flag the truncation
+        // explicitly so triggers don't silently disappear from the list.
+        const notice = '\n\n_…list truncated; see /test trigger autocomplete for the rest._';
+        const budget = EMBED_DESC_LIMIT - notice.length;
+        const lastNewline = description.lastIndexOf('\n', budget);
+        description = description.slice(0, lastNewline > 0 ? lastNewline : budget) + notice;
+      }
       const embed = new EmbedBuilder()
         .setTitle(`Available triggers (${Object.keys(TRIGGERS).length})`)
-        .setDescription(lines.join('\n').slice(0, 4096));
+        .setDescription(description);
       await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       return;
     }
