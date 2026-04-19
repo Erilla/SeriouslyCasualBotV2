@@ -45,6 +45,8 @@ export interface ServiceSummary {
 
 const SERVICES: ServiceName[] = ['raiderio', 'warcraftlogs', 'wowaudit'];
 const WINDOW_MINUTES = 60;
+const BREAKER_OPEN_THRESHOLD = 5;
+const BREAKER_COOLDOWN_MS = 60_000;
 
 function emptyBucketCounts(): Record<Outcome, number> {
   return {
@@ -107,6 +109,15 @@ export function recordOutcome(
   }
 }
 
+function maybeTransitionToHalfOpen(svc: ServiceState): void {
+  if (svc.breaker.state === 'open' && svc.breaker.openedAt) {
+    const elapsed = Date.now() - svc.breaker.openedAt.getTime();
+    if (elapsed >= BREAKER_COOLDOWN_MS) {
+      svc.breaker.state = 'half_open';
+    }
+  }
+}
+
 export function getSummary(service: ServiceName): ServiceSummary {
   const svc = state.get(service);
   if (!svc) {
@@ -116,6 +127,7 @@ export function getSummary(service: ServiceName): ServiceSummary {
     };
   }
   evict(svc);
+  maybeTransitionToHalfOpen(svc);
 
   const totals = {
     ok: 0,
@@ -153,4 +165,48 @@ export function getAllSummaries(): Record<ServiceName, ServiceSummary> {
 export function __resetForTests(): void {
   state.clear();
   for (const s of SERVICES) state.set(s, freshState());
+}
+
+export function noteFailure(service: ServiceName): void {
+  const svc = state.get(service);
+  if (!svc) return;
+  svc.breaker.consecutiveFailures += 1;
+  if (
+    svc.breaker.state === 'closed' &&
+    svc.breaker.consecutiveFailures >= BREAKER_OPEN_THRESHOLD
+  ) {
+    svc.breaker.state = 'open';
+    svc.breaker.openedAt = new Date();
+  }
+}
+
+export function noteSuccess(service: ServiceName): void {
+  const svc = state.get(service);
+  if (!svc) return;
+  svc.breaker.consecutiveFailures = 0;
+}
+
+export function isBreakerOpen(service: ServiceName): boolean {
+  const svc = state.get(service);
+  if (!svc) return false;
+
+  maybeTransitionToHalfOpen(svc);
+
+  // Only 'open' blocks; 'half_open' and 'closed' permit a request attempt.
+  return svc.breaker.state === 'open';
+}
+
+export function onBreakerTrialResult(service: ServiceName, success: boolean): void {
+  const svc = state.get(service);
+  if (!svc) return;
+  if (svc.breaker.state !== 'half_open') return;
+
+  if (success) {
+    svc.breaker.state = 'closed';
+    svc.breaker.openedAt = undefined;
+    svc.breaker.consecutiveFailures = 0;
+  } else {
+    svc.breaker.state = 'open';
+    svc.breaker.openedAt = new Date();
+  }
 }

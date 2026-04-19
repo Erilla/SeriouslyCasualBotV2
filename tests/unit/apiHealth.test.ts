@@ -5,6 +5,12 @@ import {
   getAllSummaries,
   __resetForTests,
 } from '../../src/services/apiHealth.js';
+import {
+  isBreakerOpen,
+  noteFailure,
+  noteSuccess,
+  onBreakerTrialResult,
+} from '../../src/services/apiHealth.js';
 
 beforeEach(() => {
   __resetForTests();
@@ -66,5 +72,65 @@ describe('apiHealth tracker core', () => {
   it('getAllSummaries returns an entry per known service', () => {
     const all = getAllSummaries();
     expect(Object.keys(all).sort()).toEqual(['raiderio', 'warcraftlogs', 'wowaudit']);
+  });
+});
+
+describe('apiHealth breaker', () => {
+  it('opens after 5 consecutive failures', () => {
+    for (let i = 0; i < 4; i++) noteFailure('raiderio');
+    expect(isBreakerOpen('raiderio')).toBe(false);
+    expect(getSummary('raiderio').breaker).toBe('closed');
+
+    noteFailure('raiderio');
+    expect(isBreakerOpen('raiderio')).toBe(true);
+    expect(getSummary('raiderio').breaker).toBe('open');
+  });
+
+  it('resets consecutive failures on success', () => {
+    for (let i = 0; i < 4; i++) noteFailure('raiderio');
+    noteSuccess('raiderio');
+    for (let i = 0; i < 4; i++) noteFailure('raiderio');
+    expect(isBreakerOpen('raiderio')).toBe(false);
+
+    noteFailure('raiderio');
+    expect(isBreakerOpen('raiderio')).toBe(true);
+  });
+
+  it('transitions open -> half_open after 60s cooldown', () => {
+    for (let i = 0; i < 5; i++) noteFailure('raiderio');
+    expect(getSummary('raiderio').breaker).toBe('open');
+
+    vi.setSystemTime(new Date('2026-04-19T12:00:59Z'));
+    expect(isBreakerOpen('raiderio')).toBe(true);
+
+    vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
+    expect(isBreakerOpen('raiderio')).toBe(false);
+    expect(getSummary('raiderio').breaker).toBe('half_open');
+  });
+
+  it('half_open -> closed on trial success, resets counter', () => {
+    for (let i = 0; i < 5; i++) noteFailure('raiderio');
+    vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
+    expect(getSummary('raiderio').breaker).toBe('half_open');
+
+    onBreakerTrialResult('raiderio', true);
+    expect(getSummary('raiderio').breaker).toBe('closed');
+
+    for (let i = 0; i < 4; i++) noteFailure('raiderio');
+    expect(isBreakerOpen('raiderio')).toBe(false);
+  });
+
+  it('half_open -> open on trial failure, cooldown resets', () => {
+    for (let i = 0; i < 5; i++) noteFailure('raiderio');
+    vi.setSystemTime(new Date('2026-04-19T12:01:00Z'));
+    expect(getSummary('raiderio').breaker).toBe('half_open');
+
+    onBreakerTrialResult('raiderio', false);
+    expect(getSummary('raiderio').breaker).toBe('open');
+
+    vi.setSystemTime(new Date('2026-04-19T12:01:59Z'));
+    expect(isBreakerOpen('raiderio')).toBe(true);
+    vi.setSystemTime(new Date('2026-04-19T12:02:00Z'));
+    expect(isBreakerOpen('raiderio')).toBe(false);
   });
 });
