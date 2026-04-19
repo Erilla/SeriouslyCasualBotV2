@@ -38,12 +38,9 @@ export interface GenerateQuipOptions {
 
 /**
  * Generate a one-line signup quip. Uses Google's free-tier Gemini 2.0 Flash
- * when GEMINI_API_KEY is set, and falls back to a handwritten quip from the
- * V1 corpus when the key is missing or the call fails. Never throws — the
- * caller is an alert handler and should always get something postable.
- *
- * Fallback path is deterministic w.r.t. Math.random so we don't repeat the
- * same fallback two alerts in a row (in practice, random is enough).
+ * when GEMINI_API_KEY is set, and falls back to a randomly-chosen quip from
+ * the V1 corpus when the key is missing or the call fails. Never throws —
+ * the caller is an alert handler and should always get something postable.
  */
 export async function generateSignupQuip(options: GenerateQuipOptions): Promise<string> {
   if (!config.geminiApiKey) {
@@ -167,7 +164,10 @@ const OPEN_QUOTES = new Set(['"', "'", '\u201C', '\u2018']);
 const CLOSE_QUOTES = new Set(['"', "'", '\u201D', '\u2019']);
 
 function normalizeQuip(raw: string): string {
-  // Take the first non-empty line without materializing the rest.
+  // Take the first non-empty line. split() materializes all lines up front;
+  // .find short-circuits on the first match so we don't trim/inspect the
+  // rest, but the array allocation still happens. Quips max out around
+  // 280 chars anyway — not worth optimizing past this shape.
   const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0);
   let s = (firstLine ?? raw).trim();
 
