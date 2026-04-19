@@ -328,11 +328,13 @@ export default {
         const result = await fireTrialAlertsNow(interaction.client, trialId);
         const elapsed = formatDuration(Date.now() - started);
         await audit(interaction.user, 'fired trial alerts', `#${trialId} (${trial.character_name})`);
+        const total = result.reviewAlertsFired + result.promoteAlertsFired;
         const parts = [
-          `✓ Fired **${result.fired}** pending alert(s) for trial #${trialId} (${trial.character_name}) in ${elapsed}.`,
+          `✓ Fired **${total}** pending alert(s) for trial #${trialId} (${trial.character_name}) in ${elapsed}. ` +
+            `(${result.reviewAlertsFired} review, ${result.promoteAlertsFired} promote)`,
         ];
         if (result.alreadyFired > 0) {
-          parts.push(`_${result.alreadyFired} alert(s) had already fired previously and were not re-sent._`);
+          parts.push(`_${result.alreadyFired} review alert(s) had already fired previously and were not re-sent._`);
         }
         if (trial.status !== 'active') {
           parts.push(`_Note: trial status is \`${trial.status}\`; fireAlert short-circuits for non-active trials, so most alerts were likely no-ops._`);

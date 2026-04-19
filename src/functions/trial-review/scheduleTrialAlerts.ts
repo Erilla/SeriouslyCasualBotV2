@@ -151,17 +151,18 @@ async function firePromoteAlert(
 // ─── Manual Trigger (test/dev) ───────────────────────────────
 
 /**
- * Fire every pending (alerted = 0) alert for a trial immediately, bypassing
- * the scheduled timers. Used by the dev-only `/test fire_trial_alert` command
- * so the 7/14/28-day review flow can be verified without waiting days.
+ * Fire every pending alert for a trial immediately, bypassing the scheduled
+ * timers. Covers both trial_alerts (7/14/28-day reviews) and promote_alerts
+ * (promotion-day reminder) — rescheduleAllAlerts handles both, so a manual
+ * trigger for verifying the full flow should too.
  *
- * Returns the count of alerts that were fired and of those still pending,
- * so the caller can report a meaningful status back to the invoker.
+ * Used by the dev-only `/test fire_trial_alert` command so the review flow
+ * can be exercised without waiting days.
  */
 export async function fireTrialAlertsNow(
   client: Client,
   trialId: number,
-): Promise<{ fired: number; alreadyFired: number }> {
+): Promise<{ reviewAlertsFired: number; promoteAlertsFired: number; alreadyFired: number }> {
   const db = getDatabase();
 
   const pending = db
@@ -182,7 +183,26 @@ export async function fireTrialAlertsNow(
     await fireAlert(client, alert);
   }
 
-  return { fired: pending.length, alreadyFired };
+  // Promote alerts don't have an `alerted` flag — firePromoteAlert deletes
+  // the row on success. So "pending" = "row still exists."
+  const pendingPromotes = db
+    .prepare('SELECT * FROM promote_alerts WHERE trial_id = ?')
+    .all(trialId) as PromoteAlertRow[];
+
+  for (const pa of pendingPromotes) {
+    const existing = promoteTimers.get(pa.id);
+    if (existing) {
+      clearTimeout(existing);
+      promoteTimers.delete(pa.id);
+    }
+    await firePromoteAlert(client, pa);
+  }
+
+  return {
+    reviewAlertsFired: pending.length,
+    promoteAlertsFired: pendingPromotes.length,
+    alreadyFired,
+  };
 }
 
 // ─── Schedule Individual Trial Alerts ────────────────────────
