@@ -148,6 +148,43 @@ async function firePromoteAlert(
   promoteTimers.delete(promoteAlert.id);
 }
 
+// ─── Manual Trigger (test/dev) ───────────────────────────────
+
+/**
+ * Fire every pending (alerted = 0) alert for a trial immediately, bypassing
+ * the scheduled timers. Used by the dev-only `/test fire_trial_alert` command
+ * so the 7/14/28-day review flow can be verified without waiting days.
+ *
+ * Returns the count of alerts that were fired and of those still pending,
+ * so the caller can report a meaningful status back to the invoker.
+ */
+export async function fireTrialAlertsNow(
+  client: Client,
+  trialId: number,
+): Promise<{ fired: number; alreadyFired: number }> {
+  const db = getDatabase();
+
+  const pending = db
+    .prepare('SELECT * FROM trial_alerts WHERE trial_id = ? AND alerted = 0')
+    .all(trialId) as TrialAlertRow[];
+  const alreadyFired = (
+    db
+      .prepare('SELECT COUNT(*) as c FROM trial_alerts WHERE trial_id = ? AND alerted = 1')
+      .get(trialId) as { c: number }
+  ).c;
+
+  for (const alert of pending) {
+    const existing = alertTimers.get(alert.id);
+    if (existing) {
+      clearTimeout(existing);
+      alertTimers.delete(alert.id);
+    }
+    await fireAlert(client, alert);
+  }
+
+  return { fired: pending.length, alreadyFired };
+}
+
 // ─── Schedule Individual Trial Alerts ────────────────────────
 
 /**
