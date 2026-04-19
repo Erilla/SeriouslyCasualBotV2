@@ -24,11 +24,15 @@ export type UserSelectHandler = {
   handle(interaction: UserSelectMenuInteraction, params: string[]): Promise<void>;
 };
 
-type AnyHandler = ButtonHandler | ModalHandler | UserSelectHandler;
 type AnyInteraction = ButtonInteraction | ModalSubmitInteraction | UserSelectMenuInteraction;
 
-export async function dispatch<H extends AnyHandler, I extends AnyInteraction>(
-  handlers: H[],
+type HandlerFor<I> =
+  I extends ButtonInteraction ? ButtonHandler :
+  I extends ModalSubmitInteraction ? ModalHandler :
+  I extends UserSelectMenuInteraction ? UserSelectHandler : never;
+
+export async function dispatch<I extends AnyInteraction>(
+  handlers: HandlerFor<I>[],
   kind: InteractionKind,
   interaction: I,
   customId: string,
@@ -42,11 +46,13 @@ export async function dispatch<H extends AnyHandler, I extends AnyInteraction>(
     return;
   }
 
-  if (handler.officerOnly && !(await requireOfficer(interaction, kind))) return;
+  if (handler.officerOnly && !(await requireOfficer(interaction))) return;
 
   const tail = customId === handler.prefix ? '' : customId.slice(handler.prefix.length + 1);
   const params = tail ? tail.split(':') : [];
 
+  // HandlerFor<I> binds the handler to the interaction at the call site, but inside the
+  // function body TypeScript can't unify the conditional — one minimal cast is required.
   await wrapErrors(kind, customId, interaction, () =>
     (handler.handle as (i: I, p: string[]) => Promise<void>)(interaction, params),
   );

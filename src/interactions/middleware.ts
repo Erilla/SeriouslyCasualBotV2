@@ -7,7 +7,7 @@ export type InteractionKind = 'button' | 'modal' | 'select';
 
 type Gatable = ButtonInteraction | ModalSubmitInteraction | UserSelectMenuInteraction;
 
-export async function requireOfficer(interaction: Gatable, _kind: InteractionKind): Promise<boolean> {
+export async function requireOfficer(interaction: Gatable): Promise<boolean> {
   const member = interaction.member as GuildMember | null;
   if (member?.roles.cache.has(config.officerRoleId)) return true;
 

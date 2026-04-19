@@ -27,14 +27,14 @@ function stubInteraction(opts: {
 describe('requireOfficer', () => {
   it('returns true when the member has the officer role', async () => {
     const interaction = stubInteraction({ hasRole: true });
-    const allowed = await requireOfficer(interaction, 'button');
+    const allowed = await requireOfficer(interaction);
     expect(allowed).toBe(true);
     expect((interaction as any).reply).not.toHaveBeenCalled();
   });
 
   it('returns false and replies ephemeral when the member lacks the role', async () => {
     const interaction = stubInteraction({ hasRole: false });
-    const allowed = await requireOfficer(interaction, 'button');
+    const allowed = await requireOfficer(interaction);
     expect(allowed).toBe(false);
     expect((interaction as any).reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringMatching(/permission/i) }),
