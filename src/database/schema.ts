@@ -223,13 +223,7 @@ export function createTables(db: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
-    -- 28. signup_messages
-    CREATE TABLE IF NOT EXISTS signup_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      message TEXT NOT NULL
-    );
-
-    -- 29. default_messages
+    -- 28. default_messages
     CREATE TABLE IF NOT EXISTS default_messages (
       key TEXT PRIMARY KEY,
       message TEXT NOT NULL

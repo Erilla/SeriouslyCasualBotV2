@@ -4,7 +4,8 @@ import { getUpcomingRaids } from '../../services/wowaudit.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
-import type { RaiderRow, SettingRow, SignupMessageRow } from '../../types/index.js';
+import { generateSignupQuip } from '../../services/quipGenerator.js';
+import type { RaiderRow, SettingRow } from '../../types/index.js';
 
 interface DayConfig {
   settingKey: string;
@@ -106,12 +107,12 @@ export async function alertSignups(client: Client): Promise<void> {
     }
   }
 
-  // Pick a random signup message
-  const messageRow = db
-    .prepare('SELECT message FROM signup_messages ORDER BY RANDOM() LIMIT 1')
-    .get() as SignupMessageRow | undefined;
-
-  const randomMessage = messageRow?.message ?? 'Sign up for the next raid!';
+  // Generate a fresh signup quip via Gemini (falls back to a static one from
+  // the V1 corpus if GEMINI_API_KEY is unset or the call fails — #27).
+  const randomMessage = await generateSignupQuip({
+    raidDay: dayConfig.raidDay,
+    twoDayReminder: dayConfig.twoDayReminder,
+  });
 
   // Build the alert message
   let content = `${randomMessage}\n\nThe following raiders have not signed up for **${dayConfig.raidDay}**:\n${mentions.join(', ')}`;

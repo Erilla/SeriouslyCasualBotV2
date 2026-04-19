@@ -74,6 +74,18 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(2);
     })();
   }
+
+  if (currentVersion < 3) {
+    // Drop the signup_messages table. Quips are now generated on demand by
+    // the Gemini quip generator (#27); the table was never seeded in V2 so
+    // no data loss for anyone coming through a V2 install. Kept as
+    // DROP IF EXISTS to stay safe on fresh DBs where createTables ran
+    // after this migration was written.
+    database.transaction(() => {
+      database.exec(`DROP TABLE IF EXISTS signup_messages;`);
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(3);
+    })();
+  }
 }
 
 export function closeDatabase(): void {
