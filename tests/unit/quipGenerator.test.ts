@@ -116,6 +116,25 @@ describe('generateSignupQuip', () => {
     expect(quip.length).toBeLessThanOrEqual(280);
   });
 
+  it('falls back when candidate has no parts array (SAFETY / MAX_TOKENS)', async () => {
+    // Gemini sometimes returns a candidate without a parts array — e.g. when
+    // the response hits a safety filter or MAX_TOKENS before producing text.
+    // Previously parts?.map(...).join('') crashed with TypeError.
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        candidates: [{ finishReason: 'SAFETY', content: {} }],
+      }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(typeof quip).toBe('string');
+    expect(quip.length).toBeGreaterThan(0);
+  });
+
   it('falls back when fetch throws (network failure)', async () => {
     process.env.GEMINI_API_KEY = 'test-key';
 

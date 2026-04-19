@@ -140,7 +140,10 @@ async function callGemini(
     }
 
     const candidate = json.candidates?.[0];
-    const text = candidate?.content?.parts?.map((p) => p.text ?? '').join('').trim();
+    // parts can be absent when the model truncates or returns a finishReason
+    // of SAFETY/MAX_TOKENS. Default to [] so we don't try to .join undefined.
+    const parts = candidate?.content?.parts ?? [];
+    const text = parts.map((p) => p.text ?? '').join('').trim();
     if (!text) {
       logger.warn('QuipGen', `Gemini returned no text (finishReason: ${candidate?.finishReason ?? 'unknown'})`);
       return null;
