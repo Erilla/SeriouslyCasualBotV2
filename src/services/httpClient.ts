@@ -69,6 +69,7 @@ export async function httpRequest<T>(
   // fast-fail at the check above.
   const breakerWasHalfOpen = tryClaimTrialSlot(service);
 
+  try {
   const timeoutMs = opts?.timeoutMs ?? 10_000;
   const maxRetries = opts?.maxRetries ?? 2;
   const parseJson = opts?.parseJson ?? true;
@@ -113,7 +114,7 @@ export async function httpRequest<T>(
       if (isTimeout) sawTimeout = true;
 
       if (attempt > maxRetries) break;
-      await sleep(computeBackoffMs(attempt));
+      await sleep(computeBackoffMs(attempt), init?.signal);
       continue;
     }
 
@@ -146,7 +147,7 @@ export async function httpRequest<T>(
           lastError = e;
           sawTimeout = true;
           if (attempt > maxRetries) break;
-          await sleep(computeBackoffMs(attempt));
+          await sleep(computeBackoffMs(attempt), init?.signal);
           continue;
         }
         // Genuine JSON parse error — not transient. Still honor outcome
@@ -201,7 +202,7 @@ export async function httpRequest<T>(
 
     if (attempt > maxRetries) break;
     const waitMs = retryAfterMs !== null ? retryAfterMs : computeBackoffMs(attempt);
-    await sleep(waitMs);
+    await sleep(waitMs, init?.signal);
   }
 
   // Exhausted retries.
@@ -221,6 +222,17 @@ export async function httpRequest<T>(
     message: `${service} request failed after ${attempt} attempt(s): ${msg}`,
     lastError,
   });
+  } finally {
+    // Defense in depth. All normal exit paths already release/resolve the
+    // trial slot (finishSuccess → onBreakerTrialResult(true); onFinalFailure
+    // → onBreakerTrialResult(false); caller-abort branches →
+    // releaseBreakerTrialSlot). releaseBreakerTrialSlot is a no-op unless
+    // state is still half_open with trialInFlight=true — so on normal
+    // exits this is harmless, and on unexpected throws (signal-aware
+    // sleep aborting, internal helper failing, etc.) it prevents the
+    // breaker from getting stuck.
+    if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
+  }
 }
 
 function finishSuccess(service: ServiceName, attempt: number, wasTrial: boolean): void {
@@ -269,6 +281,27 @@ function parseRetryAfter(header: string | null, serverDateHeader: string | null)
   return null;
 }
 
+// Signal-aware sleep. Rejects with the signal's reason if aborted.
+// We roll our own (rather than timers/promises.setTimeout) because the
+// test suite drives backoff via vitest fake timers, which intercept the
+// global setTimeout but not the timers/promises variant reliably.
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+  }
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(id);
+        reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
+}
+
 function computeBackoffMs(attemptJustCompleted: number): number {
   // attemptJustCompleted is 1 after the first attempt, 2 after the second,
   // so exponent is always >= 0. Wait: base * 2^(n-1) + proportional jitter.
@@ -279,6 +312,3 @@ function computeBackoffMs(attemptJustCompleted: number): number {
   return Math.floor(computed + jitter);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
