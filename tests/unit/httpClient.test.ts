@@ -137,10 +137,11 @@ describe('httpRequest — timeout', () => {
     const promise = httpRequest('raiderio', 'https://x.test/', undefined, {
       timeoutMs: 100,
       maxRetries: 0,
-    });
+    }).catch((e) => e);
 
     await vi.advanceTimersByTimeAsync(101);
-    await expect(promise).rejects.toBeInstanceOf(HttpError);
+    const err = await promise;
+    expect(err).toBeInstanceOf(HttpError);
   });
 
   it('passes caller-provided signal alongside timeout', async () => {
