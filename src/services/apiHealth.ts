@@ -201,14 +201,29 @@ export function isBreakerOpen(service: ServiceName): boolean {
 
 // Atomically claim the single half_open trial slot. Returns true if
 // claimed (caller is the trial), false otherwise (state is closed, or
-// state is half_open but another trial is already in flight).
+// state is half_open but another trial is already in flight). Applies
+// the lazy open→half_open transition itself so it's safe to call
+// without first observing state via isBreakerOpen.
 export function tryClaimTrialSlot(service: ServiceName): boolean {
   const svc = state.get(service);
   if (!svc) return false;
+  maybeTransitionToHalfOpen(svc);
   if (svc.breaker.state !== 'half_open') return false;
   if (svc.breaker.trialInFlight) return false;
   svc.breaker.trialInFlight = true;
   return true;
+}
+
+// Release a half_open trial slot without resolving it as success or
+// failure. Used when a trial is cancelled by the caller — don't punish
+// the service by reopening the breaker, but don't leave the slot stuck
+// either.
+export function releaseBreakerTrialSlot(service: ServiceName): void {
+  const svc = state.get(service);
+  if (!svc) return;
+  if (svc.breaker.state === 'half_open') {
+    svc.breaker.trialInFlight = false;
+  }
 }
 
 // Lightweight breaker-state query for the httpClient's wasTrial decision.

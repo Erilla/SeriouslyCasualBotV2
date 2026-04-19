@@ -2,6 +2,7 @@ import type { ServiceName } from './apiHealth.js';
 import {
   recordOutcome, noteFailure, noteSuccess,
   isBreakerOpen, onBreakerTrialResult, tryClaimTrialSlot,
+  releaseBreakerTrialSlot,
 } from './apiHealth.js';
 
 export type { ServiceName };
@@ -95,15 +96,13 @@ export async function httpRequest<T>(
     let response: Response;
     try {
       response = await fetch(url, { ...init, signal });
-      clearTimeout(timeoutId);
     } catch (err) {
       clearTimeout(timeoutId);
-      // Caller explicitly aborted. Propagate their abort verbatim and don't
-      // retry. Release the trial slot (if any) so the breaker doesn't get
-      // stuck. Don't record this as a service failure — it's a caller
-      // cancellation, not an upstream problem.
+      // Caller explicitly aborted. Propagate verbatim, don't retry, and
+      // release (not fail) the trial slot — caller cancellation isn't a
+      // service failure and shouldn't reset the cooldown.
       if (init?.signal?.aborted) {
-        if (breakerWasHalfOpen) onBreakerTrialResult(service, false);
+        if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
         throw err;
       }
       const e = err instanceof Error ? err : new Error(String(err));
@@ -118,16 +117,36 @@ export async function httpRequest<T>(
 
     if (response.ok) {
       if (!parseJson) {
+        clearTimeout(timeoutId);
         finishSuccess(service, attempt, breakerWasHalfOpen);
         return undefined as T;
       }
+      // NOTE: timeoutId is still armed — the timeout must cover body
+      // parsing, not just the fetch headers phase. A server that streams
+      // headers and hangs on the body would otherwise block indefinitely.
       try {
         const data = (await response.json()) as T;
+        clearTimeout(timeoutId);
         finishSuccess(service, attempt, breakerWasHalfOpen);
         return data;
       } catch (err) {
+        clearTimeout(timeoutId);
+        // Caller aborted during body parse → propagate, release trial slot.
+        if (init?.signal?.aborted) {
+          if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
+          throw err;
+        }
+        // Our timeout fired during body parse → treat as transient timeout.
+        if (abortController.signal.aborted) {
+          const e = err instanceof Error ? err : new Error(String(err));
+          lastError = e;
+          sawTimeout = true;
+          if (attempt > maxRetries) break;
+          await sleep(computeBackoffMs(attempt));
+          continue;
+        }
+        // Genuine JSON parse error — not transient.
         const e = err instanceof Error ? err : new Error(String(err));
-        // JSON parse errors are not transient.
         recordOutcome(service, 'failed', { msg: `JSON parse error: ${e.message}` });
         noteFailure(service);
         onFinalFailure(service, breakerWasHalfOpen);
@@ -138,6 +157,7 @@ export async function httpRequest<T>(
       }
     }
 
+    clearTimeout(timeoutId);
     lastStatus = response.status;
     if (response.status === 429) sawRateLimit = true;
 
