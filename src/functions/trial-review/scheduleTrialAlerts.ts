@@ -148,6 +148,63 @@ async function firePromoteAlert(
   promoteTimers.delete(promoteAlert.id);
 }
 
+// ─── Manual Trigger (test/dev) ───────────────────────────────
+
+/**
+ * Fire every pending alert for a trial immediately, bypassing the scheduled
+ * timers. Covers both trial_alerts (7/14/28-day reviews) and promote_alerts
+ * (promotion-day reminder) — rescheduleAllAlerts handles both, so a manual
+ * trigger for verifying the full flow should too.
+ *
+ * Used by the dev-only `/test fire_trial_alert` command so the review flow
+ * can be exercised without waiting days.
+ */
+export async function fireTrialAlertsNow(
+  client: Client,
+  trialId: number,
+): Promise<{ reviewAlertsFired: number; promoteAlertsFired: number; alreadyFired: number }> {
+  const db = getDatabase();
+
+  const pending = db
+    .prepare('SELECT * FROM trial_alerts WHERE trial_id = ? AND alerted = 0')
+    .all(trialId) as TrialAlertRow[];
+  const alreadyFired = (
+    db
+      .prepare('SELECT COUNT(*) as c FROM trial_alerts WHERE trial_id = ? AND alerted = 1')
+      .get(trialId) as { c: number }
+  ).c;
+
+  for (const alert of pending) {
+    const existing = alertTimers.get(alert.id);
+    if (existing) {
+      clearTimeout(existing);
+      alertTimers.delete(alert.id);
+    }
+    await fireAlert(client, alert);
+  }
+
+  // Promote alerts don't have an `alerted` flag — firePromoteAlert deletes
+  // the row on success. So "pending" = "row still exists."
+  const pendingPromotes = db
+    .prepare('SELECT * FROM promote_alerts WHERE trial_id = ?')
+    .all(trialId) as PromoteAlertRow[];
+
+  for (const pa of pendingPromotes) {
+    const existing = promoteTimers.get(pa.id);
+    if (existing) {
+      clearTimeout(existing);
+      promoteTimers.delete(pa.id);
+    }
+    await firePromoteAlert(client, pa);
+  }
+
+  return {
+    reviewAlertsFired: pending.length,
+    promoteAlertsFired: pendingPromotes.length,
+    alreadyFired,
+  };
+}
+
 // ─── Schedule Individual Trial Alerts ────────────────────────
 
 /**
