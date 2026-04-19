@@ -10,3 +10,6 @@ db.sqlite*
 *.log
 .claude/*.local.*
 .worktrees/
+.env.test
+tests/e2e/.data/
+!tests/e2e/.data/.gitkeep
