@@ -6,6 +6,7 @@ import type {
 import { requireOfficer, wrapErrors, type InteractionKind } from './middleware.js';
 import * as pagination from './pagination.js';
 import * as loot from './loot.js';
+import * as raider from './raider.js';
 
 export type ButtonHandler = {
   prefix: string;
@@ -60,6 +61,9 @@ export async function dispatch<I extends AnyInteraction>(
 export const buttonHandlers: ButtonHandler[] = [
   ...pagination.buttons,
   ...loot.buttons,
+  ...raider.buttons,
 ];
 export const modalHandlers: ModalHandler[] = [];
-export const userSelectHandlers: UserSelectHandler[] = [];
+export const userSelectHandlers: UserSelectHandler[] = [
+  ...raider.userSelects,
+];
