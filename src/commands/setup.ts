@@ -188,8 +188,13 @@ export default {
 
       let content = `**Bot Configuration**\n\n${sections.join('\n\n')}`;
       if (content.length > DISCORD_MESSAGE_LIMIT) {
-        const truncationNotice = '\n\n_…output truncated; see \`bot_config\` table directly._';
-        content = content.slice(0, DISCORD_MESSAGE_LIMIT - truncationNotice.length) + truncationNotice;
+        // Truncate on a line boundary so we don't slice mid-<#id> mention
+        // and leave a broken markdown tag in the output. Reference the
+        // real table name (config, not bot_config).
+        const notice = '\n\n_…output truncated; query the `config` table directly for the full dump._';
+        const budget = DISCORD_MESSAGE_LIMIT - notice.length;
+        const cut = content.lastIndexOf('\n', budget);
+        content = content.slice(0, cut > 0 ? cut : budget) + notice;
       }
 
       await interaction.reply({ content, flags: MessageFlags.Ephemeral });
