@@ -102,10 +102,9 @@ export async function httpRequest<T>(
         // fetch threw AbortError but we don't know which signal caused it —
         // caller-supplied `init.signal` or our internal timeout. Check
         // init.signal.aborted to distinguish: if the caller aborted, don't
-        // retry and don't punish the service; release the trial slot and
-        // propagate verbatim.
+        // retry and don't punish the service. The outer finally will
+        // release the trial slot.
         if (init?.signal?.aborted) {
-          if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
           throw err;
         }
         const e = asError(err);
@@ -137,9 +136,9 @@ export async function httpRequest<T>(
           // Distinguish caller-abort from our timeout. response.json() throws
           // AbortError for either; the flags on the underlying controllers are
           // what tell us which signal fired. Must check the caller signal
-          // first — if both are aborted, caller-intent wins.
+          // first — if both are aborted, caller-intent wins. The outer
+          // finally will release the trial slot.
           if (init?.signal?.aborted) {
-            if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
             throw err;
           }
           if (abortController.signal.aborted) {
@@ -290,15 +289,15 @@ function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
     return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
   }
   return new Promise((resolve, reject) => {
-    const id = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(id);
-        reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
-      },
-      { once: true },
-    );
+    const onAbort = () => {
+      clearTimeout(id);
+      reject(signal!.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    const id = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
