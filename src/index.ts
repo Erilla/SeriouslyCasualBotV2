@@ -3,11 +3,12 @@ import { config } from './config.js';
 import { initDatabase, closeDatabase } from './database/db.js';
 import { initLogger, logger } from './services/logger.js';
 import { scheduler } from './events/ready.js';
+import { loadCommands } from './loadCommands.js';
 import { readdirSync } from 'fs';
 import { pathToFileURL } from 'url';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { BotClient, BotEvent, Command } from './types/index.js';
+import type { BotClient, BotEvent } from './types/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -36,34 +37,7 @@ client.commands = new Collection();
 
 // ─── Load Commands ───────────────────────────────────────────
 
-const commandsPath = join(__dirname, 'commands');
-let commandFiles: string[];
-try {
-  commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js') || f.endsWith('.ts'));
-} catch {
-  logger.warn('bot', 'No commands directory found');
-  commandFiles = [];
-}
-
-for (const file of commandFiles) {
-  try {
-    const filePath = join(commandsPath, file);
-    const module = await import(pathToFileURL(filePath).href);
-    const command = module.default as Command;
-
-    if (!command?.data || !command?.execute) {
-      logger.warn('bot', `Skipping ${file}: missing data or execute`);
-      continue;
-    }
-    if (command.devOnly && config.isProduction) continue;
-
-    client.commands.set(command.data.name, command);
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    logger.error('bot', `Failed to load command ${file}: ${err.message}`, err);
-  }
-}
-
+await loadCommands(client, { skipDevOnly: config.isProduction });
 logger.info('bot', `Loaded ${client.commands.size} commands`);
 
 // ─── Load Events ─────────────────────────────────────────────

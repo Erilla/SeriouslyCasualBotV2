@@ -1,8 +1,6 @@
 import { Client, Collection, GatewayIntentBits, Partials, type Guild, type GuildMember } from 'discord.js';
-import { readdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
 import { loadE2EEnv } from './env.js';
+import { loadCommands } from '../../../src/loadCommands.js';
 import type { BotClient, Command } from '../../../src/types/index.js';
 
 export interface E2EContext {
@@ -37,15 +35,19 @@ export async function bootstrapE2E(): Promise<E2EContext> {
   client.commands = new Collection<string, Command>();
   await loadCommands(client);
 
+  const LOGIN_TIMEOUT_MS = 30_000;
   await new Promise<void>((resolve, reject) => {
-    client.once('ready', () => resolve());
-    client.once('error', reject);
-    client.login(env.discordToken).catch(reject);
+    const timeout = setTimeout(() => {
+      reject(new Error(`Discord client failed to reach 'ready' within ${LOGIN_TIMEOUT_MS}ms`));
+    }, LOGIN_TIMEOUT_MS);
+    client.once('ready', () => { clearTimeout(timeout); resolve(); });
+    client.once('error', (err) => { clearTimeout(timeout); reject(err); });
+    client.login(env.discordToken).catch((err) => { clearTimeout(timeout); reject(err); });
   });
 
   const guild = await client.guilds.fetch(env.sandboxGuildId);
-  await guild.members.fetch();
 
+  // Fetch only the specific tester accounts, not the whole guild roster.
   const fetchMember = async (id: string, label: string): Promise<GuildMember> => {
     const m = await guild.members.fetch(id).catch(() => null);
     if (!m) throw new Error(`Sandbox member ${label} (${id}) not found in guild ${guild.id}`);
@@ -74,16 +76,3 @@ export function getE2EContext(): E2EContext {
   return context;
 }
 
-async function loadCommands(client: BotClient): Promise<void> {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const commandsDir = join(here, '..', '..', '..', 'src', 'commands');
-  const files = readdirSync(commandsDir).filter(
-    (f) => f.endsWith('.ts') || f.endsWith('.js'),
-  );
-  for (const file of files) {
-    const mod = await import(pathToFileURL(join(commandsDir, file)).href);
-    const cmd = mod.default as Command | undefined;
-    if (!cmd?.data || !cmd?.execute) continue;
-    client.commands.set(cmd.data.name, cmd);
-  }
-}

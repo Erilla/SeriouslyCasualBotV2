@@ -140,7 +140,16 @@ export function fakeChatInput(init: FakeChatInputInit): FakeChatInput {
     },
     async editReply(opts) {
       fake.__editedReply = { options: opts, ephemeral: false };
-      return { id: 'fake-edited-reply' };
+      // Partial Message-shaped fake. Handlers that chain .edit() / .delete() /
+      // .fetch() on the return value get async no-op stubs so they don't
+      // TypeError. Handlers that read additional properties will surface a
+      // clear "undefined" which tests can extend the stub for.
+      return {
+        id: 'fake-edited-reply',
+        edit: async () => ({ id: 'fake-edited-reply' }),
+        delete: async () => undefined,
+        fetch: async () => ({ id: 'fake-edited-reply' }),
+      };
     },
     async followUp(opts) {
       const ephemeral = isEphemeral(opts);
@@ -322,7 +331,16 @@ export function fakeModalSubmit(init: FakeModalSubmitInit): FakeModalSubmit {
     },
     async editReply(opts) {
       fake.__editedReply = { options: opts, ephemeral: false };
-      return { id: 'fake-edited-reply' };
+      // Partial Message-shaped fake. Handlers that chain .edit() / .delete() /
+      // .fetch() on the return value get async no-op stubs so they don't
+      // TypeError. Handlers that read additional properties will surface a
+      // clear "undefined" which tests can extend the stub for.
+      return {
+        id: 'fake-edited-reply',
+        edit: async () => ({ id: 'fake-edited-reply' }),
+        delete: async () => undefined,
+        fetch: async () => ({ id: 'fake-edited-reply' }),
+      };
     },
     async followUp(opts) {
       const ephemeral = isEphemeral(opts);
