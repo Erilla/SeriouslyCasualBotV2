@@ -28,6 +28,24 @@ const CHANNEL_CONFIG: Record<string, { label: string; type: ConfigurableChannelT
   applications_category_id: { label: 'Applications Category', type: ChannelType.GuildCategory },
 };
 
+const ROLE_CONFIG: Record<string, { label: string }> = {
+  officer_role_id: { label: 'Officer' },
+  raider_role_id: { label: 'Raider' },
+};
+
+// Build the set of keys get_config already renders explicitly once, at module
+// load, rather than on every invocation.
+const KNOWN_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  ...Object.keys(CHANNEL_CONFIG),
+  ...Object.keys(ROLE_CONFIG),
+]);
+
+// Discord rejects message content over 2000 chars. get_config renders a fixed
+// number of known rows plus any stale/legacy keys from the config table, so
+// long values or many unknown keys can push us close. Guard with room to
+// spare for the truncation notice itself.
+const DISCORD_MESSAGE_LIMIT = 2000;
+
 function channelTypeLabel(type: ChannelType): string {
   switch (type) {
     case ChannelType.GuildText: return 'text channel';
@@ -88,8 +106,7 @@ export default {
             .setDescription('Role purpose')
             .setRequired(true)
             .addChoices(
-              { name: 'Officer', value: 'officer_role_id' },
-              { name: 'Raider', value: 'raider_role_id' },
+              ...Object.entries(ROLE_CONFIG).map(([value, { label }]) => ({ name: label, value })),
             ),
         )
         .addRoleOption((opt) => opt.setName('role').setDescription('The role').setRequired(true)),
@@ -140,11 +157,54 @@ export default {
     }
 
     if (subcommand === 'get_config') {
-      const rows = db.prepare('SELECT key, value FROM config ORDER BY key').all() as { key: string; value: string }[];
-      const formatted = rows.length > 0
-        ? rows.map((r) => `**${r.key}**: \`${r.value}\``).join('\n')
-        : 'No configuration set yet.';
-      await interaction.reply({ content: `**Bot Configuration:**\n${formatted}`, flags: MessageFlags.Ephemeral });
+      // ORDER BY key keeps the "Other (unknown keys)" section deterministic
+      // when we iterate `rows` below. Known keys are rendered in CHANNEL_CONFIG
+      // / ROLE_CONFIG insertion order, independent of this ordering.
+      const rows = db
+        .prepare('SELECT key, value FROM config ORDER BY key')
+        .all() as { key: string; value: string }[];
+      const byKey = new Map(rows.map((r) => [r.key, r.value]));
+
+      const renderEntry = (key: string, label: string, mentionPrefix: '#' | '@&'): string => {
+        const value = byKey.get(key);
+        return value
+          ? `- **${label}** (${key}): <${mentionPrefix}${value}>`
+          : `- **${label}** (${key}): *(not set)*`;
+      };
+
+      const channelLines = Object.entries(CHANNEL_CONFIG).map(([k, { label }]) => renderEntry(k, label, '#'));
+      const roleLines = Object.entries(ROLE_CONFIG).map(([k, { label }]) => renderEntry(k, label, '@&'));
+      const unknownLines = rows
+        .filter((r) => !KNOWN_CONFIG_KEYS.has(r.key))
+        .map((r) => `- **${r.key}**: \`${r.value}\``);
+
+      const sections = [
+        `**Channels**\n${channelLines.join('\n')}`,
+        `**Roles**\n${roleLines.join('\n')}`,
+      ];
+      if (unknownLines.length > 0) {
+        sections.push(`**Other (unknown keys)**\n${unknownLines.join('\n')}`);
+      }
+
+      let content = `**Bot Configuration**\n\n${sections.join('\n\n')}`;
+      if (content.length > DISCORD_MESSAGE_LIMIT) {
+        // Build the output line-by-line instead. Hard-slicing at the
+        // character budget could cut through a `<#id>` or `<@&id>` mention
+        // and leave broken markdown in the reply. Walk lines and stop
+        // when adding the next one would overflow.
+        const notice = '\n\n_…output truncated; query the `config` table directly for the full dump._';
+        const budget = DISCORD_MESSAGE_LIMIT - notice.length;
+        const lines = content.split('\n');
+        let truncated = '';
+        for (const line of lines) {
+          const candidate = truncated ? `${truncated}\n${line}` : line;
+          if (candidate.length > budget) break;
+          truncated = candidate;
+        }
+        content = truncated + notice;
+      }
+
+      await interaction.reply({ content, flags: MessageFlags.Ephemeral });
     }
   },
 };
