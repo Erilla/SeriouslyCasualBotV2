@@ -12,7 +12,7 @@ import { seedApplicationVariety } from '../functions/testdata/seedApplicationVar
 import { seedTrial } from '../functions/testdata/seedTrial.js';
 import { seedEpgp } from '../functions/testdata/seedEpgp.js';
 import { seedLoot } from '../functions/testdata/seedLoot.js';
-import { resetData } from '../functions/testdata/resetData.js';
+import { resetData, ResetDiscordError } from '../functions/testdata/resetData.js';
 import { seedAll } from '../functions/testdata/seedAll.js';
 import { seedRaidersDiscord } from '../functions/testdata/discord/seedRaidersDiscord.js';
 import { seedApplicationDiscord } from '../functions/testdata/discord/seedApplicationDiscord.js';
@@ -183,8 +183,34 @@ async function runSubcommand(
       if (!confirm) {
         return 'Pass `confirm:true` to actually wipe data.';
       }
-      resetData(db);
-      return 'All data wiped and defaults (including application questions) re-seeded.';
+      try {
+        const result = await resetData(db, interaction.client);
+        const lines = ['All data wiped and defaults (including application questions) re-seeded.'];
+        if (result.discord) {
+          lines.push(
+            `Discord cleanup: **${result.discord.deleted}** deleted, **${result.discord.alreadyMissing}** already gone.`,
+          );
+        }
+        return lines.join('\n');
+      } catch (err) {
+        if (err instanceof ResetDiscordError) {
+          const failedList = err.result.errors
+            .slice(0, 10)
+            .map((e) => `• \`${e.kind}\` \`${e.id}\`: ${e.message}`)
+            .join('\n');
+          const more = err.result.errors.length > 10 ? `\n_(+${err.result.errors.length - 10} more)_` : '';
+          return [
+            `**Reset aborted — database was NOT wiped.**`,
+            `Discord cleanup failed for ${err.result.errors.length} artifact(s) ` +
+              `(${err.result.deleted} deleted, ${err.result.alreadyMissing} already gone before the failure).`,
+            '',
+            failedList + more,
+            '',
+            '_Fix the underlying issue and re-run. Artifacts already deleted won\'t be retried — their DB rows still exist and will short-circuit as "already missing" on the next attempt._',
+          ].join('\n');
+        }
+        throw err;
+      }
     }
     default:
       return `Unknown subcommand: ${sub}`;

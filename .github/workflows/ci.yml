@@ -23,6 +23,20 @@ jobs:
         run: npm run typecheck
 
       - name: Unit tests
+        # Stub required env vars so config.ts module load succeeds. These
+        # are only used if a test actually hits a code path that reads them;
+        # the values are intentionally unusable so any accidental production
+        # call fails loudly.
+        env:
+          DISCORD_TOKEN: test-stub
+          CLIENT_ID: test-stub
+          GUILD_ID: test-stub
+          OFFICER_ROLE_ID: test-stub
+          WOWAUDIT_API_SECRET: test-stub
+          WARCRAFTLOGS_CLIENT_ID: test-stub
+          WARCRAFTLOGS_CLIENT_SECRET: test-stub
+          WARCRAFTLOGS_GUILD_ID: '0'
+          RAIDERIO_GUILD_IDS: '0'
         run: npm test
 
       - name: Build
