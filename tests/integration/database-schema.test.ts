@@ -42,9 +42,11 @@ describe('database schema', () => {
     expect(tableNames).toContain('guild_info_messages');
     expect(tableNames).toContain('guild_info_links');
     expect(tableNames).toContain('achievements_manual');
-    expect(tableNames).toContain('signup_messages');
     expect(tableNames).toContain('default_messages');
     expect(tableNames).toContain('schema_version');
+
+    // signup_messages was removed in migration v3 (#27).
+    expect(tableNames).not.toContain('signup_messages');
   });
 
   it('should enforce foreign keys', () => {
@@ -61,7 +63,7 @@ describe('database schema', () => {
     const db = getDatabase();
 
     const version = db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get() as { version: number };
-    expect(version.version).toBe(1);
+    expect(version.version).toBe(3);
   });
 
   it('should be idempotent (safe to run twice)', () => {

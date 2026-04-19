@@ -8,8 +8,8 @@ import {
   ButtonBuilder,
   ButtonStyle,
 } from 'discord.js';
-import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { getOrCreateChannel } from '../channels.js';
 import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { splitMessage } from './splitMessage.js';
 
@@ -25,45 +25,17 @@ export async function createForumPost(
   qaText: string,
   applicationId: number,
 ): Promise<CreateForumPostResult> {
-  const db = getDatabase();
-
-  let forumId = (
-    db.prepare('SELECT value FROM config WHERE key = ?').get('application_log_forum_id') as
-      | { value: string }
-      | undefined
-  )?.value;
-
-  let forum: ForumChannel | null = null;
-
-  if (forumId) {
-    try {
-      const existing = guild.channels.cache.get(forumId) ?? await guild.channels.fetch(forumId).catch(() => null);
-      if (existing && existing.type === ChannelType.GuildForum) {
-        forum = existing as ForumChannel;
-      } else {
-        logger.info('Applications', `Application-log forum ${forumId} no longer exists or is wrong type, creating a new one`);
-      }
-    } catch {
-      logger.info('Applications', `Failed to fetch application-log forum ${forumId}, creating a new one`);
-    }
-  }
-
-  if (!forum) {
-    try {
-      forum = (await guild.channels.create({
-        name: 'application-log',
-        type: ChannelType.GuildForum,
-      })) as ForumChannel;
-      forumId = forum.id;
-      db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-        'application_log_forum_id',
-        forumId,
-      );
-      logger.info('Applications', `Created application-log forum: ${forumId}`);
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`);
-    }
+  let forum: ForumChannel;
+  try {
+    forum = await getOrCreateChannel(guild, {
+      name: 'application-log',
+      type: ChannelType.GuildForum,
+      categoryName: 'Application-logs',
+      configKey: 'application_log_forum_id',
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`);
   }
 
   try {

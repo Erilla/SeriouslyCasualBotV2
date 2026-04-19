@@ -1,7 +1,7 @@
 import {
   type Client,
-  type TextChannel,
   ChannelType,
+  type TextChannel,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -10,56 +10,28 @@ import {
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
-import type { RaiderRow, ConfigRow } from '../../types/index.js';
+import { getOrCreateChannel } from '../channels.js';
+import type { RaiderRow } from '../../types/index.js';
 import type { AutoMatch } from './autoMatchRaiders.js';
-
-async function getRaiderSetupChannel(client: Client): Promise<TextChannel | null> {
-  const db = getDatabase();
-
-  const row = db
-    .prepare('SELECT value FROM config WHERE key = ?')
-    .get('raider_setup_channel_id') as ConfigRow | undefined;
-
-  if (row) {
-    try {
-      const channel = await client.channels.fetch(row.value);
-      if (channel && channel.type === ChannelType.GuildText) {
-        return channel as TextChannel;
-      }
-    } catch {
-      logger.warn('RaiderAlerts', 'Configured raider-setup channel not found, will auto-create');
-    }
-  }
-
-  // Auto-create the channel
-  try {
-    const guild = await client.guilds.fetch(config.guildId);
-    const channel = await guild.channels.create({
-      name: 'raider-setup',
-      type: ChannelType.GuildText,
-      topic: 'Raider-Discord user linking setup',
-    });
-
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'raider_setup_channel_id',
-      channel.id,
-    );
-
-    logger.info('RaiderAlerts', `Auto-created raider-setup channel: #${channel.name}`);
-    return channel;
-  } catch (error) {
-    logger.error('RaiderAlerts', 'Failed to auto-create raider-setup channel', error as Error);
-    return null;
-  }
-}
 
 export async function sendAlertForRaidersWithNoUser(
   client: Client,
   newUnlinkedRaiders: RaiderRow[],
   autoMatches: AutoMatch[],
 ): Promise<void> {
-  const channel = await getRaiderSetupChannel(client);
-  if (!channel) return;
+  let channel: TextChannel;
+  try {
+    const guild = await client.guilds.fetch(config.guildId);
+    channel = await getOrCreateChannel(guild, {
+      name: 'raider-setup',
+      type: ChannelType.GuildText,
+      categoryName: 'SeriouslyCasual Bot',
+      configKey: 'raider_setup_channel_id',
+    });
+  } catch (error) {
+    logger.error('RaiderAlerts', 'Failed to resolve raider-setup channel', error as Error);
+    return;
+  }
 
   const db = getDatabase();
   const autoMatchMap = new Map(

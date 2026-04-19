@@ -10,11 +10,16 @@ import {
 } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { config } from '../../config.js';
+import { getOrCreateChannel } from '../channels.js';
 import type { RaiderRow, ConfigRow } from '../../types/index.js';
 
 export async function refreshLinkingMessages(client: Client): Promise<void> {
   const db = getDatabase();
 
+  // Short-circuit when admin has never configured this. getOrCreateChannel
+  // would auto-create otherwise, and we don't want a 10-minute job silently
+  // spinning up #raider-setup on guilds that opted out of the feature.
   const configRow = db
     .prepare('SELECT value FROM config WHERE key = ?')
     .get('raider_setup_channel_id') as ConfigRow | undefined;
@@ -24,16 +29,40 @@ export async function refreshLinkingMessages(client: Client): Promise<void> {
     return;
   }
 
+  // The bot stays a member of the configured guild while running, so the
+  // cache is the source of truth. Hitting the REST /guilds/:id endpoint on
+  // every 10-min tick would be a waste. Fetch only as a safety net if the
+  // cache hasn't populated yet (shouldn't happen after clientReady).
+  const guild =
+    client.guilds.cache.get(config.guildId) ??
+    (await client.guilds.fetch(config.guildId).catch(() => null));
+  if (!guild) {
+    logger.error(
+      'RefreshLinks',
+      'Failed to resolve guild for raider-setup refresh',
+      new Error(`guild ${config.guildId} not in cache and fetch failed`),
+    );
+    return;
+  }
+
+  // getOrCreateChannel self-heals a stale ID: fetch-by-ID fails → clear
+  // config → name lookup → writeConfig with the current channel's ID.
+  // Without this, a once-valid ID that points at a deleted channel would
+  // warn every 10 minutes until an admin re-ran /setup set_channel (#36).
   let channel: TextChannel;
   try {
-    const fetched = await client.channels.fetch(configRow.value);
-    if (!fetched || fetched.type !== ChannelType.GuildText) {
-      logger.warn('RefreshLinks', 'Raider-setup channel is not a text channel');
-      return;
-    }
-    channel = fetched as TextChannel;
-  } catch {
-    logger.warn('RefreshLinks', 'Could not fetch raider-setup channel');
+    channel = await getOrCreateChannel(guild, {
+      name: 'raider-setup',
+      type: ChannelType.GuildText,
+      categoryName: 'SeriouslyCasual Bot',
+      configKey: 'raider_setup_channel_id',
+    });
+  } catch (error) {
+    logger.error(
+      'RefreshLinks',
+      'Failed to resolve raider-setup channel',
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return;
   }
 

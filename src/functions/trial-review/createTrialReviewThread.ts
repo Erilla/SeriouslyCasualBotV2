@@ -10,6 +10,7 @@ import {
 import { getDatabase } from '../../database/db.js';
 import { config } from '../../config.js';
 import { logger } from '../../services/logger.js';
+import { getOrCreateChannel } from '../channels.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { generateTrialLogsContent } from './generateTrialLogs.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
@@ -87,37 +88,15 @@ export function buildTrialButtons(trialId: number): ActionRowBuilder<ButtonBuild
  * Get or create the trial-reviews forum channel.
  */
 async function getOrCreateTrialForum(client: Client): Promise<ForumChannel> {
-  const db = getDatabase();
   const guild = client.guilds.cache.get(config.guildId);
   if (!guild) throw new Error('Guild not found');
 
-  let forumId = (
-    db.prepare('SELECT value FROM config WHERE key = ?').get('trial_reviews_forum_id') as
-      | { value: string }
-      | undefined
-  )?.value;
-
-  let forum: ForumChannel | null = null;
-
-  if (forumId) {
-    const existing = guild.channels.cache.get(forumId);
-    if (existing && existing.type === ChannelType.GuildForum) {
-      forum = existing as ForumChannel;
-    }
-  }
-
-  if (!forum) {
-    forum = await guild.channels.create({
-      name: 'trial-reviews',
-      type: ChannelType.GuildForum,
-    });
-    forumId = forum.id;
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'trial_reviews_forum_id',
-      forumId,
-    );
-    logger.info('Trials', `Created trial-reviews forum: ${forumId}`);
-  }
+  const forum = await getOrCreateChannel(guild, {
+    name: 'trial-reviews',
+    type: ChannelType.GuildForum,
+    categoryName: 'Overlords',
+    configKey: 'trial_reviews_forum_id',
+  });
 
   return forum;
 }

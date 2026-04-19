@@ -13,7 +13,7 @@ import { logger } from '../services/logger.js';
 import { updateRaiderDiscordUser } from '../functions/raids/updateRaiderDiscordUser.js';
 import { ignoreCharacter } from '../functions/raids/ignoreCharacter.js';
 import { sendAlertForRaidersWithNoUser } from '../functions/raids/sendAlertForRaidersWithNoUser.js';
-import { audit } from '../services/auditLog.js';
+import { audit, alertOfficers } from '../services/auditLog.js';
 import { getDatabase } from '../database/db.js';
 import type { RaiderRow } from '../types/index.js';
 import { startApplication } from '../functions/applications/startApplication.js';
@@ -202,8 +202,21 @@ export default {
           } catch (err) {
             const error = err instanceof Error ? err : new Error(String(err));
             logger.error('Applications', `Failed to submit application #${applicationId}: ${error.message}`, error);
+
+            // Officers would otherwise only see this in stdout. Ping the audit
+            // channel so they have an action item. Don't await-block the user
+            // reply on the alert path — applicant feedback comes first, and
+            // alertOfficers catches its own failures. (#42)
+            void alertOfficers(
+              `Application #${applicationId} submission failed`,
+              `Applicant: ${interaction.user.tag} (${interaction.user.id})\nError: ${error.message}`,
+            );
+
             await interaction.editReply({
-              content: 'There was an error submitting your application. Please contact an officer.',
+              content:
+                `There was an error submitting your application (saved as #${applicationId}). ` +
+                `An officer has been notified — please include application #${applicationId} ` +
+                `when following up.`,
             });
           }
         }

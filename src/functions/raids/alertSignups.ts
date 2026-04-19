@@ -3,7 +3,9 @@ import { getDatabase } from '../../database/db.js';
 import { getUpcomingRaids } from '../../services/wowaudit.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
-import type { ConfigRow, RaiderRow, SettingRow, SignupMessageRow } from '../../types/index.js';
+import { getOrCreateChannel } from '../channels.js';
+import { generateSignupQuip } from '../../services/quipGenerator.js';
+import type { RaiderRow, SettingRow } from '../../types/index.js';
 
 interface DayConfig {
   settingKey: string;
@@ -19,41 +21,19 @@ const DAY_MAP: Record<number, DayConfig> = {
 };
 
 async function getRaidersLoungeChannel(client: Client): Promise<TextChannel | null> {
-  const db = getDatabase();
-
-  const row = db
-    .prepare('SELECT value FROM config WHERE key = ?')
-    .get('raiders_lounge_channel_id') as ConfigRow | undefined;
-
-  if (row) {
-    try {
-      const channel = await client.channels.fetch(row.value);
-      if (channel && channel.type === ChannelType.GuildText) {
-        return channel as TextChannel;
-      }
-    } catch {
-      logger.warn('AlertSignups', 'Configured raiders-lounge channel not found, will auto-create');
-    }
-  }
-
-  // Auto-create the channel
   try {
     const guild = await client.guilds.fetch(config.guildId);
-    const channel = await guild.channels.create({
+    const channel = await getOrCreateChannel(guild, {
       name: 'raiders-lounge',
       type: ChannelType.GuildText,
-      topic: 'Raider signup alerts and discussion',
+      categoryName: 'Raiders',
+      configKey: 'raiders_lounge_channel_id',
+      aliasNames: ['raiderslounge'],
+      createOptions: { topic: 'Raider signup alerts and discussion' },
     });
-
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(
-      'raiders_lounge_channel_id',
-      channel.id,
-    );
-
-    logger.info('AlertSignups', `Auto-created raiders-lounge channel: #${channel.name}`);
     return channel;
   } catch (error) {
-    logger.error('AlertSignups', 'Failed to auto-create raiders-lounge channel', error as Error);
+    logger.error('AlertSignups', 'Failed to resolve raiders-lounge channel', error as Error);
     return null;
   }
 }
@@ -127,12 +107,12 @@ export async function alertSignups(client: Client): Promise<void> {
     }
   }
 
-  // Pick a random signup message
-  const messageRow = db
-    .prepare('SELECT message FROM signup_messages ORDER BY RANDOM() LIMIT 1')
-    .get() as SignupMessageRow | undefined;
-
-  const randomMessage = messageRow?.message ?? 'Sign up for the next raid!';
+  // Generate a fresh signup quip via Gemini (falls back to a static one from
+  // the V1 corpus if GEMINI_API_KEY is unset or the call fails — #27).
+  const randomMessage = await generateSignupQuip({
+    raidDay: dayConfig.raidDay,
+    twoDayReminder: dayConfig.twoDayReminder,
+  });
 
   // Build the alert message
   let content = `${randomMessage}\n\nThe following raiders have not signed up for **${dayConfig.raidDay}**:\n${mentions.join(', ')}`;
