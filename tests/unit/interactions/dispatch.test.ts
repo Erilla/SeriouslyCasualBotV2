@@ -42,11 +42,13 @@ describe('dispatch', () => {
     expect(handleB).toHaveBeenCalledWith(expect.anything(), ['42', 'abc']);
   });
 
-  it('returns false and calls no handler when no prefix matches', async () => {
+  it('logs a warning, returns false, and calls no handler when no prefix matches', async () => {
+    const { logger } = await import('../../../src/services/logger.js');
     const result = await dispatch(handlers, 'button', stubInteraction(), 'unknown:id');
     expect(result).toBe(false);
     expect(handleA).not.toHaveBeenCalled();
     expect(handleB).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('interaction', expect.stringMatching(/Unhandled button: unknown:id/));
   });
 
   it('returns true when a handler runs', async () => {

@@ -4,6 +4,7 @@ import type {
   UserSelectMenuInteraction,
 } from 'discord.js';
 import { requireOfficer, wrapErrors, type InteractionKind } from './middleware.js';
+import { logger } from '../services/logger.js';
 import * as pagination from './pagination.js';
 import * as loot from './loot.js';
 import * as raider from './raider.js';
@@ -45,7 +46,10 @@ export async function dispatch<I extends AnyInteraction>(
     h => customId === h.prefix || customId.startsWith(h.prefix + ':'),
   );
 
-  if (!handler) return false;
+  if (!handler) {
+    logger.warn('interaction', `Unhandled ${kind}: ${customId}`);
+    return false;
+  }
 
   if (handler.officerOnly && !(await requireOfficer(interaction))) return true;
 
