@@ -1,5 +1,5 @@
-import { MessageFlags } from 'discord.js';
-import type { ButtonInteraction, ModalSubmitInteraction, UserSelectMenuInteraction, GuildMember } from 'discord.js';
+import { GuildMember, MessageFlags } from 'discord.js';
+import type { ButtonInteraction, ModalSubmitInteraction, UserSelectMenuInteraction } from 'discord.js';
 import { config } from '../config.js';
 import { logger } from '../services/logger.js';
 
@@ -8,8 +8,8 @@ export type InteractionKind = 'button' | 'modal' | 'select';
 type Gatable = ButtonInteraction | ModalSubmitInteraction | UserSelectMenuInteraction;
 
 export async function requireOfficer(interaction: Gatable): Promise<boolean> {
-  const member = interaction.member as GuildMember | null;
-  if (member?.roles.cache.has(config.officerRoleId)) return true;
+  const member = interaction.member;
+  if (member instanceof GuildMember && member.roles.cache.has(config.officerRoleId)) return true;
 
   await interaction.reply({
     content: 'You do not have permission to do this.',

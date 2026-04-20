@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ButtonInteraction } from 'discord.js';
+import { GuildMember, type ButtonInteraction } from 'discord.js';
 import { requireOfficer, wrapErrors } from '../../../src/interactions/middleware.js';
 
 vi.mock('../../../src/config.js', () => ({
@@ -14,9 +14,16 @@ function stubInteraction(opts: {
   hasRole?: boolean;
   replied?: boolean;
   deferred?: boolean;
+  apiMember?: boolean; // when true, member is not a GuildMember instance (simulates APIInteractionGuildMember)
 } = {}) {
+  const member = opts.apiMember
+    ? { roles: ['OFFICER'] } // APIInteractionGuildMember shape — no .cache, plain array
+    : Object.setPrototypeOf(
+        { roles: { cache: { has: (id: string) => opts.hasRole === true && id === 'OFFICER' } } },
+        GuildMember.prototype,
+      );
   return {
-    member: { roles: { cache: { has: (id: string) => opts.hasRole === true && id === 'OFFICER' } } },
+    member,
     replied: opts.replied ?? false,
     deferred: opts.deferred ?? false,
     reply: vi.fn().mockResolvedValue(undefined),
@@ -39,6 +46,15 @@ describe('requireOfficer', () => {
     expect((interaction as any).reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringMatching(/permission/i) }),
     );
+  });
+
+  it('returns false without crashing when member is an uncached APIInteractionGuildMember', async () => {
+    // Member has no .roles.cache — would crash on the old cast-based guard.
+    // instanceof GuildMember filter ensures we safely deny.
+    const interaction = stubInteraction({ apiMember: true });
+    const allowed = await requireOfficer(interaction);
+    expect(allowed).toBe(false);
+    expect((interaction as any).reply).toHaveBeenCalled();
   });
 });
 

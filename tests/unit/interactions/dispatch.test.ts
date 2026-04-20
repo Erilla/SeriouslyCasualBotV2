@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ButtonInteraction } from 'discord.js';
+import { GuildMember, type ButtonInteraction } from 'discord.js';
 import { dispatch, type ButtonHandler } from '../../../src/interactions/registry.js';
 
 vi.mock('../../../src/config.js', () => ({ config: { officerRoleId: 'OFFICER' } }));
@@ -8,8 +8,12 @@ vi.mock('../../../src/services/logger.js', () => ({
 }));
 
 function stubInteraction(opts: { hasRole?: boolean } = {}) {
+  const member = Object.setPrototypeOf(
+    { roles: { cache: { has: () => opts.hasRole === true } } },
+    GuildMember.prototype,
+  );
   return {
-    member: { roles: { cache: { has: () => opts.hasRole === true } } },
+    member,
     replied: false,
     deferred: false,
     reply: vi.fn().mockResolvedValue(undefined),
