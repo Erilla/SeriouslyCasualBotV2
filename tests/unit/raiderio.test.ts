@@ -8,11 +8,13 @@ vi.mock('../../src/config.js', () => ({
 }));
 
 import { getGuildRoster, getRaidRankings, getRaidStaticData, getWeeklyMythicPlusRuns } from '../../src/services/raiderio.js';
+import { __resetForTests } from '../../src/services/apiHealth.js';
 
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  __resetForTests();
 });
 
 afterEach(() => {
@@ -35,6 +37,7 @@ describe('getGuildRoster', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => ({ members: mockMembers }),
     });
 
@@ -53,19 +56,28 @@ describe('getGuildRoster', () => {
     expect(names).not.toContain('ExcludedToo');
   });
 
-  it('should throw on non-OK response', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
+  it('retries on 5xx and throws HttpError after exhausting retries', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false, status: 500, statusText: 'Internal Server Error',
+      headers: new Headers(),
     });
+    globalThis.fetch = fetchMock;
 
-    await expect(getGuildRoster()).rejects.toThrow('Raider.io API error: 500 Internal Server Error');
+    const promise = getGuildRoster().catch((e) => e);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const err = await promise;
+
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('raiderio');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
   });
 
   it('should call the correct URL', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => ({ members: [] }),
     });
 
@@ -73,6 +85,7 @@ describe('getGuildRoster', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'https://raider.io/api/v1/guilds/profile?region=eu&realm=silvermoon&name=seriouslycasual&fields=members',
+      expect.any(Object),
     );
   });
 });
@@ -85,6 +98,7 @@ describe('getRaidRankings', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => ({ raidRankings: mockRankings }),
     });
 
@@ -93,17 +107,19 @@ describe('getRaidRankings', () => {
     expect(result).toEqual(mockRankings);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('raid=nerubar-palace'),
+      expect.any(Object),
     );
   });
 
-  it('should throw on non-OK response', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: 'Not Found',
+  it('throws HttpError without retry on 404', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false, status: 404, statusText: 'Not Found',
+      headers: new Headers(),
     });
+    globalThis.fetch = fetchMock;
 
-    await expect(getRaidRankings('invalid')).rejects.toThrow('Raider.io API error: 404 Not Found');
+    await expect(getRaidRankings('invalid')).rejects.toThrow('raiderio');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -115,6 +131,7 @@ describe('getRaidStaticData', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => mockData,
     });
 
@@ -123,6 +140,7 @@ describe('getRaidStaticData', () => {
     expect(result).toEqual(mockData);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('expansion_id=10'),
+      expect.any(Object),
     );
   });
 });
@@ -135,6 +153,7 @@ describe('getWeeklyMythicPlusRuns', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => ({ mythic_plus_previous_weekly_highest_level_runs: mockRuns }),
     });
 
@@ -143,12 +162,14 @@ describe('getWeeklyMythicPlusRuns', () => {
     expect(result).toEqual(mockRuns);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('name=Testchar'),
+      expect.any(Object),
     );
   });
 
   it('should encode character names with special characters', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => ({ mythic_plus_previous_weekly_highest_level_runs: [] }),
     });
 
@@ -156,6 +177,7 @@ describe('getWeeklyMythicPlusRuns', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining(`name=${encodeURIComponent('Tëst Chàr')}`),
+      expect.any(Object),
     );
   });
 });

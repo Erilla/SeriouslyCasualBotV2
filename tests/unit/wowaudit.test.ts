@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../src/config.js', () => ({
   config: {
@@ -7,12 +7,17 @@ vi.mock('../../src/config.js', () => ({
 }));
 
 import { getUpcomingRaids, getHistoricalData } from '../../src/services/wowaudit.js';
+import { __resetForTests } from '../../src/services/apiHealth.js';
 
 const originalFetch = globalThis.fetch;
 
+beforeEach(() => {
+  vi.restoreAllMocks();
+  __resetForTests();
+});
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  vi.restoreAllMocks();
 });
 
 describe('getUpcomingRaids', () => {
@@ -23,6 +28,7 @@ describe('getUpcomingRaids', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => mockRaids,
     });
 
@@ -31,23 +37,23 @@ describe('getUpcomingRaids', () => {
     expect(result).toEqual(mockRaids);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'https://wowaudit.com/v1/raids?include_past=false',
-      {
-        headers: {
+      expect.objectContaining({
+        headers: expect.objectContaining({
           accept: 'application/json',
           Authorization: 'test-api-secret',
-        },
-      },
+        }),
+      }),
     );
   });
 
-  it('should throw on non-OK response', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
+  it('throws HttpError without retry on 401', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false, status: 401, statusText: 'Unauthorized', headers: new Headers(),
     });
+    globalThis.fetch = fetchMock;
 
-    await expect(getUpcomingRaids()).rejects.toThrow('WoW Audit API error: 401 Unauthorized');
+    await expect(getUpcomingRaids()).rejects.toThrow('wowaudit');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -61,11 +67,13 @@ describe('getHistoricalData', () => {
       .mockResolvedValueOnce({
         // getCurrentPeriod call
         ok: true,
+        headers: new Headers(),
         json: async () => ({ current_period: 42 }),
       })
       .mockResolvedValueOnce({
         // getHistoricalData call
         ok: true,
+        headers: new Headers(),
         json: async () => mockHistorical,
       });
 
@@ -90,28 +98,36 @@ describe('getHistoricalData', () => {
     );
   });
 
-  it('should throw if getCurrentPeriod fails', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
+  it('retries on 500 from getCurrentPeriod and throws HttpError', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false, status: 500, statusText: 'Internal Server Error',
+      headers: new Headers(),
     });
+    globalThis.fetch = fetchMock;
 
-    await expect(getHistoricalData()).rejects.toThrow('WoW Audit API error: 500 Internal Server Error');
+    const promise = getHistoricalData().catch((e) => e);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const err = await promise;
+
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('wowaudit');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
   });
 
-  it('should throw if historical data request fails', async () => {
-    globalThis.fetch = vi.fn()
+  it('throws HttpError without retry when historical data returns 404', async () => {
+    const fetchMock = vi.fn()
       .mockResolvedValueOnce({
-        ok: true,
+        ok: true, headers: new Headers(),
         json: async () => ({ current_period: 42 }),
       })
       .mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
+        ok: false, status: 404, statusText: 'Not Found', headers: new Headers(),
       });
+    globalThis.fetch = fetchMock;
 
-    await expect(getHistoricalData()).rejects.toThrow('WoW Audit API error: 404 Not Found');
+    await expect(getHistoricalData()).rejects.toThrow('wowaudit');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
