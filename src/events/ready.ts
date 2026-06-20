@@ -6,6 +6,7 @@ import { setAuditChannel } from '../services/auditLog.js';
 import { Scheduler } from '../scheduler/scheduler.js';
 import { deployCommands } from '../deploy-commands.js';
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
+import { alertForNewUnlinkedRaiders } from '../functions/raids/alertForNewUnlinkedRaiders.js';
 import { alertSignups } from '../functions/raids/alertSignups.js';
 import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythicPlusDone.js';
 import { refreshLinkingMessages } from '../functions/raids/refreshLinkingMessages.js';
@@ -91,7 +92,8 @@ export default {
       intervalMs: 600_000,
       handler: async () => {
         try {
-          await syncRaiders(client);
+          const newUnlinked = await syncRaiders(client);
+          await alertForNewUnlinkedRaiders(client, newUnlinked);
           recordTaskRun('syncRaiders', true);
         } catch (error) {
           recordTaskRun('syncRaiders', false, String(error));

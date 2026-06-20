@@ -11,6 +11,7 @@ import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } f
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
 import { autoMatchRaiders } from '../functions/raids/autoMatchRaiders.js';
 import { sendAlertForRaidersWithNoUser } from '../functions/raids/sendAlertForRaidersWithNoUser.js';
+import { alertForNewUnlinkedRaiders } from '../functions/raids/alertForNewUnlinkedRaiders.js';
 import { updateRaiderDiscordUser } from '../functions/raids/updateRaiderDiscordUser.js';
 import { ignoreCharacter } from '../functions/raids/ignoreCharacter.js';
 import { addOverlord, removeOverlord, getOverlords } from '../functions/raids/overlords.js';
@@ -208,8 +209,14 @@ export default {
         });
 
         try {
-          await syncRaiders(interaction.client);
-          await interaction.editReply({ content: 'Raider sync complete.' });
+          const newUnlinked = await syncRaiders(interaction.client);
+          await alertForNewUnlinkedRaiders(interaction.client, newUnlinked);
+          await interaction.editReply({
+            content:
+              newUnlinked.length > 0
+                ? `Raider sync complete. ${newUnlinked.length} new unlinked raider(s) — alerts posted to raider-setup.`
+                : 'Raider sync complete.',
+          });
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           await interaction.editReply({

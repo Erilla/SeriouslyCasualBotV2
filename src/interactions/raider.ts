@@ -17,9 +17,19 @@ async function confirmLink(interaction: ButtonInteraction, params: string[]): Pr
 
   if (success) {
     await audit(interaction.user, 'confirmed raider link', `${characterName} -> <@${userId}>`);
-    await interaction.update({
-      content: `Linked **${characterName}** to <@${userId}>!`,
-      components: [],
+
+    // updateRaiderDiscordUser already deletes the linking message; delete here
+    // too as a no-op safety net. The confirmation itself is ephemeral so the
+    // channel keeps nothing but awaiting-unlinked-raider posts.
+    try {
+      await interaction.message.delete();
+    } catch {
+      // Message may already be deleted
+    }
+
+    await interaction.reply({
+      content: `Linked **${characterName}** to <@${userId}>.`,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     await interaction.reply({

@@ -242,6 +242,57 @@ describe('syncRaiders', () => {
     );
   });
 
+  it('should return newly-added unlinked raiders so callers can alert', async () => {
+    mockedGetGuildRoster.mockResolvedValue([
+      makeMember('FreshChar'),
+    ]);
+
+    const newUnlinked = await syncRaiders(mockClient);
+
+    expect(newUnlinked.map((r) => r.character_name)).toEqual(['FreshChar']);
+    expect(newUnlinked[0].discord_user_id).toBeNull();
+    expect(newUnlinked[0].message_id).toBeNull();
+  });
+
+  it('should not return raiders auto-linked via identity map', async () => {
+    const db = getDatabase();
+    db.prepare(
+      'INSERT INTO raider_identity_map (character_name, discord_user_id) VALUES (?, ?)',
+    ).run('MappedChar', '123456789');
+
+    mockedGetGuildRoster.mockResolvedValue([
+      makeMember('MappedChar'),
+      makeMember('UnmappedChar'),
+    ]);
+
+    const newUnlinked = await syncRaiders(mockClient);
+
+    expect(newUnlinked.map((r) => r.character_name)).toEqual(['UnmappedChar']);
+  });
+
+  it('should not return already-existing raiders', async () => {
+    const db = getDatabase();
+    db.prepare(
+      'INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)',
+    ).run('ExistingRaider', 'silvermoon', 'eu');
+
+    mockedGetGuildRoster.mockResolvedValue([
+      makeMember('ExistingRaider'),
+    ]);
+
+    const newUnlinked = await syncRaiders(mockClient);
+
+    expect(newUnlinked).toEqual([]);
+  });
+
+  it('should return an empty array when no new raiders were added', async () => {
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    const newUnlinked = await syncRaiders(mockClient);
+
+    expect(newUnlinked).toEqual([]);
+  });
+
   it('should handle case-insensitive identity map lookup', async () => {
     const db = getDatabase();
     db.prepare(
