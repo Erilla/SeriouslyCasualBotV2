@@ -58,6 +58,20 @@ function makeChannel(initial: Array<{ id: string; pinned?: boolean }> = []) {
         return new Map(live.map((m) => [m.id, wrap(m)]));
       }),
     },
+    // Mirrors discord.js TextChannel.bulkDelete: accepts an array of messages
+    // (or ids), deletes them in one call, returns a Collection of the deleted.
+    bulkDelete: vi.fn(async (msgs: Array<{ id: string } | string>) => {
+      const ids = [...msgs].map((m) => (typeof m === 'string' ? m : m.id));
+      const deleted: string[] = [];
+      for (const id of ids) {
+        const m = store.find((x) => x.id === id && !x.deleted);
+        if (m) {
+          m.deleted = true;
+          deleted.push(id);
+        }
+      }
+      return new Map(deleted.map((id) => [id, {}]));
+    }),
     send: vi.fn(async () => {
       const m: FakeMessage = { id: `new-${++n}`, pinned: false, deleted: false };
       store.unshift(m);
@@ -218,5 +232,35 @@ describe('refreshLinkingMessages', () => {
     await refreshLinkingMessages(makeClient({} as Guild));
 
     expect(channel.liveIds()).toEqual([]);
+  });
+
+  it('sweeps stale messages with bulkDelete, not one-by-one', async () => {
+    // A large backlog is what hung the old per-message delete loop. The sweep
+    // must clear it in batched bulkDelete calls instead.
+    const stale = Array.from({ length: 250 }, (_, i) => ({ id: `stale-${i}` }));
+    const channel = makeChannel(stale);
+    mockedGetOrCreateChannel.mockResolvedValue(channel as never);
+
+    await refreshLinkingMessages(makeClient({} as Guild));
+
+    expect(channel.bulkDelete).toHaveBeenCalled();
+    // 250 stale across 100-per-page fetches => a handful of calls, not 250.
+    expect(channel.bulkDelete.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(channel.liveIds()).toEqual([]);
+  });
+
+  it('keeps awaiting-raider posts while bulk-sweeping the rest', async () => {
+    insertRaider({ name: 'Live', messageId: 'live-1' });
+    const channel = makeChannel([
+      { id: 'live-1' },
+      { id: 'orphan-1' },
+      { id: 'orphan-2' },
+    ]);
+    mockedGetOrCreateChannel.mockResolvedValue(channel as never);
+
+    await refreshLinkingMessages(makeClient({} as Guild));
+
+    expect(channel.bulkDelete).toHaveBeenCalled();
+    expect(channel.liveIds()).toEqual(['live-1']);
   });
 });

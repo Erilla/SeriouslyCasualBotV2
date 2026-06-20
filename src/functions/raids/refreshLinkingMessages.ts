@@ -168,18 +168,38 @@ async function sweepChannel(channel: TextChannel, keepIds: Set<string>): Promise
     if (batch.size === 0) break;
 
     const messages = [...batch.values()];
-    for (const message of messages) {
-      if (message.pinned || keepIds.has(message.id)) continue;
+    // Advance the cursor before deleting: the oldest id in this page is a valid
+    // pagination anchor even after the message itself is gone.
+    before = messages[messages.length - 1]?.id;
+
+    const deletable = messages.filter((m) => !m.pinned && !keepIds.has(m.id));
+    if (deletable.length > 0) {
       try {
-        await message.delete();
-        swept++;
-      } catch {
-        // Message may already be gone, that's fine
+        // bulkDelete clears up to 100 in a single request — the old per-message
+        // delete loop couldn't drain a large backlog within a tick and wedged
+        // the scheduler. filterOld:true skips (rather than throws on) the >14d
+        // messages Discord refuses to bulk-delete.
+        const deleted = await channel.bulkDelete(deletable, true);
+        swept += deleted.size;
+      } catch (error) {
+        // bulkDelete rejects a single-message batch and a few other edge cases;
+        // fall back to deleting individually so the sweep still makes progress.
+        logger.debug(
+          'RefreshLinks',
+          `bulkDelete failed (${error instanceof Error ? error.message : String(error)}); deleting individually`,
+        );
+        for (const message of deletable) {
+          try {
+            await message.delete();
+            swept++;
+          } catch {
+            // Message may already be gone, that's fine
+          }
+        }
       }
     }
 
     if (batch.size < SWEEP_PAGE_SIZE) break;
-    before = messages[messages.length - 1]?.id;
   }
 
   if (swept >= SWEEP_PAGE_SIZE * SWEEP_MAX_PAGES) {
