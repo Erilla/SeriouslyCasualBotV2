@@ -90,10 +90,12 @@ describe('getRaid', () => {
 });
 
 describe('getHistoricalData', () => {
-  it('should fetch historical data for the previous period', async () => {
-    const mockHistorical = [
-      { character: { name: 'Testchar', realm: 'silvermoon' }, data: { ilvl: 620 } },
+  it('should fetch historical data for the previous period and unwrap characters', async () => {
+    // The /historical_data endpoint wraps the list: { period, characters: [...] }.
+    const characters = [
+      { id: 1, name: 'Testchar', realm: 'silvermoon', data: { vault_options: {} } },
     ];
+    const mockResponse = { period: 41, characters };
 
     globalThis.fetch = vi.fn()
       .mockResolvedValueOnce({
@@ -106,12 +108,12 @@ describe('getHistoricalData', () => {
         // getHistoricalData call
         ok: true,
         headers: new Headers(),
-        json: async () => mockHistorical,
+        json: async () => mockResponse,
       });
 
     const result = await getHistoricalData();
 
-    expect(result).toEqual(mockHistorical);
+    expect(result).toEqual(characters);
 
     // First call: getCurrentPeriod
     expect(globalThis.fetch).toHaveBeenCalledWith(

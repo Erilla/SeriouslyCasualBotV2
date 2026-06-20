@@ -64,7 +64,7 @@ export async function generateGreatVaultReport(
   // Build lookup from historical data
   const histMap = new Map<string, WowAuditHistoricalEntry>();
   for (const entry of historicalData) {
-    histMap.set(entry.character.name.toLowerCase(), entry);
+    histMap.set(entry.name.toLowerCase(), entry);
   }
 
   // Find max name length for alignment
