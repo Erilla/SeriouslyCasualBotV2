@@ -8,6 +8,22 @@ provision or SSH into.
 Build/restart settings live in `railway.json`. Environment variables and the
 persistent volume are configured in the Railway dashboard (not in the repo).
 
+## Branching & environments
+
+Two long-lived branches, each auto-deployed to its own Railway environment:
+
+| Branch | Railway environment | Guild |
+|---|---|---|
+| `main` | `production` | live guild |
+| `develop` | `test` | sandbox guild |
+
+**Flow:** feature branches → PR into `develop` → auto-deploys to **test** for soak
+testing → when validated, PR `develop` → `main` → auto-deploys to **production**.
+So `main` always reflects what's in prod and `develop` what's in test; promotion
+is a reviewable merge, not a console action. CI (`ci.yml`) runs on pushes/PRs to
+both branches. Each environment has its own variables (separate Discord tokens,
+guild IDs, etc.) and its own volume.
+
 ## Railway setup (one-time)
 
 1. **Create the project** — at railway.com: *New Project → Deploy from GitHub
