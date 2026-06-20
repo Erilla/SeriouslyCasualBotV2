@@ -131,3 +131,56 @@ ssh -i ./scbot-test-deploy root@<IP> \
 
 `restart: unless-stopped` means a crash auto-recovers; check `docker compose ps`
 uptime and `STATUS` over time to gauge stability.
+
+## Ultra.cc (no Docker, no root) — native pm2 trial
+
+Ultra.cc shared slots provide **no Docker and no root**, so the image/compose
+pipeline above does not apply. The bot runs natively under `pm2` in your home
+directory instead. Treat this as a temporary trial: hosting a Discord bot is a
+use case Ultra.cc has officially rejected, and shared slots are memory-limited
+(OOM is the most likely failure). `ecosystem.config.cjs` drives pm2.
+
+```bash
+# 1. SSH into the slot (credentials in the Ultra.cc panel).
+
+# 2. Install Node 22 in userspace (no root needed).
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.nvm/nvm.sh && nvm install 22 && nvm use 22
+
+# 3. Get the code (private repo — use a read-only PAT or build locally + rsync).
+git clone https://<github-pat>@github.com/Erilla/SeriouslyCasualBotV2.git \
+  ~/seriouslycasualbot-test
+cd ~/seriouslycasualbot-test
+
+# 4. Install deps + build. @napi-rs/canvas and better-sqlite3 fetch prebuilt
+#    linux-x64-glibc binaries here, so no compiler/root is required.
+npm ci
+npm run build
+
+# 5. Sandbox-guild config + a persistent data dir.
+cp .env.test-server.example .env    # fill in SANDBOX values; DB_PATH is set by pm2
+mkdir -p data
+
+# 6. Start under pm2 and snapshot the process list.
+npm install -g pm2                  # "global" = user-local under nvm
+pm2 start ecosystem.config.cjs
+pm2 save
+
+# 7. Survive a host reboot WITHOUT root (`pm2 startup` needs systemd/root, so
+#    use a user crontab instead — `crontab -e`):
+#      @reboot /bin/bash -lc 'source ~/.nvm/nvm.sh && pm2 resurrect'
+```
+
+Observe the soak:
+
+```bash
+pm2 logs scbot-test --lines 100     # live logs
+pm2 info scbot-test                 # restarts, uptime, memory
+pm2 monit                           # live CPU/RAM — watch for OOM-driven restarts
+```
+
+A climbing restart count or restarts logged around achievements/canvas work
+points at the slot's memory ceiling — lower `max_memory_restart`, or move to a
+real VPS (see top of this doc). Automated deploys (a GitHub Actions job that
+SSHes in, `git pull && npm ci && npm run build && pm2 reload`) are worth adding
+only once the trial proves the slot can keep it alive.
