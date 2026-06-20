@@ -12,6 +12,7 @@ import { logger } from '../../services/logger.js';
 import { getOrCreateChannel } from '../channels.js';
 import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { splitMessage } from './splitMessage.js';
+import { addOverlordsToThread } from '../raids/overlords.js';
 
 export interface CreateForumPostResult {
   forumPost: { id: string };
@@ -82,6 +83,10 @@ export async function createForumPost(
   for (let i = 1; i < messages.length; i++) {
     await thread.send(messages[i]);
   }
+
+  // Add overlords as members of the post so they see it and can review.
+  // (addOverlordsToThread swallows per-overlord errors, so this won't throw.)
+  await addOverlordsToThread(thread);
 
   try {
     const votingData = generateVotingEmbed(applicationId);
