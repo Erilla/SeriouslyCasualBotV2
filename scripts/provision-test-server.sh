@@ -17,9 +17,12 @@ set -euo pipefail
 #   ./scripts/provision-test-server.sh
 
 SERVER_NAME="${SERVER_NAME:-scbot-test}"
-SERVER_TYPE="${SERVER_TYPE:-cax11}"   # Ampere ARM, 2 vCPU / 4 GB (~EUR 3.79/mo)
+# x86, 2 vCPU / 4 GB (~EUR 4/mo). The image is built linux/amd64 to match.
+# If cx22 is retired in your account, try cx23 or cpx11. (ARM cax11 was the
+# original target but Hetzner ARM was unavailable across EU locations.)
+SERVER_TYPE="${SERVER_TYPE:-cx22}"
 IMAGE="${IMAGE:-ubuntu-24.04}"
-LOCATION="${LOCATION:-fsn1}"          # Falkenstein DE. ARM also in nbg1 / hel1.
+LOCATION="${LOCATION:-fsn1}"          # Falkenstein DE. Also nbg1 / hel1 (EU).
 SSH_KEY_NAME="${SSH_KEY_NAME:-scbot-test-deploy}"
 KEY_FILE="${KEY_FILE:-./scbot-test-deploy}"
 CLOUD_INIT="${CLOUD_INIT:-scripts/test-server-cloud-init.yaml}"

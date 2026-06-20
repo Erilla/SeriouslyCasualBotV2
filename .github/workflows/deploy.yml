@@ -58,7 +58,10 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/arm64
+          # x86 VPS target. ARM (CAX) was dropped after Hetzner ARM proved
+          # unavailable; switch back to (or add) linux/arm64 if you move to an
+          # ARM host.
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ steps.img.outputs.owner }}/seriouslycasualbot:latest
             ghcr.io/${{ steps.img.outputs.owner }}/seriouslycasualbot:${{ github.sha }}

@@ -65,10 +65,15 @@ The SQLite data volume (`bot-data`) persists across restarts and image updates.
 
 ## Test server (staging soak)
 
-A second, isolated instance runs on its own Hetzner box for stability soak
-testing. It uses the **same image** as production but a different `.env`
-(pointed at the **sandbox Discord guild**), and an isolated compose stack
+A second, isolated instance runs on its own VPS for stability soak testing. It
+uses the **same image** as production but a different `.env` (pointed at the
+**sandbox Discord guild**), and an isolated compose stack
 (`COMPOSE_PROJECT_NAME=scbot-test`) so it can never collide with prod.
+
+> Target an **x86 VPS** (the build is `linux/amd64`). A Hetzner CX22/CX23
+> (2 vCPU / 4 GB, ~€4/mo) is the recommended box. A shared seedbox (Ultra.cc
+> etc.) will **not** work — no Docker/root, and a virtual-memory cap that
+> prevents Node's WASM/native modules from loading.
 
 ### Pipeline
 
