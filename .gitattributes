@@ -6,3 +6,6 @@
 *.yaml      text eol=lf
 Dockerfile  text eol=lf
 *.env*      text eol=lf
+
+# Bundled fonts are binary — never apply text/EOL normalisation.
+*.ttf       binary

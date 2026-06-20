@@ -2,6 +2,7 @@ import { type Client, AttachmentBuilder } from 'discord.js';
 import { createCanvas } from '@napi-rs/canvas';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { registerAchievementsFonts, ACHIEVEMENTS_FONT } from './fonts.js';
 import { getOrCreateGuildInfoChannel } from './clearGuildInfo.js';
 import { getRaidStaticData, getRaidRankings } from '../../services/raiderio.js';
 import type { AchievementsManualRow, GuildInfoContentRow, GuildInfoMessageRow } from '../../types/index.js';
@@ -126,8 +127,14 @@ export async function updateAchievements(client: Client): Promise<void> {
       });
       logger.info('guild-info', 'Updated existing Achievements message');
       return;
-    } catch {
-      logger.debug('guild-info', 'Previous achievements message not found, creating new one');
+    } catch (error) {
+      // Editing can fail because the stored message was deleted, the channel was
+      // recreated, or the message was authored by a different bot identity. Log
+      // the reason so a stray duplicate post is diagnosable rather than silent.
+      logger.warn(
+        'guild-info',
+        `Could not edit existing achievements message ${existingMsg.message_id}, creating new one: ${error}`,
+      );
     }
   }
 
@@ -338,6 +345,10 @@ function renderAchievementsImage(sections: AchievementSection[], title: string):
 
   const height = PADDING + HEADER_HEIGHT + totalRows * ROW_HEIGHT + sections.length * SECTION_GAP + PADDING;
 
+  // Register the bundled font before drawing — the container has no system
+  // fonts, so `sans-serif` would otherwise render as blank .notdef glyphs.
+  registerAchievementsFonts();
+
   const canvas = createCanvas(WIDTH, height);
   const ctx = canvas.getContext('2d');
 
@@ -347,7 +358,7 @@ function renderAchievementsImage(sections: AchievementSection[], title: string):
 
   // Column headers
   ctx.fillStyle = '#96989d';
-  ctx.font = `bold ${HEADER_FONT_SIZE}px sans-serif`;
+  ctx.font = `bold ${HEADER_FONT_SIZE}px ${ACHIEVEMENTS_FONT}`;
   ctx.fillText('RAID', COL_RAID, PADDING + 20);
   ctx.fillText('PROGRESS', COL_PROGRESS, PADDING + 20);
   ctx.fillText('CE', COL_CE + 10, PADDING + 20);
@@ -367,7 +378,7 @@ function renderAchievementsImage(sections: AchievementSection[], title: string):
     // Expansion separator
     if (section.expansionLabel) {
       ctx.fillStyle = '#5865f2';
-      ctx.font = `bold ${FONT_SIZE}px sans-serif`;
+      ctx.font = `bold ${FONT_SIZE}px ${ACHIEVEMENTS_FONT}`;
       ctx.fillText(section.expansionLabel, COL_RAID, y);
       y += ROW_HEIGHT;
     }
@@ -376,7 +387,7 @@ function renderAchievementsImage(sections: AchievementSection[], title: string):
       const color = row.isCE ? '#57f287' : '#ffffff';
 
       ctx.fillStyle = color;
-      ctx.font = `${FONT_SIZE}px sans-serif`;
+      ctx.font = `${FONT_SIZE}px ${ACHIEVEMENTS_FONT}`;
       ctx.fillText(row.raid, COL_RAID, y);
       ctx.fillText(row.progress, COL_PROGRESS, y);
       ctx.fillText(row.result, COL_RESULT, y);
@@ -394,7 +405,7 @@ function renderAchievementsImage(sections: AchievementSection[], title: string):
 
         // CE text centered in badge
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold 16px sans-serif`;
+        ctx.font = `bold 16px ${ACHIEVEMENTS_FONT}`;
         const textWidth = ctx.measureText('CE').width;
         ctx.fillText('CE', badgeX + (CE_BADGE_W - textWidth) / 2, y - 2);
       }
