@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3';
+import { mkdirSync } from 'fs';
+import { dirname } from 'path';
 import { createTables } from './schema.js';
 import { seedDatabase } from './seed.js';
 
@@ -8,6 +10,10 @@ export function getDatabase(path?: string): Database.Database {
   if (db) return db;
 
   const dbPath = path || process.env.DB_PATH || 'db.sqlite';
+  // better-sqlite3 won't create the parent directory. When DB_PATH points at a
+  // mounted volume (e.g. /app/data/db.sqlite on Railway), the dir may not exist
+  // yet, so create it ourselves. dirname('db.sqlite') === '.', a harmless no-op.
+  mkdirSync(dirname(dbPath), { recursive: true });
   db = new Database(dbPath);
 
   db.pragma('journal_mode = WAL');

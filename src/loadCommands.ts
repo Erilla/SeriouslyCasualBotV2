@@ -19,7 +19,11 @@ export async function loadCommands(
 
   let files: string[];
   try {
-    files = readdirSync(commandsPath).filter((f) => f.endsWith('.ts') || f.endsWith('.js'));
+    // `.d.ts` ends with `.ts`, so guard against declaration files being
+    // imported as commands (Node would try to type-strip them via WASM).
+    files = readdirSync(commandsPath).filter(
+      (f) => (f.endsWith('.ts') || f.endsWith('.js')) && !f.endsWith('.d.ts'),
+    );
   } catch {
     logger.warn('bot', 'No commands directory found');
     return;

@@ -61,9 +61,9 @@ export function seedDatabase(db: Database.Database): void {
       'Thank you for your interest in raiding with us. However, in this instance, I\'m afraid we are unable to offer you a raid spot. We wish you luck on your guild search.',
     );
 
-    // Default settings (all disabled)
+    // Default settings: signup alerts enabled by default.
     for (const key of ['alertSignup_Wednesday', 'alertSignup_Wednesday_48', 'alertSignup_Sunday', 'alertSignup_Sunday_48']) {
-      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, 0);
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, 1);
     }
   });
 
