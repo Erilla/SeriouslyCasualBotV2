@@ -43,7 +43,9 @@ logger.info('bot', `Loaded ${client.commands.size} commands`);
 // ─── Load Events ─────────────────────────────────────────────
 
 const eventsPath = join(__dirname, 'events');
-const eventFiles = readdirSync(eventsPath).filter((f) => f.endsWith('.js') || f.endsWith('.ts'));
+const eventFiles = readdirSync(eventsPath).filter(
+  (f) => (f.endsWith('.js') || f.endsWith('.ts')) && !f.endsWith('.d.ts'),
+);
 
 for (const file of eventFiles) {
   const filePath = join(eventsPath, file);

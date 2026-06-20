@@ -13,13 +13,15 @@ function replyContent(reply: { options: unknown }): string {
   return (opts as { content?: string }).content ?? '';
 }
 
+// NOTE: alertSignup_* settings are seeded ENABLED by default (see seed.ts).
+
 describe('/settings', () => {
   beforeEach(async () => {
     await resetAndSeed();
   });
 
   // ------------------------------------------------------------------ get_setting
-  it('get_setting — replies ephemeral with the current value of a disabled setting', async () => {
+  it('get_setting — replies ephemeral with the current value of an enabled setting', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
@@ -41,20 +43,20 @@ describe('/settings', () => {
     expect(reply.ephemeral).toBe(true);
     const content = replyContent(reply);
     expect(content).toContain('alertSignup_Wednesday');
-    expect(content).toContain('disabled');
+    expect(content).toContain('enabled');
   });
 
-  // ------------------------------------------------------------------ toggle_setting (off → on)
-  it('toggle_setting — toggles a disabled setting to enabled and persists to DB', async () => {
+  // ------------------------------------------------------------------ toggle_setting (on → off)
+  it('toggle_setting — toggles an enabled setting to disabled and persists to DB', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
-    // Pre-condition: seeded value is 0 (disabled).
+    // Pre-condition: seeded value is 1 (enabled).
     const before = queryOne<{ value: number }>(
       'SELECT value FROM settings WHERE key = ?',
       ['alertSignup_Sunday'],
     );
-    expect(before?.value).toBe(0);
+    expect(before?.value).toBe(1);
 
     const iact = fakeChatInput({
       client: ctx.client,
@@ -75,22 +77,22 @@ describe('/settings', () => {
     expect(reply.ephemeral).toBe(true);
     const content = replyContent(reply);
     expect(content).toContain('alertSignup_Sunday');
-    expect(content).toContain('enabled');
+    expect(content).toContain('disabled');
 
-    // DB persistence: value must now be 1.
+    // DB persistence: value must now be 0.
     const after = queryOne<{ value: number }>(
       'SELECT value FROM settings WHERE key = ?',
       ['alertSignup_Sunday'],
     );
-    expect(after?.value).toBe(1);
+    expect(after?.value).toBe(0);
   });
 
-  // ------------------------------------------------------------------ toggle_setting (on → off)
-  it('toggle_setting — toggles an enabled setting back to disabled and persists to DB', async () => {
+  // ------------------------------------------------------------------ toggle_setting (off → back on)
+  it('toggle_setting — toggles a setting off then back on and persists to DB', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
-    // First toggle: disabled → enabled.
+    // First toggle: enabled → disabled.
     const firstToggle = fakeChatInput({
       client: ctx.client,
       guild: ctx.guild,
@@ -107,9 +109,9 @@ describe('/settings', () => {
       'SELECT value FROM settings WHERE key = ?',
       ['alertSignup_Wednesday_48'],
     );
-    expect(mid?.value).toBe(1);
+    expect(mid?.value).toBe(0);
 
-    // Second toggle: enabled → disabled.
+    // Second toggle: disabled → enabled.
     const secondToggle = fakeChatInput({
       client: ctx.client,
       guild: ctx.guild,
@@ -124,13 +126,13 @@ describe('/settings', () => {
 
     const content = replyContent(secondToggle.__replies[0]!);
     expect(content).toContain('alertSignup_Wednesday_48');
-    expect(content).toContain('disabled');
+    expect(content).toContain('enabled');
 
     const after = queryOne<{ value: number }>(
       'SELECT value FROM settings WHERE key = ?',
       ['alertSignup_Wednesday_48'],
     );
-    expect(after?.value).toBe(0);
+    expect(after?.value).toBe(1);
   });
 
   // ------------------------------------------------------------------ get_all_settings
@@ -172,7 +174,7 @@ describe('/settings', () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
-    // Toggle Sunday_48 on first.
+    // Toggle Sunday_48 off first (it's enabled by default).
     const toggleIact = fakeChatInput({
       client: ctx.client,
       guild: ctx.guild,
@@ -185,7 +187,7 @@ describe('/settings', () => {
     });
     await settingsCmd.execute(toggleIact as unknown as ChatInputCommandInteraction);
 
-    // Now get_all_settings should show Sunday_48 as enabled.
+    // Now get_all_settings should show Sunday_48 as disabled.
     const getAllIact = fakeChatInput({
       client: ctx.client,
       guild: ctx.guild,
@@ -198,12 +200,12 @@ describe('/settings', () => {
     await settingsCmd.execute(getAllIact as unknown as ChatInputCommandInteraction);
 
     const content = replyContent(getAllIact.__replies[0]!);
-    // alertSignup_Sunday_48 line must say "enabled".
-    expect(content).toMatch(/alertSignup_Sunday_48.*enabled/);
+    // alertSignup_Sunday_48 line must say "disabled".
+    expect(content).toMatch(/alertSignup_Sunday_48.*disabled/);
   });
 
   // ------------------------------------------------------------------ get_setting for Sunday 48h key
-  it('get_setting — reports Sunday_48 as disabled initially', async () => {
+  it('get_setting — reports Sunday_48 as enabled initially', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
@@ -223,7 +225,7 @@ describe('/settings', () => {
     expect(iact.__replies.length).toBe(1);
     const content = replyContent(iact.__replies[0]!);
     expect(content).toContain('alertSignup_Sunday_48');
-    expect(content).toContain('disabled');
+    expect(content).toContain('enabled');
     expect(iact.__replies[0]!.ephemeral).toBe(true);
   });
 });

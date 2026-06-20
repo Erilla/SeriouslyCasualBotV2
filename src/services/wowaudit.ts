@@ -10,19 +10,35 @@ function headers(): Record<string, string> {
   };
 }
 
+// The /raids list endpoint returns these fields (no signups — see WowAuditRaidDetail).
 export interface WowAuditRaid {
   id: number;
   date: string;
-  title: string;
-  note: string;
-  signups: Array<{
-    character: {
-      name: string;
-      realm: string;
-      class_name: string;
-    };
-    status: string;
-  }>;
+  start_time: string;
+  end_time: string;
+  instance: string;
+  difficulty: string; // e.g. "Mythic"
+  status: string; // e.g. "Planned", "Cancelled"
+  present_size: number;
+  total_size: number;
+}
+
+export interface WowAuditSignup {
+  character: {
+    name: string;
+    realm: string;
+    class: string;
+    role: string;
+  };
+  status: string; // "Present" | "Absent" | "Late" | "Tentative" | "Unknown"
+  comment: string | null;
+  selected: boolean;
+}
+
+// The per-raid endpoint (/raids/{id}) returns the list fields plus signups.
+export interface WowAuditRaidDetail extends WowAuditRaid {
+  notes: string;
+  signups: WowAuditSignup[];
 }
 
 export interface WowAuditHistoricalEntry {
@@ -43,9 +59,20 @@ async function getCurrentPeriod(): Promise<number> {
 }
 
 export async function getUpcomingRaids(): Promise<WowAuditRaid[]> {
-  return httpRequest<WowAuditRaid[]>(
+  // The /raids endpoint wraps the list in an object: { raids: [...] }.
+  const data = await httpRequest<{ raids: WowAuditRaid[] }>(
     'wowaudit',
     `${BASE_URL}/raids?include_past=false`,
+    { headers: headers() },
+  );
+  return data.raids;
+}
+
+// Signups are only returned by the per-raid endpoint, not the list above.
+export async function getRaid(id: number): Promise<WowAuditRaidDetail> {
+  return httpRequest<WowAuditRaidDetail>(
+    'wowaudit',
+    `${BASE_URL}/raids/${id}`,
     { headers: headers() },
   );
 }

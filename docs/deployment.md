@@ -1,64 +1,62 @@
 # Deployment
 
-## Overview
+The bot runs on [Railway](https://railway.com) — a managed platform that builds
+the repo's `Dockerfile` and runs it as an always-on service. Deploys happen
+automatically when the connected branch is pushed; there is no server to
+provision or SSH into.
 
-Production runs on a Hetzner ARM server (linux/arm64). GitHub Actions builds and pushes the Docker image to GHCR, then SSHes into the server to pull and restart.
+Build/restart settings live in `railway.json`. Environment variables and the
+persistent volume are configured in the Railway dashboard (not in the repo).
 
-## GitHub Actions Flow
+## Railway setup (one-time)
 
-1. **CI** (`ci.yml`) — runs on every push/PR to `master`: typecheck, unit tests, build.
-2. **Deploy** (`deploy.yml`) — runs on push to `master` only, after CI passes:
-   - Builds multi-platform image (`linux/arm64`)
-   - Pushes to `ghcr.io/<owner>/seriouslycasualbot:latest` and `:<sha>`
-   - SSHes to server and runs `docker compose pull && docker compose up -d`
+1. **Create the project** — at railway.com: *New Project → Deploy from GitHub
+   repo* → select this repo and the branch to deploy (`feat/test-server-deploy`
+   for the soak test, or `master`). Railway detects the `Dockerfile` and builds
+   it per `railway.json`.
 
-## Required Secrets
+2. **Add a volume for SQLite** — service → *Settings → Volumes* → mount at
+   **`/app/data`**. This persists the database and backups across redeploys.
 
-Set these in the GitHub repository secrets:
+3. **Set environment variables** — service → *Variables*. Use the **sandbox
+   guild** values for the test instance:
 
-| Secret | Description |
-|---|---|
-| `DEPLOY_HOST` | Hetzner server IP or hostname |
-| `DEPLOY_USER` | SSH username on the server |
-| `DEPLOY_SSH_KEY` | Private SSH key (no passphrase) |
-| `ANTHROPIC_API_KEY` | For Claude code review workflow |
+   | Variable | Notes |
+   |---|---|
+   | `DISCORD_TOKEN` | Sandbox bot token |
+   | `CLIENT_ID` | |
+   | `GUILD_ID` | Sandbox guild id |
+   | `OFFICER_ROLE_ID` | |
+   | `WOWAUDIT_API_SECRET` | |
+   | `WARCRAFTLOGS_CLIENT_ID` / `WARCRAFTLOGS_CLIENT_SECRET` | |
+   | `WARCRAFTLOGS_GUILD_ID` | e.g. `486913` |
+   | `RAIDERIO_GUILD_IDS` | e.g. `1061585%2C43113` |
+   | `GEMINI_API_KEY` | optional (static quips fallback if unset) |
+   | `LOG_LEVEL` | `INFO` |
+   | `NODE_ENV` | `production` |
+   | `DB_PATH` | **`/app/data/db.sqlite`** — points SQLite at the volume |
 
-## Hetzner Server Setup
+   No public port is needed — the bot is a worker (outbound Discord gateway
+   only), so don't generate a domain.
+
+4. **Deploy** — Railway builds and starts the service, and redeploys on every
+   push to the connected branch. Watch *Deployments → Logs* for the Discord
+   "ready" line.
+
+## Observing / operating
+
+- **Logs & metrics**: the Railway dashboard (*Logs*, *Metrics* for CPU/RAM).
+- **Restarts**: `railway.json` sets `restartPolicyType: ON_FAILURE` (max 10
+  retries), so a crash auto-recovers.
+- **Rollback**: *Deployments* → pick a previous successful deploy → *Redeploy*.
+
+## Local development
+
+`docker-compose.yml` runs the same image locally:
 
 ```bash
-# 1. Install Docker
-curl -fsSL https://get.docker.com | sh
-
-# 2. Create app directory and .env
-mkdir ~/seriouslycasualbot
-cd ~/seriouslycasualbot
-cp .env.example .env   # fill in all required values
-
-# 3. Create docker-compose.yml (copy from repo or use scp)
-
-# 4. Login to GHCR (needed to pull private images)
-echo $GITHUB_TOKEN | docker login ghcr.io -u <username> --password-stdin
-
-# 5. Pull and start
-docker compose pull
-docker compose up -d
+cp .env.example .env   # fill in values
+docker compose up --build
 ```
 
-## Rollback
-
-```bash
-# SSH into the server
-cd ~/seriouslycasualbot
-
-# Roll back to a specific image SHA
-docker compose down
-docker compose run --rm -e IMAGE_TAG=<sha> bot   # or edit compose file
-# Or pull a specific tag directly:
-docker pull ghcr.io/<owner>/seriouslycasualbot:<sha>
-docker compose up -d
-
-# View logs
-docker compose logs -f --tail=100
-```
-
-The SQLite data volume (`bot-data`) persists across restarts and image updates.
+The `bot-data` volume persists the local SQLite database.
