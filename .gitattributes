@@ -1,0 +1,8 @@
+# Files consumed by Linux (shell scripts, CI YAML, cloud-init, Dockerfile)
+# must use LF regardless of the contributor's OS / core.autocrlf setting.
+# A stray CR in a shebang or `run:` block breaks execution on the server.
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+*.env*      text eol=lf
