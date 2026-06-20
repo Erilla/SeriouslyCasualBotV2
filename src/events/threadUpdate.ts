@@ -21,6 +21,13 @@ export default {
     // Only care about threads that just got archived
     if (!newThread.archived || oldThread.archived) return;
 
+    // A locked + archived thread is a deliberate close (closeThread locks AND
+    // archives when an application/trial is resolved). Discord's inactivity
+    // auto-archive never locks, so a locked thread is never something we should
+    // resurrect. Bailing here also avoids racing the resolution flow, which
+    // updates the row's status to a closed value only *after* closeThread runs.
+    if (newThread.locked) return;
+
     const db = getDatabase();
 
     // Check if this thread belongs to an active trial
