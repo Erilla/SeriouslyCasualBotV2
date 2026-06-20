@@ -26,6 +26,7 @@ import { resumeSessions } from '../functions/applications/resumeSessions.js';
 import { dailyBackup } from '../functions/backups/dailyBackup.js';
 import { deployCommands } from '../deploy-commands.js';
 import { checkRaidExpansions } from '../functions/loot/checkRaidExpansions.js';
+import { clearChannel } from '../functions/clearChannel.js';
 
 // External service probes (no side effects — used to verify credentials/endpoints).
 import { getUpcomingRaids } from '../services/wowaudit.js';
@@ -243,6 +244,11 @@ export default {
     )
     .addSubcommand((sub) =>
       sub.setName('list').setDescription('List every available trigger (for discovery)'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('clear_channel')
+        .setDescription('Delete all messages (<14 days old) in the current channel'),
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -307,6 +313,36 @@ export default {
         logger.error('TestTrigger', `${action} failed after ${elapsed}: ${error.message}`, error);
         await interaction.editReply({
           content: `✗ **${def.label}** failed after ${elapsed}.\n\`\`\`\n${sanitizeForCodeBlock(error.message).slice(0, 1500)}\n\`\`\``,
+        });
+      }
+      return;
+    }
+
+    if (sub === 'clear_channel') {
+      const channel = interaction.channel;
+      if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+        await interaction.editReply({ content: 'This command must be run in a server text channel.' });
+        return;
+      }
+
+      const started = Date.now();
+      try {
+        const { deleted, skippedOld } = await clearChannel(channel);
+        const elapsed = formatDuration(Date.now() - started);
+        const channelName = `#${channel.name}`;
+        let message = `✓ Deleted **${deleted}** message(s) from ${channelName} in ${elapsed}.`;
+        if (skippedOld) {
+          message += '\n_Messages older than 14 days were skipped — Discord can\'t bulk-delete those._';
+        }
+        logger.info('TestTrigger', `cleared ${channelName} (${deleted} messages)`);
+        await audit(interaction.user, 'cleared channel', `${channelName} (${deleted} messages)`);
+        await interaction.editReply({ content: message });
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        const elapsed = formatDuration(Date.now() - started);
+        logger.error('TestTrigger', `clear_channel failed after ${elapsed}: ${error.message}`, error);
+        await interaction.editReply({
+          content: `✗ clear_channel failed after ${elapsed}.\n\`\`\`\n${sanitizeForCodeBlock(error.message).slice(0, 1500)}\n\`\`\``,
         });
       }
       return;
