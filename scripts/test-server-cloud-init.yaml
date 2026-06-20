@@ -1,0 +1,31 @@
+#cloud-config
+# Bootstraps a Hetzner Cloud test box for SeriouslyCasualBot:
+#   - installs Docker (Engine + Compose plugin)
+#   - drops a pull-only docker-compose.yml into /root/seriouslycasualbot-test
+#
+# The .env (sandbox guild config) is added afterwards by you, not by cloud-init,
+# because it carries secrets. See docs/deployment.md → "Test server".
+package_update: true
+write_files:
+  - path: /root/seriouslycasualbot-test/docker-compose.yml
+    permissions: '0644'
+    content: |
+      # Pull-only compose for the test box. The image is built and pushed by
+      # GitHub Actions; this host only pulls it. ${GITHUB_REPOSITORY_OWNER} and
+      # ${COMPOSE_PROJECT_NAME} are interpolated from the sibling .env file.
+      services:
+        bot:
+          image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/seriouslycasualbot:latest
+          restart: unless-stopped
+          env_file: .env
+          volumes:
+            - bot-data:/app/data
+          logging:
+            driver: json-file
+            options:
+              max-size: "10m"
+              max-file: "3"
+      volumes:
+        bot-data:
+runcmd:
+  - curl -fsSL https://get.docker.com | sh

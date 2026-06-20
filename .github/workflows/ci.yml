@@ -5,6 +5,10 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Allow deploy.yml to reuse this workflow as its CI gate. Without this
+  # trigger, `uses: ./.github/workflows/ci.yml` fails at startup ("workflow
+  # file issue"), which is why every Deploy run failed in 0s.
+  workflow_call:
 
 jobs:
   ci:

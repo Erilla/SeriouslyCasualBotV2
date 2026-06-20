@@ -11,5 +11,8 @@ db.sqlite*
 .claude/*.local.*
 .worktrees/
 .env.test
+.env.test-server
+scbot-test-deploy
+scbot-test-deploy.pub
 tests/e2e/.data/
 !tests/e2e/.data/.gitkeep
