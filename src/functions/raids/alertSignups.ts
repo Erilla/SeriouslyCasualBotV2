@@ -1,6 +1,6 @@
 import { type Client, type TextChannel, ChannelType } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
-import { getUpcomingRaids } from '../../services/wowaudit.js';
+import { getUpcomingRaids, getRaid } from '../../services/wowaudit.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
@@ -68,18 +68,25 @@ export async function alertSignups(client: Client): Promise<void> {
     return;
   }
 
-  // Find the next Mythic raid with status 'Planned'
-  const nextRaid = raids.find(
-    (r) => r.title.toLowerCase().includes('mythic') && r.note?.toLowerCase() !== 'cancelled',
-  );
+  // Find the next upcoming Mythic raid that isn't cancelled.
+  const nextRaid = raids.find((r) => r.difficulty === 'Mythic' && r.status !== 'Cancelled');
 
   if (!nextRaid) {
     logger.debug('AlertSignups', 'No upcoming Mythic raid found');
     return;
   }
 
-  // Find unsigned raiders (status = 'Unknown')
-  const unsignedCharacters = nextRaid.signups
+  // Signups live on the per-raid endpoint, not the list returned above.
+  let raidDetail;
+  try {
+    raidDetail = await getRaid(nextRaid.id);
+  } catch (error) {
+    logger.error('AlertSignups', 'Failed to fetch raid details from WoW Audit', error as Error);
+    return;
+  }
+
+  // Find unsigned raiders (status 'Unknown' = no response yet)
+  const unsignedCharacters = raidDetail.signups
     .filter((s) => s.status === 'Unknown')
     .map((s) => s.character.name.toLowerCase());
 
@@ -119,7 +126,7 @@ export async function alertSignups(client: Client): Promise<void> {
 
   // For 48-hour reminders, add relative timestamp
   if (dayConfig.twoDayReminder) {
-    const raidDate = new Date(nextRaid.date);
+    const raidDate = new Date(`${nextRaid.date}T${nextRaid.start_time || '00:00'}:00`);
     const unixTimestamp = Math.floor(raidDate.getTime() / 1000);
     content += `\n\nRaid starts <t:${unixTimestamp}:R>`;
   }

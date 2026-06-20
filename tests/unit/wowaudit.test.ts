@@ -6,7 +6,7 @@ vi.mock('../../src/config.js', () => ({
   },
 }));
 
-import { getUpcomingRaids, getHistoricalData } from '../../src/services/wowaudit.js';
+import { getUpcomingRaids, getRaid, getHistoricalData } from '../../src/services/wowaudit.js';
 import { __resetForTests } from '../../src/services/apiHealth.js';
 
 const originalFetch = globalThis.fetch;
@@ -23,13 +23,18 @@ afterEach(() => {
 describe('getUpcomingRaids', () => {
   it('should fetch upcoming raids with correct headers', async () => {
     const mockRaids = [
-      { id: 1, date: '2026-04-20', title: 'Raid Night', note: '', signups: [] },
+      {
+        id: 1, date: '2026-04-20', start_time: '20:00', end_time: '23:00',
+        instance: 'Test Raid', difficulty: 'Mythic', status: 'Planned',
+        present_size: 0, total_size: 25,
+      },
     ];
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       headers: new Headers(),
-      json: async () => mockRaids,
+      // The real /raids endpoint wraps the list: { raids: [...] }.
+      json: async () => ({ raids: mockRaids }),
     });
 
     const result = await getUpcomingRaids();
@@ -54,6 +59,33 @@ describe('getUpcomingRaids', () => {
 
     await expect(getUpcomingRaids()).rejects.toThrow('wowaudit');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getRaid', () => {
+  it('fetches a single raid (with signups) by id', async () => {
+    const raid = {
+      id: 7, date: '2026-04-20', difficulty: 'Mythic', status: 'Planned',
+      signups: [
+        { character: { name: 'Aspectial', realm: 'silvermoon', class: 'Evoker', role: 'Ranged' }, status: 'Unknown' },
+      ],
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => raid,
+    });
+
+    const result = await getRaid(7);
+
+    expect(result).toEqual(raid);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://wowaudit.com/v1/raids/7',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'test-api-secret' }),
+      }),
+    );
   });
 });
 
