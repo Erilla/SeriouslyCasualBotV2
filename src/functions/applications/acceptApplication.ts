@@ -17,6 +17,7 @@ import { config } from '../../config.js';
 import { logger } from '../../services/logger.js';
 import { audit } from '../../services/auditLog.js';
 import { generateTranscript } from './generateTranscript.js';
+import { closeThread } from '../threads.js';
 import { createTrialReviewThread } from '../trial-review/createTrialReviewThread.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
 
@@ -176,8 +177,9 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
         // Update forum tags: remove Active, add Accepted
         await swapForumTag(thread, 'Active', 'Accepted');
 
-        // Lock the forum thread
-        await thread.setLocked(true);
+        // Close the forum post (lock + archive) last, after the result message
+        // and tag swap have landed.
+        await closeThread(thread);
       }
     } catch (error) {
       logger.warn('Applications', `Failed to update forum thread for application #${applicationId}: ${error}`);

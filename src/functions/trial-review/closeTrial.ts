@@ -1,6 +1,7 @@
 import type { Client, ThreadChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { closeThread } from '../threads.js';
 import type { TrialRow, TrialAlertRow } from '../../types/index.js';
 
 /**
@@ -37,7 +38,8 @@ export async function closeTrial(client: Client, trialId: number): Promise<void>
         await thread.send(
           `**Trial Closed**\nThe trial for **${trial.character_name}** has been closed.`,
         );
-        await thread.setArchived(true);
+        // Close the thread (lock + archive) after the closing message lands.
+        await closeThread(thread);
       }
     } catch (error) {
       logger.warn(

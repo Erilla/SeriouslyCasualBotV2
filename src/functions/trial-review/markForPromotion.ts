@@ -1,7 +1,8 @@
-import type { Client, TextChannel } from 'discord.js';
+import type { Client, AnyThreadChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { schedulePromoteAlert } from './scheduleTrialAlerts.js';
+import { closeThread } from '../threads.js';
 import type { TrialRow, PromoteAlertRow } from '../../types/index.js';
 
 /**
@@ -48,14 +49,18 @@ export async function markForPromotion(
     const guild = client.guilds.cache.first();
     if (!guild) return;
 
-    const thread = (await guild.channels.fetch(trial.thread_id)) as TextChannel | null;
-    if (!thread) return;
+    const thread = (await guild.channels.fetch(trial.thread_id)) as AnyThreadChannel | null;
+    if (!thread?.isThread()) return;
 
     await thread.send(
       `**Marked for Promotion**\n` +
       `**${trial.character_name}** has been marked for promotion.\n` +
       `A promotion reminder will be sent on **${promoteDateStr}**.`,
     );
+
+    // Close the thread (lock + archive). The next-day promotion reminder posts
+    // back into the thread, which will auto-unarchive it; it stays locked.
+    await closeThread(thread);
   } catch (error) {
     logger.warn(
       'Trials',
