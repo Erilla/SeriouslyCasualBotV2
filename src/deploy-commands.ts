@@ -15,7 +15,9 @@ export async function deployCommands(): Promise<void> {
 
   let commandFiles: string[];
   try {
-    commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js') || f.endsWith('.ts'));
+    commandFiles = readdirSync(commandsPath).filter(
+      (f) => (f.endsWith('.js') || f.endsWith('.ts')) && !f.endsWith('.d.ts'),
+    );
   } catch {
     logger.warn('deploy', 'No commands directory found, skipping command registration');
     return;
