@@ -19,6 +19,7 @@ import { audit } from '../../services/auditLog.js';
 import { generateTranscript } from './generateTranscript.js';
 import { closeThread } from '../threads.js';
 import { createTrialReviewThread } from '../trial-review/createTrialReviewThread.js';
+import { assignRaiderRole } from './assignRaiderRole.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
 
 /**
@@ -226,6 +227,9 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
 
   // Audit log
   await audit(interaction.user, 'accepted application', `${characterName} as ${role} starting ${startDate}`);
+
+  // Give the accepted applicant the Raider role (best-effort; never fails accept)
+  await assignRaiderRole(guild, application.applicant_user_id);
 
   // Create trial review thread
   try {
