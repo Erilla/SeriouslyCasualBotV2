@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDatabase, closeDatabase, getDatabase } from '../../src/database/db.js';
+import { closeDatabase, getDatabase } from '../../src/database/db.js';
+import { createTables } from '../../src/database/schema.js';
 
 // Mock the logger
 import { vi } from 'vitest';
@@ -21,8 +22,11 @@ import {
 
 describe('applicationQuestions', () => {
   beforeEach(() => {
+    // These tests exercise the question CRUD helpers against an empty table, so
+    // set up the schema only — initDatabase() now seeds the 9 default questions
+    // (covered separately in db-migration.test.ts).
     closeDatabase();
-    initDatabase(':memory:');
+    createTables(getDatabase(':memory:'));
   });
 
   afterEach(() => {

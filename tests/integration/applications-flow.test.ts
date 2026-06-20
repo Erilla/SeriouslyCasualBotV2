@@ -46,6 +46,10 @@ describe('applications flow (integration)', () => {
   it('should store application answers linked to questions', () => {
     const db = getDatabase();
 
+    // initDatabase() seeds the 9 default questions; clear them so this test
+    // controls the exact question set it joins against.
+    db.prepare('DELETE FROM application_questions').run();
+
     // Add questions
     db.prepare('INSERT INTO application_questions (question, sort_order) VALUES (?, ?)').run(
       'What is your name?',

@@ -1,7 +1,7 @@
 import type { Client } from 'discord.js';
 import type Database from 'better-sqlite3';
 import { seedDatabase } from '../../database/seed.js';
-import { seedApplicationQuestions } from './seedApplicationQuestions.js';
+import { seedApplicationQuestions } from '../../database/seedApplicationQuestions.js';
 import { resetDiscordArtifacts, type ResetArtifactsResult } from './resetDiscordArtifacts.js';
 
 export class ResetDiscordError extends Error {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getDatabase, closeDatabase, runMigrations } from '../../src/database/db.js';
+import { getDatabase, closeDatabase, runMigrations, initDatabase } from '../../src/database/db.js';
 import { createTables } from '../../src/database/schema.js';
 
 beforeEach(() => {
@@ -119,5 +119,26 @@ describe('runMigrations — v3 drops signup_messages', () => {
 
     expect(() => runMigrations(db)).not.toThrow();
     expect(() => runMigrations(db)).not.toThrow();
+  });
+});
+
+describe('initDatabase — seeds default application questions', () => {
+  it('seeds the 9 default application questions on a fresh database', () => {
+    const db = initDatabase(':memory:');
+
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
+    expect(count).toBe(9);
+  });
+
+  it('is idempotent — re-running initDatabase does not duplicate questions', () => {
+    initDatabase(':memory:');
+    const db = initDatabase(':memory:');
+
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
+    expect(count).toBe(9);
   });
 });

@@ -4,7 +4,7 @@ import { createTables } from '../../src/database/schema.js';
 import { seedDatabase } from '../../src/database/seed.js';
 import { seedRaiders } from '../../src/functions/testdata/seedRaiders.js';
 import { seedApplication } from '../../src/functions/testdata/seedApplication.js';
-import { seedApplicationQuestions } from '../../src/functions/testdata/seedApplicationQuestions.js';
+import { seedApplicationQuestions } from '../../src/database/seedApplicationQuestions.js';
 import { seedApplicationVariety } from '../../src/functions/testdata/seedApplicationVariety.js';
 import { seedTrial } from '../../src/functions/testdata/seedTrial.js';
 import { seedEpgp } from '../../src/functions/testdata/seedEpgp.js';

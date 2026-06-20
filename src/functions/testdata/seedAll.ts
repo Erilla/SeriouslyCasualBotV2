@@ -2,7 +2,7 @@ import type { Client } from 'discord.js';
 import type Database from 'better-sqlite3';
 import { logger } from '../../services/logger.js';
 import { seedRaiders } from './seedRaiders.js';
-import { seedApplicationQuestions } from './seedApplicationQuestions.js';
+import { seedApplicationQuestions } from '../../database/seedApplicationQuestions.js';
 import { seedApplication } from './seedApplication.js';
 import { seedTrial } from './seedTrial.js';
 import { seedEpgp } from './seedEpgp.js';

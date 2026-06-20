@@ -3,6 +3,7 @@ import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { createTables } from './schema.js';
 import { seedDatabase } from './seed.js';
+import { seedApplicationQuestions } from './seedApplicationQuestions.js';
 
 let db: Database.Database | null = null;
 
@@ -27,6 +28,10 @@ export function initDatabase(path?: string): Database.Database {
   createTables(database);
   runMigrations(database);
   seedDatabase(database);
+  // Ensure the default application questions exist. seedDatabase early-returns
+  // once guild_info_content is populated, so this is called separately and is
+  // idempotent on its own (no-ops when application_questions is non-empty).
+  seedApplicationQuestions(database);
   return database;
 }
 
