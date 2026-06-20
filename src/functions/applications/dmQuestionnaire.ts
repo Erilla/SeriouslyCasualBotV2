@@ -102,12 +102,6 @@ async function handleQuestionResponse(message: Message, session: ApplicationSess
 
   logger.debug('Applications', `Answer recorded for application #${session.applicationId}, question #${currentQuestion.id} (${session.questionIndex + 1}/${getQuestions().length})`);
 
-  // Set character_name from the first answer
-  if (session.questionIndex === 0) {
-    db.prepare('UPDATE applications SET character_name = ? WHERE id = ?')
-      .run(message.content.substring(0, 100), session.applicationId);
-  }
-
   // Advance to next question
   const nextIndex = session.questionIndex + 1;
 
@@ -169,12 +163,6 @@ async function handleEditAnswerResponse(message: Message, session: ApplicationSe
     db.prepare('INSERT INTO application_answers (application_id, question_id, answer) VALUES (?, ?, ?)')
       .run(session.applicationId, question.id, message.content);
     logger.info('Applications', `Inserted edited answer for application #${session.applicationId}, question #${question.id} (no prior answer)`);
-  }
-
-  // Update character_name if first answer was edited
-  if (questionIndex === 0) {
-    db.prepare('UPDATE applications SET character_name = ? WHERE id = ?')
-      .run(message.content.substring(0, 100), session.applicationId);
   }
 
   // Clear edit mode and re-display summary

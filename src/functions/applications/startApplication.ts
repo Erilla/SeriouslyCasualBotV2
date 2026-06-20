@@ -116,9 +116,14 @@ async function createNewApplication(
 ): Promise<boolean> {
   const db = getDatabase();
 
+  // Seed character_name with the applicant's Discord display name. The
+  // questionnaire doesn't ask for a character name (the first question is
+  // class/spec), so the Discord name is the best identifier for the channel
+  // name, post header, and officer prefills until an officer sets the real
+  // character name on accept.
   const result = db
-    .prepare('INSERT INTO applications (applicant_user_id, status, current_question_id) VALUES (?, ?, ?)')
-    .run(user.id, 'in_progress', questions[0].id);
+    .prepare('INSERT INTO applications (applicant_user_id, status, current_question_id, character_name) VALUES (?, ?, ?, ?)')
+    .run(user.id, 'in_progress', questions[0].id, user.displayName);
 
   const applicationId = result.lastInsertRowid as number;
 
