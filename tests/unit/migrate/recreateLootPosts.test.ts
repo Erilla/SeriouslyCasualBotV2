@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import Database from 'better-sqlite3';
 import { createTables } from '../../../src/database/schema.js';
 
 // config.js throws at import if env vars are unset — mock it (no global env in unit tests).
@@ -19,6 +18,7 @@ vi.mock('../../../src/functions/loot/updateLootPost.js', () => ({ updateLootPost
 vi.mock('../../../src/functions/channels.js', () => ({ getOrCreateChannel: vi.fn(async () => ({ id: 'loot-chan' })) }));
 
 import { getDatabase, closeDatabase } from '../../../src/database/db.js';
+import { addLootPost } from '../../../src/functions/loot/addLootPost.js';
 import { insertLootResponses, recreateLootPosts } from '../../../src/functions/migrate/recreateLootPosts.js';
 
 const post = {
@@ -53,6 +53,8 @@ describe('insertLootResponses', () => {
 });
 
 describe('recreateLootPosts', () => {
+  beforeEach(() => vi.clearAllMocks());
+
   it('creates a post + responses, and skips a boss already present on re-run', async () => {
     const client = { guilds: { fetch: vi.fn(async () => ({ id: 'guild-1' })) } } as never;
 
@@ -62,5 +64,25 @@ describe('recreateLootPosts', () => {
 
     const second = await recreateLootPosts(client, [post]);
     expect(second).toEqual({ created: 0, skipped: 1, failed: 0 });
+  });
+
+  it('continues processing remaining posts after a per-post failure', async () => {
+    const client = { guilds: { fetch: vi.fn(async () => ({ id: 'guild-1' })) } } as never;
+    const postB = {
+      bossId: 197139,
+      bossName: 'Other Boss',
+      bossUrl: 'https://x/ob',
+      votes: { major: [], minor: [], wantIn: ['u5'], wantOut: [] },
+    };
+
+    vi.mocked(addLootPost).mockRejectedValueOnce(new Error('discord fail'));
+
+    const result = await recreateLootPosts(client, [post, postB]);
+    expect(result).toEqual({ created: 1, skipped: 0, failed: 1 });
+
+    const secondRow = getDatabase()
+      .prepare('SELECT id FROM loot_posts WHERE boss_id = ?')
+      .get(postB.bossId);
+    expect(secondRow).toBeDefined();
   });
 });

@@ -34,23 +34,32 @@ export async function recreateLootPosts(
   const result: LootRecreateResult = { created: 0, skipped: 0, failed: 0 };
   if (lootPosts.length === 0) return result;
 
-  const guild = await client.guilds.fetch(config.guildId);
-  const channel = (await getOrCreateChannel(guild, {
-    name: 'loot',
-    type: ChannelType.GuildText,
-    categoryName: 'Raiders',
-    configKey: 'loot_channel_id',
-  })) as TextChannel;
+  let channel: TextChannel;
+  try {
+    const guild = await client.guilds.fetch(config.guildId);
+    channel = (await getOrCreateChannel(guild, {
+      name: 'loot',
+      type: ChannelType.GuildText,
+      categoryName: 'Raiders',
+      configKey: 'loot_channel_id',
+    })) as TextChannel;
+  } catch (error) {
+    logger.error('Migrate', 'Failed to resolve loot channel', error as Error);
+    return { created: 0, skipped: 0, failed: lootPosts.length };
+  }
+
+  const stmtExists = db.prepare('SELECT id FROM loot_posts WHERE boss_id = ?');
+  const stmtFetch = db.prepare('SELECT * FROM loot_posts WHERE boss_id = ?');
 
   for (const post of lootPosts) {
-    const existing = db.prepare('SELECT id FROM loot_posts WHERE boss_id = ?').get(post.bossId);
+    const existing = stmtExists.get(post.bossId);
     if (existing) {
       result.skipped++;
       continue;
     }
     try {
       await addLootPost(channel, { id: post.bossId, name: post.bossName, url: post.bossUrl ?? undefined });
-      const row = db.prepare('SELECT * FROM loot_posts WHERE boss_id = ?').get(post.bossId) as LootPostRow | undefined;
+      const row = stmtFetch.get(post.bossId) as LootPostRow | undefined;
       if (!row) throw new Error(`loot_posts row missing after addLootPost for boss ${post.bossId}`);
       insertLootResponses(db, row.id, post.votes);
       await updateLootPost(client, post.bossId);
