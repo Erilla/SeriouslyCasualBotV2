@@ -2,6 +2,7 @@ import type { Client } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { generateLootPost } from './generateLootPost.js';
+import { resolveVoterLabel } from './resolveVoterLabel.js';
 import type { LootPostRow, LootResponseRow, RaiderRow } from '../../types/index.js';
 
 export async function updateLootPost(client: Client, bossId: number): Promise<void> {
@@ -39,7 +40,7 @@ export async function updateLootPost(client: Client, bossId: number): Promise<vo
   };
 
   for (const response of responses) {
-    const charName = userToCharacter.get(response.user_id) ?? 'Unknown';
+    const charName = resolveVoterLabel(userToCharacter, response.user_id);
     if (grouped[response.response_type]) {
       grouped[response.response_type].push(charName);
     }
