@@ -47,4 +47,51 @@ describe('parseV1Export', () => {
       votes: { major: ['u1', 'u2'], minor: ['u3'], wantIn: [], wantOut: ['u4'] },
     });
   });
+
+  it('skips a corrupt keyv row without throwing', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE keyv (key TEXT PRIMARY KEY, value TEXT)');
+    // Insert corrupt JSON in a raiders entry
+    db.prepare('INSERT INTO keyv (key, value) VALUES (?, ?)').run(
+      'raiders:Broken',
+      'this is not json',
+    );
+    // Insert a valid raiders entry
+    db.prepare('INSERT INTO keyv (key, value) VALUES (?, ?)').run(
+      'raiders:Valid',
+      JSON.stringify({ value: '987654321098765432', expires: null }),
+    );
+
+    // Should not throw and should parse only the valid entry
+    const result = parseV1Export(db);
+    expect(result.identityMap).toEqual([
+      { characterName: 'Valid', discordUserId: '987654321098765432' },
+    ]);
+  });
+
+  it('ignores a lootResponses key with an empty boss-id suffix', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE keyv (key TEXT PRIMARY KEY, value TEXT)');
+    // Insert a lootResponses entry with empty suffix (which would convert to 0)
+    db.prepare('INSERT INTO keyv (key, value) VALUES (?, ?)').run(
+      'lootResponses:',
+      JSON.stringify({
+        value: {
+          major: ['u1'],
+          minor: [],
+          wantIn: [],
+          wantOut: [],
+          bossName: 'Fake Boss',
+          bossUrl: null,
+          channelId: 'c',
+          messageId: 'm',
+        },
+        expires: null,
+      }),
+    );
+
+    const result = parseV1Export(db);
+    // Should not contain any loot posts (bossId 0 should be filtered)
+    expect(result.lootPosts).toHaveLength(0);
+  });
 });

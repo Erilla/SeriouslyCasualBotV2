@@ -18,8 +18,12 @@ export interface V1Export {
 interface KeyvEnvelope { value?: unknown }
 
 function unwrap(raw: string): unknown {
-  const parsed = JSON.parse(raw) as KeyvEnvelope;
-  return parsed.value;
+  try {
+    const parsed = JSON.parse(raw) as KeyvEnvelope;
+    return parsed.value;
+  } catch {
+    return undefined;
+  }
 }
 
 function asStringArray(v: unknown): string[] {
@@ -55,7 +59,7 @@ export function parseV1Export(v1Db: Database.Database): V1Export {
       out.ignored.push(rest);
     } else if (ns === 'lootResponses') {
       const bossId = Number(rest);
-      if (!Number.isInteger(bossId) || !tier.has(bossId)) continue;
+      if (!rest || !Number.isInteger(bossId) || !tier.has(bossId)) continue;
       const payload = unwrap(value) as Record<string, unknown> | undefined;
       if (!payload) continue;
       out.lootPosts.push({
