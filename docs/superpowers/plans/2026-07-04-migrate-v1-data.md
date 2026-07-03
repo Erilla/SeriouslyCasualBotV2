@@ -764,7 +764,101 @@ git commit -m "feat(migrate): add admin /migrate command wiring and docs"
 
 ---
 
-### Task 5: Full-suite verification + manual end-to-end note
+### Task 5: Loot posts — show a Discord mention for unlinked voters (instead of "Unknown")
+
+**Files:**
+- Create: `src/functions/loot/resolveVoterLabel.ts`
+- Modify: `src/functions/loot/updateLootPost.ts:42`
+- Test: `tests/unit/loot/resolveVoterLabel.test.ts`
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks.
+- Produces:
+  ```ts
+  export function resolveVoterLabel(userToCharacter: Map<string, string>, userId: string): string
+  ```
+
+Rationale: a loot vote from a user who isn't a linked raider currently renders as the literal string `Unknown`. Show `<@userId>` instead so it resolves to the person. Loot responses render inside **embed fields**, and mentions in embeds are clickable but never send notifications — so this does not ping anyone when a post updates. This directly improves migrated loot posts, whose voters are often not yet linked.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/unit/loot/resolveVoterLabel.test.ts
+import { describe, it, expect } from 'vitest';
+import { resolveVoterLabel } from '../../../src/functions/loot/resolveVoterLabel.js';
+
+describe('resolveVoterLabel', () => {
+  it('returns the character name when the user is a linked raider', () => {
+    const map = new Map([['123', 'Thrall']]);
+    expect(resolveVoterLabel(map, '123')).toBe('Thrall');
+  });
+
+  it('returns a Discord mention when the user is not linked', () => {
+    const map = new Map<string, string>();
+    expect(resolveVoterLabel(map, '456')).toBe('<@456>');
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/unit/loot/resolveVoterLabel.test.ts`
+Expected: FAIL — cannot find module `resolveVoterLabel.js`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+```ts
+// src/functions/loot/resolveVoterLabel.ts
+/**
+ * Label for a loot voter: the linked raider's character name, or a Discord
+ * mention (<@id>) when the user isn't a linked raider. Mentions inside embed
+ * fields render as the user but do not notify, so this is safe on every update.
+ */
+export function resolveVoterLabel(userToCharacter: Map<string, string>, userId: string): string {
+  return userToCharacter.get(userId) ?? `<@${userId}>`;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/unit/loot/resolveVoterLabel.test.ts`
+Expected: PASS (2 tests).
+
+- [ ] **Step 5: Use the helper in `updateLootPost`**
+
+In `src/functions/loot/updateLootPost.ts`, add the import at the top with the other local imports (use the `.js` extension):
+
+```ts
+import { resolveVoterLabel } from './resolveVoterLabel.js';
+```
+
+Then replace the `Unknown` fallback line (currently line 42):
+
+```ts
+    const charName = userToCharacter.get(response.user_id) ?? 'Unknown';
+```
+
+with:
+
+```ts
+    const charName = resolveVoterLabel(userToCharacter, response.user_id);
+```
+
+- [ ] **Step 6: Run the loot tests + typecheck**
+
+Run: `npx vitest run tests/unit/loot tests/unit/loot.test.ts && npx tsc --noEmit`
+Expected: PASS, no type errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/functions/loot/resolveVoterLabel.ts src/functions/loot/updateLootPost.ts tests/unit/loot/resolveVoterLabel.test.ts
+git commit -m "feat(loot): show Discord mention for unlinked voters instead of Unknown"
+```
+
+---
+
+### Task 6: Full-suite verification + manual end-to-end note
 
 **Files:** none (verification only).
 
