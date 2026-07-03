@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { createTables } from '../../../src/database/schema.js';
 import {
@@ -12,6 +12,10 @@ let db: Database.Database;
 beforeEach(() => {
   db = new Database(':memory:');
   createTables(db);
+});
+
+afterEach(() => {
+  db.close();
 });
 
 describe('importIdentityMap', () => {
@@ -41,6 +45,8 @@ describe('importOverlords', () => {
     const second = importOverlords(db, [{ name: 'Bing', userId: '9' }]);
     expect(second).toEqual({ inserted: 0, skipped: 1 });
     expect(db.prepare('SELECT COUNT(*) c FROM overlords').get()).toEqual({ c: 1 });
+    const row = db.prepare("SELECT name, user_id FROM overlords WHERE name = 'Bing'").get();
+    expect(row).toEqual({ name: 'Bing', user_id: '9' });
   });
 });
 
@@ -50,6 +56,8 @@ describe('importIgnored', () => {
     expect(first).toEqual({ inserted: 2, skipped: 0 });
     const second = importIgnored(db, ['Ryann']);
     expect(second).toEqual({ inserted: 0, skipped: 1 });
+    const rows = db.prepare('SELECT character_name FROM ignored_characters ORDER BY character_name').all();
+    expect(rows).toEqual([{ character_name: 'Foo' }, { character_name: 'Ryann' }]);
   });
 });
 
