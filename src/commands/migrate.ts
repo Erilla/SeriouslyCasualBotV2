@@ -59,7 +59,7 @@ export default {
     let v1Db: Database.Database | null = null;
 
     try {
-      const res = await fetch(attachment.url);
+      const res = await fetch(attachment.url, { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
       writeFileSync(tempPath, Buffer.from(await res.arrayBuffer()));
 

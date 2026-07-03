@@ -16,6 +16,10 @@ export function insertLootResponses(db: Database.Database, lootPostId: number, v
     'INSERT OR IGNORE INTO loot_responses (loot_post_id, user_id, response_type) VALUES (?, ?, ?)',
   );
   let inserted = 0;
+  // A user can only hold one loot_responses row per post (UNIQUE(loot_post_id, user_id)).
+  // We iterate RESPONSE_TYPES in priority order (major → minor → wantIn → wantOut) and
+  // INSERT OR IGNORE, so a V1 voter who appears in multiple categories collapses to their
+  // highest-priority category by design.
   for (const type of RESPONSE_TYPES) {
     for (const userId of votes[type]) {
       inserted += stmt.run(lootPostId, userId, type).changes;
