@@ -218,6 +218,10 @@ git commit -m "feat(migrate): parse V1 keyv export into structured data"
   export function importIdentityMap(db: Database.Database, entries: V1IdentityEntry[]): ImportCount
   export function importOverlords(db: Database.Database, overlords: V1Overlord[]): ImportCount
   export function importIgnored(db: Database.Database, names: string[]): ImportCount
+  // Back-fill discord_user_id on EXISTING unlinked raiders from the identity map,
+  // so the "missing users" linking dropdown clears regardless of /migrate ordering
+  // relative to the first roster sync. Returns the number of raiders newly linked.
+  export function backfillRaiderLinks(db: Database.Database, entries: V1IdentityEntry[]): number
   ```
 
 - [ ] **Step 1: Write the failing test**
@@ -231,6 +235,7 @@ import {
   importIdentityMap,
   importOverlords,
   importIgnored,
+  backfillRaiderLinks,
 } from '../../../src/functions/migrate/importData.js';
 
 let db: Database.Database;
@@ -277,6 +282,29 @@ describe('importIgnored', () => {
     expect(second).toEqual({ inserted: 0, skipped: 1 });
   });
 });
+
+describe('backfillRaiderLinks', () => {
+  it('links existing unlinked raiders by case-insensitive name, without overwriting linked ones', () => {
+    // Unlinked raider (matches map, different case), already-linked raider (must not change),
+    // and an unlinked raider with no map entry (must stay null).
+    db.prepare("INSERT INTO raiders (character_name, discord_user_id) VALUES ('eldrítch', NULL)").run();
+    db.prepare("INSERT INTO raiders (character_name, discord_user_id) VALUES ('Bob', '999')").run();
+    db.prepare("INSERT INTO raiders (character_name, discord_user_id) VALUES ('Nomatch', NULL)").run();
+
+    const linked = backfillRaiderLinks(db, [
+      { characterName: 'Eldrítch', discordUserId: '230118286229110784' },
+      { characterName: 'Bob', discordUserId: '111' }, // Bob already linked → must be ignored
+    ]);
+    expect(linked).toBe(1);
+
+    const eldritch = db.prepare("SELECT discord_user_id FROM raiders WHERE character_name = 'eldrítch'").get();
+    expect(eldritch).toEqual({ discord_user_id: '230118286229110784' });
+    const bob = db.prepare("SELECT discord_user_id FROM raiders WHERE character_name = 'Bob'").get();
+    expect(bob).toEqual({ discord_user_id: '999' });
+    const nomatch = db.prepare("SELECT discord_user_id FROM raiders WHERE character_name = 'Nomatch'").get();
+    expect(nomatch).toEqual({ discord_user_id: null });
+  });
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -321,18 +349,31 @@ export function importIgnored(db: Database.Database, names: string[]): ImportCou
   }
   return { inserted, skipped: names.length - inserted };
 }
+
+export function backfillRaiderLinks(db: Database.Database, entries: V1IdentityEntry[]): number {
+  // Only touch raiders that currently have no linked user; match by name
+  // case-insensitively to mirror syncRaiders' lookup.
+  const stmt = db.prepare(
+    'UPDATE raiders SET discord_user_id = ? WHERE discord_user_id IS NULL AND lower(character_name) = lower(?)',
+  );
+  let linked = 0;
+  for (const e of entries) {
+    linked += stmt.run(e.discordUserId, e.characterName).changes;
+  }
+  return linked;
+}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/unit/migrate/importData.test.ts`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/functions/migrate/importData.ts tests/unit/migrate/importData.test.ts
-git commit -m "feat(migrate): idempotent DB importers for identity map, overlords, ignored"
+git commit -m "feat(migrate): DB importers + existing-raider link backfill"
 ```
 
 ---
@@ -608,6 +649,7 @@ import {
   importIdentityMap,
   importOverlords,
   importIgnored,
+  backfillRaiderLinks,
 } from '../functions/migrate/importData.js';
 import { recreateLootPosts } from '../functions/migrate/recreateLootPosts.js';
 
@@ -664,6 +706,7 @@ export default {
       const db = getDatabase();
       const dbCounts = db.transaction(() => ({
         identity: importIdentityMap(db, parsed.identityMap),
+        backfilled: backfillRaiderLinks(db, parsed.identityMap),
         overlords: importOverlords(db, parsed.overlords),
         ignored: importIgnored(db, parsed.ignored),
       }))();
@@ -673,6 +716,7 @@ export default {
       const summary =
         `**V1 migration complete**\n` +
         `• Identity map: ${dbCounts.identity.inserted} added, ${dbCounts.identity.skipped} already present\n` +
+        `• Existing raiders re-linked: ${dbCounts.backfilled}\n` +
         `• Overlords: ${dbCounts.overlords.inserted} added, ${dbCounts.overlords.skipped} already present\n` +
         `• Ignored characters: ${dbCounts.ignored.inserted} added, ${dbCounts.ignored.skipped} already present\n` +
         `• Loot posts: ${loot.created} created, ${loot.skipped} skipped, ${loot.failed} failed\n` +
@@ -743,6 +787,6 @@ The command's happy path (attachment download → read-only open → import → 
 
 ## Self-Review
 
-- **Spec coverage:** command surface (Task 4), attachment→temp→read-only open + `keyv` check (Task 4), `parseV1Export` with namespace decode + current-tier filter (Task 1), idempotent DB importers (Task 2), loot recreation with skip-existing (Task 3), transaction around DB-only imports + non-transactional loot (Task 4), error handling + temp cleanup (Task 4), skipped namespaces (encoded by omission in Task 1), testing at each layer (Tasks 1–4) + manual e2e (Task 5). Realm/`raidersRealms` intentionally not imported (Task 1 omits the `raidersRealms` namespace) — matches spec.
+- **Spec coverage:** command surface (Task 4), attachment→temp→read-only open + `keyv` check (Task 4), `parseV1Export` with namespace decode + current-tier filter (Task 1), idempotent DB importers + existing-raider link backfill (Task 2), loot recreation with skip-existing (Task 3), transaction around DB-only imports + non-transactional loot (Task 4), error handling + temp cleanup (Task 4), skipped namespaces (encoded by omission in Task 1), testing at each layer (Tasks 1–4) + manual e2e (Task 5). Realm/`raidersRealms` intentionally not imported (Task 1 omits the `raidersRealms` namespace) — matches spec.
 - **Placeholder scan:** none — every code step is complete.
 - **Type consistency:** `V1IdentityEntry`/`V1Overlord`/`V1Votes`/`V1LootPost`/`V1Export` defined in Task 1 and consumed unchanged in Tasks 2–4; `ImportCount` (Task 2), `LootRecreateResult` (Task 3), `LootPostRow` (existing type) used consistently.

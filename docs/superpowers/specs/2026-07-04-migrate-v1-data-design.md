@@ -95,6 +95,12 @@ Keeps the DB logic unit-testable without Discord.
   - `lootPosts` is filtered to the 9 current-tier boss ids.
 - DB-only import functions (pure DB writes into V2, all **idempotent**):
   - `importIdentityMap(db, entries)` — `INSERT OR IGNORE INTO raider_identity_map`.
+  - `backfillRaiderLinks(db, entries)` — set `discord_user_id` on **existing** raiders
+    that are currently unlinked, matching by case-insensitive character name. This
+    clears the "missing users" linking dropdown regardless of whether `/migrate` runs
+    before or after the first roster sync (`syncRaiders` only auto-links raiders it
+    inserts fresh, so already-present unlinked raiders would otherwise never pick up the
+    migrated links). Never overwrites an already-linked raider.
   - `importOverlords(db, entries)` — `INSERT OR IGNORE INTO overlords`.
   - `importIgnored(db, names)` — `INSERT OR IGNORE INTO ignored_characters`.
 - Loot layer (Discord + DB together, since `loot_posts.message_id` is `NOT NULL`):
