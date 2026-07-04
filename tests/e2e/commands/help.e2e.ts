@@ -44,7 +44,7 @@ describe('/help', () => {
 
     // Assert that at least 3 known command names appear in the description.
     const knownCommands = [
-      'ping', 'trials', 'applications', 'apply', 'epgp',
+      'ping', 'trials', 'applications', 'apply',
       'loot', 'raiders', 'status', 'guildinfo', 'settings',
       'setup', 'updateachievements', 'loglevel', 'testdata', 'help',
     ];

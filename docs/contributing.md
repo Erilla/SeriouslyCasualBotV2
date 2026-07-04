@@ -15,7 +15,7 @@ Run `npm run deploy-commands` after adding or renaming slash commands.
 ## Branch Strategy
 
 - `master` — always deployable; direct pushes are blocked
-- Feature branches: `feat/<short-description>` (e.g. `feat/epgp-commands`)
+- Feature branches: `feat/<short-description>` (e.g. `feat/raid-signups`)
 - Bug fixes: `fix/<short-description>`
 - Tasks follow the PRD task numbering: implement one task per branch/PR
 

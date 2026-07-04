@@ -149,34 +149,6 @@ describe('/status', () => {
     expect(fields).toContain('Active Trials: 1');
   });
 
-  // ------------------------------------------------------------------ EPGP last upload
-  it('EPGP Last Upload field is non-"Never" after seed (seedEpgp inserts one upload record)', async () => {
-    const ctx = getE2EContext();
-    const channel = ctx.guild.systemChannel as TextBasedChannel;
-
-    // seedEpgp inserts 1 upload_history record dated 7 days ago.
-    const dbRow = queryOne<{ ts: string | null }>(
-      'SELECT MAX(timestamp) as ts FROM epgp_upload_history',
-    );
-    expect(dbRow!.ts).not.toBeNull();
-
-    const iact = fakeChatInput({
-      client: ctx.client,
-      guild: ctx.guild,
-      channel,
-      member: ctx.officer,
-      user: ctx.officer.user,
-      commandName: 'status',
-    });
-
-    await statusCmd.execute(iact as unknown as ChatInputCommandInteraction);
-
-    const fields = embedFieldText(iact.__replies[0]!);
-    // The upload was 7 days ago → formatAge returns "Xh Ym ago" or "Xh ago" — not "Never".
-    expect(fields).toMatch(/EPGP Last Upload: \d+h/);
-    expect(fields).not.toContain('EPGP Last Upload: Never');
-  });
-
   // ------------------------------------------------------------------ scheduled task fields
   it('Last Roster Sync, Last Achievements Update, Last Trial Logs Update default to "Never"', async () => {
     const ctx = getE2EContext();

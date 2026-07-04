@@ -1,0 +1,4 @@
+# SeriouslyCasualBot V2 — TODO
+
+- [x] **Remove the EPGP feature** — done. Deleted the `/epgp` command, `src/functions/epgp/`, and `seedEpgp`; dropped the 5 EPGP tables + types + the `epgp-rankings` channel bootstrap and `epgp_rankings_channel_id` config; added migration v4 to drop the tables/config on existing DBs; removed the `/status` EPGP line and `/testdata seed_epgp`; updated docs and the feature test checklist; deleted/updated the EPGP unit & e2e tests.
+- [ ] **Expand the raid signup alert message** — `src/services/quipGenerator.ts` currently only calls Google Gemini 2.0 Flash (`generateSignupQuip`), with a static V1 corpus as the only fallback. Add support for additional AI model providers (e.g. Anthropic Claude, OpenAI) so the quip can be generated even when the Google API is unavailable/unpaid. Make the provider configurable/ordered so it tries an available model before dropping to the static fallback. Also improve the prompt/wording for better messages.

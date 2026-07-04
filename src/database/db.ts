@@ -97,6 +97,25 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(3);
     })();
   }
+
+  if (currentVersion < 4) {
+    // Drop the EPGP feature entirely — it's no longer used. Removes the five
+    // EPGP tables and the now-orphaned channel config key (the epgp-rankings
+    // channel is no longer bootstrapped). DROP IF EXISTS keeps this safe on
+    // fresh DBs where createTables (which no longer defines these tables) ran
+    // before this migration. This supersedes the v2 key migration above.
+    database.transaction(() => {
+      database.exec(`
+        DROP TABLE IF EXISTS epgp_loot_history;
+        DROP TABLE IF EXISTS epgp_effort_points;
+        DROP TABLE IF EXISTS epgp_gear_points;
+        DROP TABLE IF EXISTS epgp_upload_history;
+        DROP TABLE IF EXISTS epgp_config;
+        DELETE FROM config WHERE key IN ('epgp_channel_id', 'epgp_rankings_channel_id');
+      `);
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(4);
+    })();
+  }
 }
 
 export function closeDatabase(): void {

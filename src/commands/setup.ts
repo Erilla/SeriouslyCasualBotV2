@@ -20,7 +20,6 @@ const CHANNEL_CONFIG: Record<string, { label: string; type: ConfigurableChannelT
   bot_audit_channel_id: { label: 'Bot Audit', type: ChannelType.GuildText },
   raider_setup_channel_id: { label: 'Raider Setup', type: ChannelType.GuildText },
   weekly_check_channel_id: { label: 'Weekly Check', type: ChannelType.GuildText },
-  epgp_rankings_channel_id: { label: 'EPGP Rankings', type: ChannelType.GuildText },
   loot_channel_id: { label: 'Loot', type: ChannelType.GuildText },
   raiders_lounge_channel_id: { label: 'Raiders Lounge', type: ChannelType.GuildText },
   application_log_forum_id: { label: 'Application Log Forum', type: ChannelType.GuildForum },

@@ -61,12 +61,6 @@ export async function resetData(
     db.prepare('DELETE FROM loot_responses').run();
     db.prepare('DELETE FROM loot_posts').run();
 
-    db.prepare('DELETE FROM epgp_loot_history').run();
-    db.prepare('DELETE FROM epgp_effort_points').run();
-    db.prepare('DELETE FROM epgp_gear_points').run();
-    db.prepare('DELETE FROM epgp_upload_history').run();
-    db.prepare('DELETE FROM epgp_config').run();
-
     db.prepare('DELETE FROM raiders').run();
     db.prepare('DELETE FROM raider_identity_map').run();
     db.prepare('DELETE FROM overlords').run();

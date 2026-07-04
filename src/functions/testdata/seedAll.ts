@@ -5,7 +5,6 @@ import { seedRaiders } from './seedRaiders.js';
 import { seedApplicationQuestions } from '../../database/seedApplicationQuestions.js';
 import { seedApplication } from './seedApplication.js';
 import { seedTrial } from './seedTrial.js';
-import { seedEpgp } from './seedEpgp.js';
 import { seedLoot } from './seedLoot.js';
 import { seedRaidersDiscord } from './discord/seedRaidersDiscord.js';
 import { seedApplicationDiscord } from './discord/seedApplicationDiscord.js';
@@ -21,7 +20,6 @@ export interface SeedAllResult {
   raidersSeeded: number;
   applicationId: number | null;
   trialId: number | null;
-  epgpSeeded: boolean;
   lootPostsInDb: number;
   lootDiscordMessagesPosted: number;
   skipped: string[];
@@ -87,14 +85,6 @@ export async function seedAll(db: Database.Database, options: SeedAllOptions = {
     skipped.push(`trial: ${(error as Error).message}`);
   }
 
-  let epgpSeeded = false;
-  try {
-    seedEpgp(db);
-    epgpSeeded = true;
-  } catch (error) {
-    skipped.push(`epgp: ${(error as Error).message}`);
-  }
-
   let lootPostsInDb = 0;
   let lootDiscordMessagesPosted = 0;
   try {
@@ -118,7 +108,6 @@ export async function seedAll(db: Database.Database, options: SeedAllOptions = {
     raidersSeeded,
     applicationId,
     trialId,
-    epgpSeeded,
     lootPostsInDb,
     lootDiscordMessagesPosted,
     skipped,

@@ -82,7 +82,6 @@ export default {
     const raiders = db.prepare('SELECT COUNT(*) as total, COUNT(discord_user_id) as linked FROM raiders').get() as { total: number; linked: number };
     const activeApps = db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('in_progress', 'submitted', 'active')").get() as { count: number };
     const activeTrials = db.prepare("SELECT COUNT(*) as count FROM trials WHERE status = 'active'").get() as { count: number };
-    const epgpUpload = db.prepare('SELECT MAX(timestamp) as ts FROM epgp_upload_history').get() as { ts: string | null };
 
     const dbPath = process.env.DB_PATH || 'db.sqlite';
     let dbSizeStr = 'N/A';
@@ -97,8 +96,6 @@ export default {
     const achievementsStatus = getTaskStatus('updateAchievements');
     const trialLogsStatus = getTaskStatus('updateTrialLogs');
 
-    const epgpLastUpload = epgpUpload?.ts ? formatAge(new Date(epgpUpload.ts)) : 'Never';
-
     const apiSummaries = getAllSummaries();
 
     const embed = createEmbed('Bot Status')
@@ -112,7 +109,6 @@ export default {
         { name: 'Last Roster Sync', value: formatAge(syncStatus?.lastRun), inline: true },
         { name: 'Last Achievements Update', value: formatAge(achievementsStatus?.lastRun), inline: true },
         { name: 'Last Trial Logs Update', value: formatAge(trialLogsStatus?.lastRun), inline: true },
-        { name: 'EPGP Last Upload', value: epgpLastUpload, inline: true },
         { name: '\u200B', value: '**API Health (last hour)**', inline: false },
         { name: '\u200B', value: formatApiHealthLine('Raider.io', apiSummaries.raiderio), inline: false },
         { name: '\u200B', value: formatApiHealthLine('WarcraftLogs', apiSummaries.warcraftlogs), inline: false },

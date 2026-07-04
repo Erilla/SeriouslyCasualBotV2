@@ -10,7 +10,6 @@ import { seedRaiders } from '../functions/testdata/seedRaiders.js';
 import { seedApplication } from '../functions/testdata/seedApplication.js';
 import { seedApplicationVariety } from '../functions/testdata/seedApplicationVariety.js';
 import { seedTrial } from '../functions/testdata/seedTrial.js';
-import { seedEpgp } from '../functions/testdata/seedEpgp.js';
 import { seedLoot } from '../functions/testdata/seedLoot.js';
 import { resetData, ResetDiscordError } from '../functions/testdata/resetData.js';
 import { seedAll } from '../functions/testdata/seedAll.js';
@@ -46,9 +45,6 @@ export default {
         .setName('seed_trial')
         .setDescription('Insert a mock trial with 3 scheduled alerts')
         .addBooleanOption((o) => o.setName('discord').setDescription('Also create a trial-review forum thread')),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('seed_epgp').setDescription('Insert mock EPGP data for existing raiders'),
     )
     .addSubcommand((sub) =>
       sub
@@ -140,16 +136,6 @@ async function runSubcommand(
       const r = seedTrial(db);
       return `Seeded 1 mock trial (ID: ${r.trialId}) with ${r.alertCount} trial alerts.`;
     }
-    case 'seed_epgp': {
-      const r = seedEpgp(db);
-      return [
-        `Seeded EPGP data for **${r.raiderCount}** raiders:`,
-        `• ${r.effortPointsInserted} effort point entries`,
-        `• ${r.gearPointsInserted} gear point entries`,
-        `• ${r.lootHistoryInserted} loot history entries`,
-        `• ${r.uploadHistoryInserted} upload history record`,
-      ].join('\n');
-    }
     case 'seed_loot': {
       if (discord) {
         const r = await seedLootDiscord(interaction.client, db);
@@ -169,7 +155,6 @@ async function runSubcommand(
         `• Raiders in DB: **${r.raidersSeeded}**`,
         `• Application: **#${r.applicationId ?? 'n/a'}**`,
         `• Trial: **#${r.trialId ?? 'n/a'}**`,
-        `• EPGP seeded: ${r.epgpSeeded ? 'yes' : 'no'}`,
         `• Loot posts in DB: **${r.lootPostsInDb}**` + (r.discord ? `, Discord messages: **${r.lootDiscordMessagesPosted}**` : ''),
       ];
       if (r.skipped.length > 0) {
