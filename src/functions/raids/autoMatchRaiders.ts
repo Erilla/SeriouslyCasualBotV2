@@ -1,5 +1,7 @@
 import type { Guild, GuildMember } from 'discord.js';
+import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { normalizeName } from './normalizeName.js';
 import type { RaiderRow } from '../../types/index.js';
 
 export interface AutoMatch {
@@ -13,6 +15,14 @@ export async function autoMatchRaiders(
 ): Promise<AutoMatch[]> {
   if (unlinkedRaiders.length === 0) return [];
 
+  const db = getDatabase();
+
+  // Discord users already linked to some raider — never suggest them again.
+  const linkedRows = db
+    .prepare('SELECT discord_user_id FROM raiders WHERE discord_user_id IS NOT NULL')
+    .all() as { discord_user_id: string }[];
+  const linkedUserIds = new Set(linkedRows.map((r) => r.discord_user_id));
+
   let members;
   try {
     members = await guild.members.fetch();
@@ -24,18 +34,17 @@ export async function autoMatchRaiders(
   const matches: AutoMatch[] = [];
 
   for (const raider of unlinkedRaiders) {
-    const charName = raider.character_name.trim().toLowerCase();
+    const normalizedCharName = normalizeName(raider.character_name);
     const matchingMembers: GuildMember[] = [];
 
     for (const [, member] of members) {
-      const displayName = member.displayName.trim().toLowerCase();
-      const globalDisplayName = member.user.displayName.trim().toLowerCase();
-      const username = member.user.username.trim().toLowerCase();
+      if (member.user.bot) continue;
+      if (linkedUserIds.has(member.id)) continue;
 
       if (
-        charName === displayName ||
-        charName === globalDisplayName ||
-        charName === username
+        normalizeName(member.displayName) === normalizedCharName ||
+        normalizeName(member.user.displayName) === normalizedCharName ||
+        normalizeName(member.user.username) === normalizedCharName
       ) {
         matchingMembers.push(member);
       }
@@ -51,6 +60,9 @@ export async function autoMatchRaiders(
     }
   }
 
-  logger.info('AutoMatch', `Found ${matches.length} auto-matches out of ${unlinkedRaiders.length} unlinked raiders`);
+  logger.info(
+    'AutoMatch',
+    `Found ${matches.length} auto-matches out of ${unlinkedRaiders.length} unlinked raiders`,
+  );
   return matches;
 }

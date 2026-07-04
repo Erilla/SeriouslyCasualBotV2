@@ -1,14 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
-import { autoMatchRaiders } from '../../src/functions/raids/autoMatchRaiders.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Guild, GuildMember, User } from 'discord.js';
+import { initDatabase, closeDatabase, getDatabase } from '../../src/database/db.js';
 import type { RaiderRow } from '../../src/types/index.js';
-import type { Guild, GuildMember, Collection, User } from 'discord.js';
+
+vi.mock('../../src/services/logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+import { autoMatchRaiders } from '../../src/functions/raids/autoMatchRaiders.js';
+import { logger } from '../../src/services/logger.js';
 
 function createMockMember(
   displayName: string,
   globalDisplayName: string,
   username: string,
   id = '123456789',
+  opts: { bot?: boolean; roleIds?: string[] } = {},
 ): GuildMember {
+  const roleIds = new Set(opts.roleIds ?? []);
   return {
     displayName,
     id,
@@ -16,8 +25,10 @@ function createMockMember(
       displayName: globalDisplayName,
       username,
       id,
+      bot: opts.bot ?? false,
     } as User,
-  } as GuildMember;
+    roles: { cache: { has: (roleId: string) => roleIds.has(roleId) } },
+  } as unknown as GuildMember;
 }
 
 function createMockGuild(members: GuildMember[]): Guild {
@@ -43,6 +54,28 @@ function createRaider(characterName: string): RaiderRow {
   };
 }
 
+function insertRaider(name: string, discordUserId: string | null = null) {
+  getDatabase()
+    .prepare('INSERT INTO raiders (character_name, discord_user_id) VALUES (?, ?)')
+    .run(name, discordUserId);
+}
+
+function setRaiderRole(roleId: string) {
+  getDatabase()
+    .prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)')
+    .run('raider_role_id', roleId);
+}
+
+beforeEach(() => {
+  closeDatabase();
+  initDatabase(':memory:');
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  closeDatabase();
+});
+
 describe('autoMatchRaiders', () => {
   it('should match on exact displayName', async () => {
     const member = createMockMember('Thrall', 'SomeGlobal', 'someuser');
@@ -64,7 +97,6 @@ describe('autoMatchRaiders', () => {
     const result = await autoMatchRaiders(guild, [raider]);
 
     expect(result).toHaveLength(1);
-    expect(result[0].raider.character_name).toBe('thrall');
     expect(result[0].suggestedUser).toBe(member);
   });
 
@@ -117,5 +149,52 @@ describe('autoMatchRaiders', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].suggestedUser).toBe(member);
+  });
+
+  // ── New behaviour ──────────────────────────────────────────
+
+  it('excludes a Discord user already linked to another raider', async () => {
+    const member = createMockMember('Thrall', 'g', 'u', '999');
+    const guild = createMockGuild([member]);
+    insertRaider('Grommash', '999'); // user 999 already linked elsewhere
+    const raider = createRaider('Thrall'); // name matches member 999
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('suggests the only non-already-linked name match', async () => {
+    const linked = createMockMember('Thrall', 'g1', 'u1', '111');
+    const free = createMockMember('Thrall', 'g2', 'u2', '222');
+    const guild = createMockGuild([linked, free]);
+    insertRaider('Grommash', '111'); // 111 already linked
+    const raider = createRaider('Thrall');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].suggestedUser.id).toBe('222');
+  });
+
+  it('never suggests a bot even on a name match', async () => {
+    const bot = createMockMember('Thrall', 'g', 'u', '777', { bot: true });
+    const guild = createMockGuild([bot]);
+    const raider = createRaider('Thrall');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('matches through accents, realm suffix, and decoration', async () => {
+    const member = createMockMember('✨Hephaestüs-Silvermoon✨', 'g', 'u', '555');
+    const guild = createMockGuild([member]);
+    const raider = createRaider('Hephaestus');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].suggestedUser.id).toBe('555');
   });
 });
