@@ -47,6 +47,7 @@ interface QuipProvider {
 const PROVIDERS: QuipProvider[] = [
   { name: 'Gemini', getKey: () => config.geminiApiKey, call: callGemini },
   { name: 'OpenAI', getKey: () => config.openaiApiKey, call: callOpenAI },
+  { name: 'Claude', getKey: () => config.anthropicApiKey, call: callClaude },
 ];
 
 /**
@@ -206,6 +207,52 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string | null
   const text = json.choices?.[0]?.message?.content?.trim() ?? '';
   if (!text) {
     logger.warn('QuipGen', 'OpenAI returned no text');
+    return null;
+  }
+  return text;
+}
+
+const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_MODEL = 'claude-haiku-4-5';
+const ANTHROPIC_VERSION = '2023-06-01';
+
+interface AnthropicResponse {
+  content?: Array<{ type?: string; text?: string }>;
+  error?: { message?: string };
+}
+
+async function callClaude(apiKey: string, prompt: string): Promise<string | null> {
+  const response = await fetchWithTimeout(ANTHROPIC_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 120,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Anthropic HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+
+  const json = (await response.json()) as AnthropicResponse;
+  if (json.error?.message) {
+    throw new Error(`Anthropic API error: ${json.error.message}`);
+  }
+
+  const text = (json.content ?? [])
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text ?? '')
+    .join('')
+    .trim();
+  if (!text) {
+    logger.warn('QuipGen', 'Anthropic returned no text');
     return null;
   }
   return text;

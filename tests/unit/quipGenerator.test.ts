@@ -258,4 +258,42 @@ describe('generateSignupQuip', () => {
     expect(typeof quip).toBe('string');
     expect(quip.length).toBeGreaterThan(0);
   });
+
+  it('uses Claude when Gemini and OpenAI both fail', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    process.env.OPENAI_API_KEY = 'openai-key';
+    process.env.ANTHROPIC_API_KEY = 'anthropic-key';
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('api.anthropic.com')) {
+        return {
+          ok: true,
+          json: async () => ({ content: [{ type: 'text', text: 'Claude says sign up!' }] }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      // Gemini + OpenAI both error
+      return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: true });
+    expect(quip).toBe('Claude says sign up!');
+  });
+
+  it('falls back to a static quip when all three providers fail', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    process.env.OPENAI_API_KEY = 'openai-key';
+    process.env.ANTHROPIC_API_KEY = 'anthropic-key';
+
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+      text: async () => 'boom',
+    })) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(typeof quip).toBe('string');
+    expect(quip.length).toBeGreaterThan(0);
+  });
 });
