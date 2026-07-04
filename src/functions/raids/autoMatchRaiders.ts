@@ -25,7 +25,9 @@ export async function autoMatchRaiders(
 
   const totalUnlinkedCount = (
     db
-      .prepare('SELECT COUNT(*) AS n FROM raiders WHERE discord_user_id IS NULL')
+      .prepare(
+        'SELECT COUNT(*) AS n FROM raiders WHERE discord_user_id IS NULL AND missing_since IS NULL',
+      )
       .get() as { n: number }
   ).n;
 
@@ -66,6 +68,11 @@ export async function autoMatchRaiders(
       );
       return [{ raider, suggestedUser: eligible[0] }];
     }
+  } else if (totalUnlinkedCount === 1 && !raiderRoleId) {
+    logger.debug(
+      'AutoMatch',
+      'Sole unlinked raider but raider_role_id not configured; skipping elimination short-circuit',
+    );
   }
 
   const matches: AutoMatch[] = [];

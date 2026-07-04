@@ -15,7 +15,7 @@ export function normalizeName(name: string): string {
   return name
     .split('-')[0]
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036F]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 }

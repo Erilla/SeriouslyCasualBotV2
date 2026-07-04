@@ -60,6 +60,14 @@ function insertRaider(name: string, discordUserId: string | null = null) {
     .run(name, discordUserId);
 }
 
+function insertMissingRaider(name: string, missingSince = '2026-01-01') {
+  getDatabase()
+    .prepare(
+      'INSERT INTO raiders (character_name, discord_user_id, missing_since) VALUES (?, NULL, ?)',
+    )
+    .run(name, missingSince);
+}
+
 function setRaiderRole(roleId: string) {
   getDatabase()
     .prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)')
@@ -253,6 +261,21 @@ describe('autoMatchRaiders', () => {
     const result = await autoMatchRaiders(guild, [raider]);
 
     expect(result).toHaveLength(0);
+  });
+
+  it('elimination still fires when the only other unlinked raider is stale (missing_since set)', async () => {
+    const roleId = 'raider-role';
+    const member = createMockMember('SomeoneElse', 'g', 'u', '333', { roleIds: [roleId] });
+    const guild = createMockGuild([member]);
+    setRaiderRole(roleId);
+    insertRaider('Shadowleif', null); // the sole ACTIVE unlinked raider
+    insertMissingRaider('Otherguy'); // unlinked but flagged missing — should not count
+    const raider = createRaider('Shadowleif');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].suggestedUser.id).toBe('333');
   });
 
   it('elimination does not count a bot toward the eligible member', async () => {
