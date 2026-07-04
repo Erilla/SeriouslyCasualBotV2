@@ -27,42 +27,49 @@ divergence in case or accents makes an actually-present trial match nothing and 
 **"No raid logs found"** — a silent false negative.
 
 WoW character names are letters-only (accented Latin allowed on EU realms), so **case and
-accents are the only realistic drift modes.** Punctuation/emoji stripping buys nothing
-here and only adds collision risk, so it is deliberately excluded.
+accents are the only realistic drift modes.**
 
 ## Approach
 
-Normalize **both** sides symmetrically before comparing, using a case-fold + accent-fold
-(deburr). One-sided normalization would guarantee misses (folding the trial name to
-`hephaestus` while comparing against WCL's `Héphaestüs`), so the fold is applied to both
-`player.name` and `characterName`.
+Normalize **both** sides symmetrically before comparing. One-sided normalization would
+guarantee misses (folding the trial name to `hephaestus` while comparing against WCL's
+`Héphaestüs`), so the fold is applied to both `player.name` and `characterName`.
 
-### The normalizer
+### Reuse the existing `normalizeName` helper
 
-A pure helper, co-located in `warcraftlogs.ts` and exported for testing:
+The auto-match work landed a name normalizer at `src/functions/raids/normalizeName.ts`
+(commit `6afbc09`), documented as "normalise a name for fuzzy comparison between a WoW
+character name and a Discord name, applied symmetrically to BOTH sides before an equality
+check":
 
 ```ts
-/**
- * Normalize a character name for FUZZY attendance matching only:
- * accent-fold (NFD + strip diacritics) + lowercase + trim.
- * Do NOT use for identity keys or any exact-identity comparison
- * (raider_identity_map keys, ignored_characters, etc.).
- */
-export function normalizeCharacterName(name: string): string {
+export function normalizeName(name: string): string {
   return name
+    .split('-')[0]              // drop realm suffix (WoW names contain no '-')
     .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[̀-ͯ]/g, '')       // accent-fold: strip combining marks U+0300–U+036F
     .toLowerCase()
-    .trim();
+    .replace(/[^a-z0-9]/g, ''); // strip spaces, punctuation, emoji
 }
 ```
 
-Examples: `Héphaestüs` → `hephaestus`, `SHADOWLEIF` → `shadowleif`.
+For letters-only WoW names this is **identical** to a case+accent-fold and strictly more
+forgiving on edge cases (a stray realm suffix or accidental whitespace in officer input).
+There is no input where a narrower deburr-only helper would match and `normalizeName`
+would not. Adding a second near-identical normalizer would be needless duplication, so
+WCL matching reuses `normalizeName`.
 
-**It lives in `warcraftlogs.ts`, not a shared `src/utils` module, by design.** A general
-shared normalizer would invite reuse in exact-identity comparisons (identity-map keys,
-ignored-character lookups), where accent/case-folding would be wrong. Keeping it local
-bounds its blast radius to WCL fuzzy matching.
+**Coupling note.** WCL auto-links reports with no human confirmation, whereas auto-match
+*suggests* matches a human confirms. If `normalizeName` is later made more aggressive for
+auto-match's benefit, it could silently change WCL matching. The `extractMatchingCodes`
+tests (below) pin WCL's expected behaviour, so such drift trips a test.
+
+**Layering note (follow-up, not this change).** `warcraftlogs.ts` is a `service` and
+`normalizeName` lives under `functions/raids/`; a service importing from a feature module
+mildly inverts the usual layering. Promoting `normalizeName` to a shared module is a
+sensible follow-up, but is deferred: the auto-match session is concurrently modifying
+files in `functions/raids/`, and moving the file now would risk conflicts. For this change
+we import it in place.
 
 ### Testable matching seam
 
@@ -75,11 +82,11 @@ export function extractMatchingCodes(
   reports: AttendanceReport[],
   characterName: string,
 ): string[] {
-  const target = normalizeCharacterName(characterName);   // normalize target once
+  const target = normalizeName(characterName);   // normalize target once
   return reports
     .filter((r) =>
       r.players.some(
-        (p) => p.presence === 1 && normalizeCharacterName(p.name) === target,
+        (p) => p.presence === 1 && normalizeName(p.name) === target,
       ),
     )
     .map((r) => r.code)
@@ -93,33 +100,34 @@ before the loop rather than per player.
 
 ## Components
 
-- `normalizeCharacterName(name): string` — pure, exported, documented as matching-only.
-- `extractMatchingCodes(reports, characterName): string[]` — pure, exported; contains the
-  filter/map/reverse previously inlined in `getTrialLogs`.
+- `extractMatchingCodes(reports, characterName): string[]` — pure, exported from
+  `warcraftlogs.ts`; contains the filter/map/reverse previously inlined in `getTrialLogs`;
+  normalizes both sides via the reused `normalizeName`.
 - `getTrialLogs(characterName): Promise<string[]>` — unchanged responsibilities (OAuth,
   GraphQL fetch, fail-soft `catch`), now calling `extractMatchingCodes` for the match.
+- `normalizeName` — reused as-is from `src/functions/raids/normalizeName.ts`; **not**
+  modified.
 
 ## Testing
 
-New `tests/unit/warcraftlogs.test.ts` (pure functions, no HTTP):
+New `tests/unit/warcraftlogs.test.ts` (pure functions, no HTTP), covering
+`extractMatchingCodes`:
 
-- `normalizeCharacterName`:
-  - accent-fold: `Héphaestüs` → `hephaestus`
-  - case-fold: `SHADOWLEIF` → `shadowleif`
-  - whitespace trim: `'  Thrall '` → `thrall`
-  - idempotence: `f(f(x)) === f(x)`
-- `extractMatchingCodes`:
-  - accent-only mismatch now matches (`Hephaestus` finds `Héphaestüs`)
-  - case-only mismatch now matches
-  - `presence !== 1` (signed up, not present) is excluded
-  - no match returns `[]`
-  - result order is reversed relative to input (V1 ordering preserved)
-  - multiple matching reports all returned
+- accent-only mismatch now matches (`Hephaestus` finds `Héphaestüs`)
+- case-only mismatch now matches (`SHADOWLEIF` finds `Shadowleif`)
+- `presence !== 1` (signed up, not present) is excluded
+- no match returns `[]`
+- result order is reversed relative to input (V1 ordering preserved)
+- multiple matching reports all returned
+
+These cases also serve as the behavioural guard described in the coupling note: they pin
+the case/accent semantics WCL relies on, independent of `normalizeName`'s internals.
 
 ## Out of scope / unchanged
 
 - Fail-soft behaviour on HTTP error / open circuit (returns `[]`).
 - OAuth token caching.
 - `generateTrialLogsContent` formatting (link list, "No raid logs found" copy).
-- Any auto-match / `normalizeName` suggestion-matching work — deliberately separate; this
-  helper must not leak into exact-identity comparisons.
+- `normalizeName` itself — reused, not modified.
+- Any auto-match / suggestion-matching work — separate; this change only adds a *consumer*
+  of `normalizeName`, it does not touch auto-match code.
