@@ -5,6 +5,7 @@ import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
 import { generateSignupQuip } from '../../services/quipGenerator.js';
+import { getOverlords } from './overlords.js';
 import type { RaiderRow, SettingRow } from '../../types/index.js';
 
 interface DayConfig {
@@ -116,9 +117,12 @@ export async function alertSignups(client: Client): Promise<void> {
 
   // Generate a fresh signup quip via Gemini (falls back to a static one from
   // the V1 corpus if GEMINI_API_KEY is unset or the call fails — #27).
+  const overlordNames = getOverlords().map((o) => o.name);
+
   const randomMessage = await generateSignupQuip({
     raidDay: dayConfig.raidDay,
     twoDayReminder: dayConfig.twoDayReminder,
+    overlordNames,
   });
 
   // Build the alert message
