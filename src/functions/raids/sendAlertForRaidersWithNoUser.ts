@@ -43,6 +43,8 @@ export async function sendAlertForRaidersWithNoUser(
     const { raider, suggestedUser } = match;
 
     try {
+      await deletePreviousPost(channel, raider.message_id);
+
       const confirmButton = new ButtonBuilder()
         .setCustomId(`raider:confirm_link:${raider.character_name}:${suggestedUser.id}`)
         .setLabel('Confirm')
@@ -87,6 +89,8 @@ export async function sendAlertForRaidersWithNoUser(
     if (autoMatchMap.has(raider.character_name.toLowerCase())) continue;
 
     try {
+      await deletePreviousPost(channel, raider.message_id);
+
       const userSelect = new UserSelectMenuBuilder()
         .setCustomId(`raider:select_user:${raider.character_name}`)
         .setPlaceholder('Select a user...');
@@ -122,4 +126,24 @@ export async function sendAlertForRaidersWithNoUser(
     'RaiderAlerts',
     `Sent ${autoMatches.length} auto-match alerts and ${newUnlinkedRaiders.length - autoMatches.length} unmatched alerts`,
   );
+}
+
+/**
+ * Remove a raider's existing linking post before a replacement is posted.
+ * Without this, re-alerting (e.g. a manual /raiders check_missing_users run
+ * over raiders that already have posts) orphans the old dropdown: message_id
+ * gets overwritten so nothing tracks the old message until the next refresh
+ * sweep. Best-effort — a NULL id is skipped and an already-deleted message is
+ * swallowed, so this never blocks the fresh post.
+ */
+async function deletePreviousPost(
+  channel: TextChannel,
+  messageId: string | null,
+): Promise<void> {
+  if (!messageId) return;
+  try {
+    await channel.messages.delete(messageId);
+  } catch {
+    // Old post is already gone (or never existed); nothing to clean up.
+  }
 }

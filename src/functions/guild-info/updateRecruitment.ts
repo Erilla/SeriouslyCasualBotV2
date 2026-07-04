@@ -9,7 +9,7 @@ import {
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getOrCreateGuildInfoChannel } from './clearGuildInfo.js';
-import type { GuildInfoContentRow, OverlordRow, ConfigRow } from '../../types/index.js';
+import type { GuildInfoContentRow, OverlordRow } from '../../types/index.js';
 
 /**
  * Post the Recruitment embed with overlord mentions and an Apply Here button.
@@ -72,18 +72,16 @@ export async function updateRecruitment(client: Client): Promise<void> {
     .setTitle('Recruitment')
     .addFields(fields);
 
-  // Build Apply Here button
-  const applicationUrlRow = db
-    .prepare('SELECT value FROM config WHERE key = ?')
-    .get('application_channel_url') as ConfigRow | undefined;
-
-  const applyUrl = applicationUrlRow?.value || 'https://discord.com';
-
+  // Build Apply Here button. This reuses the existing application flow: the
+  // custom id is handled in src/interactions/application.ts (same handler as
+  // the "Apply Now" button from /applications post_apply_button), which starts
+  // the DM questionnaire.
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
+      .setCustomId('application:apply')
       .setLabel('Apply Here')
-      .setStyle(ButtonStyle.Link)
-      .setURL(applyUrl),
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('📝'),
   );
 
   const message = await channel.send({

@@ -6,7 +6,7 @@ import type { RaiderRow, RaiderIdentityMapRow, IgnoredCharacterRow } from '../..
 
 const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-export async function syncRaiders(_client: Client): Promise<void> {
+export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   const db = getDatabase();
 
   let apiMembers;
@@ -14,7 +14,7 @@ export async function syncRaiders(_client: Client): Promise<void> {
     apiMembers = await getGuildRoster();
   } catch (error) {
     logger.error('SyncRaiders', 'Failed to fetch guild roster from Raider.io', error as Error);
-    return;
+    return [];
   }
 
   const dbRaiders = db.prepare('SELECT * FROM raiders').all() as RaiderRow[];
@@ -36,6 +36,13 @@ export async function syncRaiders(_client: Client): Promise<void> {
   let markedMissing = 0;
   let returned = 0;
   let alreadyMissing = 0;
+
+  // Raiders inserted by this sync with no Discord user. Returned to the caller
+  // so it can post auto-link suggestions / missing-user alerts (the automatic
+  // path the V2 spec describes — "when a new raider is added without a Discord
+  // user ... the bot attempts to auto-match"). Only freshly-added raiders are
+  // collected, so the 10-minute scheduled sync never re-alerts the same raider.
+  const newUnlinkedRaiders: RaiderRow[] = [];
 
   const transaction = db.transaction(() => {
     const now = new Date().toISOString();
@@ -84,18 +91,27 @@ export async function syncRaiders(_client: Client): Promise<void> {
       if (!dbRaiderMap.has(lowerName)) {
         const discordUserId = identityLookup.get(lowerName) ?? null;
 
-        db.prepare(
-          `INSERT INTO raiders (character_name, realm, region, rank, class, discord_user_id)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        ).run(
-          member.character.name,
-          member.character.realm,
-          member.character.region,
-          member.rank,
-          member.character.class,
-          discordUserId,
-        );
+        const result = db
+          .prepare(
+            `INSERT INTO raiders (character_name, realm, region, rank, class, discord_user_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            member.character.name,
+            member.character.realm,
+            member.character.region,
+            member.rank,
+            member.character.class,
+            discordUserId,
+          );
         added++;
+
+        if (discordUserId === null) {
+          const inserted = db
+            .prepare('SELECT * FROM raiders WHERE id = ?')
+            .get(result.lastInsertRowid) as RaiderRow;
+          newUnlinkedRaiders.push(inserted);
+        }
       }
     }
   });
@@ -106,4 +122,6 @@ export async function syncRaiders(_client: Client): Promise<void> {
     'SyncRaiders',
     `Sync complete: ${added} added, ${returned} returned, ${markedMissing} newly missing, ${alreadyMissing} still missing (>24h)`,
   );
+
+  return newUnlinkedRaiders;
 }

@@ -4,10 +4,9 @@ import { createTables } from '../../src/database/schema.js';
 import { seedDatabase } from '../../src/database/seed.js';
 import { seedRaiders } from '../../src/functions/testdata/seedRaiders.js';
 import { seedApplication } from '../../src/functions/testdata/seedApplication.js';
-import { seedApplicationQuestions } from '../../src/functions/testdata/seedApplicationQuestions.js';
+import { seedApplicationQuestions } from '../../src/database/seedApplicationQuestions.js';
 import { seedApplicationVariety } from '../../src/functions/testdata/seedApplicationVariety.js';
 import { seedTrial } from '../../src/functions/testdata/seedTrial.js';
-import { seedEpgp } from '../../src/functions/testdata/seedEpgp.js';
 import { seedLoot } from '../../src/functions/testdata/seedLoot.js';
 import { seedLootDiscord } from '../../src/functions/testdata/discord/seedLootDiscord.js';
 import { resetData, ResetDiscordError } from '../../src/functions/testdata/resetData.js';
@@ -372,74 +371,6 @@ describe('seedTrial', () => {
 
     const trial = db.prepare('SELECT application_id FROM trials WHERE id = ?').get(result.trialId) as { application_id: number | null };
     expect(trial.application_id).toBeNull();
-  });
-});
-
-// ─── seedEpgp ────────────────────────────────────────────────────────────────
-
-describe('seedEpgp', () => {
-  beforeEach(() => {
-    seedRaiders(db);
-  });
-
-  it('throws if no raiders exist', () => {
-    const emptyDb = new Database(':memory:');
-    createTables(emptyDb);
-    expect(() => seedEpgp(emptyDb)).toThrow('No raiders found');
-    emptyDb.close();
-  });
-
-  it('returns a result object with counts', () => {
-    const result = seedEpgp(db);
-
-    expect(result.raiderCount).toBe(15);
-    expect(result.effortPointsInserted).toBe(45); // 15 raiders × 3 weeks
-    expect(result.gearPointsInserted).toBeGreaterThan(0);
-    expect(result.lootHistoryInserted).toBe(5);
-    expect(result.uploadHistoryInserted).toBe(1);
-  });
-
-  it('inserts 3 EP entries per raider', () => {
-    seedEpgp(db);
-
-    const total = (db.prepare('SELECT COUNT(*) as count FROM epgp_effort_points').get() as { count: number }).count;
-    expect(total).toBe(45);
-  });
-
-  it('inserts GP entries for roughly half the raiders', () => {
-    seedEpgp(db);
-
-    const total = (db.prepare('SELECT COUNT(*) as count FROM epgp_gear_points').get() as { count: number }).count;
-    expect(total).toBeGreaterThan(0);
-    expect(total).toBeLessThanOrEqual(15);
-  });
-
-  it('inserts 5 loot history entries', () => {
-    seedEpgp(db);
-
-    const total = (db.prepare('SELECT COUNT(*) as count FROM epgp_loot_history').get() as { count: number }).count;
-    expect(total).toBe(5);
-  });
-
-  it('inserts 1 upload history record', () => {
-    seedEpgp(db);
-
-    const total = (db.prepare('SELECT COUNT(*) as count FROM epgp_upload_history').get() as { count: number }).count;
-    expect(total).toBe(1);
-  });
-
-  it('loot history entries have valid item_string and gear_points', () => {
-    seedEpgp(db);
-
-    const rows = db.prepare('SELECT item_string, gear_points FROM epgp_loot_history').all() as Array<{
-      item_string: string;
-      gear_points: number;
-    }>;
-
-    for (const row of rows) {
-      expect(row.item_string).toBeTruthy();
-      expect(row.gear_points).toBeGreaterThan(0);
-    }
   });
 });
 

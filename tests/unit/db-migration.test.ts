@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getDatabase, closeDatabase, runMigrations } from '../../src/database/db.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { getDatabase, closeDatabase, runMigrations, initDatabase } from '../../src/database/db.js';
 import { createTables } from '../../src/database/schema.js';
 
 beforeEach(() => {
@@ -12,75 +12,51 @@ afterEach(() => {
   closeDatabase();
 });
 
-describe('runMigrations — epgp_channel_id -> epgp_rankings_channel_id', () => {
-  it('moves the old key value to the new key', () => {
+describe('runMigrations — v4 removes the EPGP feature', () => {
+  it('drops the EPGP tables left over from a prior install', () => {
+    const db = getDatabase();
+
+    // Recreate the legacy EPGP tables — createTables no longer defines them,
+    // so we manually seed the pre-migration shape to represent an existing
+    // install still carrying them.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS epgp_effort_points (id INTEGER PRIMARY KEY AUTOINCREMENT);
+      CREATE TABLE IF NOT EXISTS epgp_gear_points (id INTEGER PRIMARY KEY AUTOINCREMENT);
+      CREATE TABLE IF NOT EXISTS epgp_upload_history (id INTEGER PRIMARY KEY AUTOINCREMENT);
+      CREATE TABLE IF NOT EXISTS epgp_loot_history (id INTEGER PRIMARY KEY AUTOINCREMENT);
+      CREATE TABLE IF NOT EXISTS epgp_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    `);
+    // Clear schema_version so migrations re-apply against the legacy tables.
+    db.exec('DELETE FROM schema_version;');
+
+    runMigrations(db);
+
+    const epgpTables = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'epgp_%'`)
+      .all();
+    expect(epgpTables).toEqual([]);
+
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number };
+    expect(version.v).toBeGreaterThanOrEqual(4);
+  });
+
+  it('deletes leftover EPGP channel config keys', () => {
     const db = getDatabase();
     db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_channel_id', 'chan-123');
+    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_rankings_channel_id', 'chan-456');
+    db.exec('DELETE FROM schema_version;');
 
     runMigrations(db);
 
-    const oldKey = db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_channel_id');
-    const newKey = db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_rankings_channel_id') as
-      | { value: string }
-      | undefined;
-
-    expect(oldKey).toBeUndefined();
-    expect(newKey?.value).toBe('chan-123');
+    expect(db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_channel_id')).toBeUndefined();
+    expect(db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_rankings_channel_id')).toBeUndefined();
   });
 
-  it('is idempotent when run a second time', () => {
+  it('is a no-op when EPGP tables are already gone', () => {
     const db = getDatabase();
-    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_channel_id', 'chan-123');
 
-    runMigrations(db);
-    runMigrations(db);
-
-    const newKey = db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_rankings_channel_id') as
-      | { value: string }
-      | undefined;
-    expect(newKey?.value).toBe('chan-123');
-  });
-
-  it('does nothing when the old key is absent', () => {
-    const db = getDatabase();
-    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_rankings_channel_id', 'chan-999');
-
-    runMigrations(db);
-
-    const newKey = db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_rankings_channel_id') as
-      | { value: string }
-      | undefined;
-    expect(newKey?.value).toBe('chan-999');
-  });
-
-  it('logs a warning when both epgp keys are set to different values', () => {
-    const db = getDatabase();
-    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_channel_id', 'old-chan');
-    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_rankings_channel_id', 'new-chan');
-
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    runMigrations(db);
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Both epgp_channel_id'),
-    );
-    warnSpy.mockRestore();
-  });
-
-  it('does not overwrite an existing new-key value if both are set', () => {
-    const db = getDatabase();
-    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_channel_id', 'old-chan');
-    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_rankings_channel_id', 'new-chan');
-
-    runMigrations(db);
-
-    const newKey = db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_rankings_channel_id') as
-      | { value: string }
-      | undefined;
-    expect(newKey?.value).toBe('new-chan');
-
-    const oldKey = db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_channel_id');
-    expect(oldKey).toBeUndefined();
+    expect(() => runMigrations(db)).not.toThrow();
+    expect(() => runMigrations(db)).not.toThrow();
   });
 });
 
@@ -119,5 +95,26 @@ describe('runMigrations — v3 drops signup_messages', () => {
 
     expect(() => runMigrations(db)).not.toThrow();
     expect(() => runMigrations(db)).not.toThrow();
+  });
+});
+
+describe('initDatabase — seeds default application questions', () => {
+  it('seeds the 9 default application questions on a fresh database', () => {
+    const db = initDatabase(':memory:');
+
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
+    expect(count).toBe(9);
+  });
+
+  it('is idempotent — re-running initDatabase does not duplicate questions', () => {
+    initDatabase(':memory:');
+    const db = initDatabase(':memory:');
+
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
+    expect(count).toBe(9);
   });
 });

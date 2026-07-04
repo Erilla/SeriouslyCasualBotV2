@@ -139,41 +139,6 @@ export interface LootResponseRow {
   response_type: 'major' | 'minor' | 'wantIn' | 'wantOut';
 }
 
-export interface EpgpEffortPointsRow {
-  id: number;
-  raider_id: number;
-  points: number;
-  timestamp: string;
-}
-
-export interface EpgpGearPointsRow {
-  id: number;
-  raider_id: number;
-  points: number;
-  timestamp: string;
-}
-
-export interface EpgpUploadHistoryRow {
-  id: number;
-  timestamp: string;
-  decay_percent: number;
-  uploaded_content: string | null;
-}
-
-export interface EpgpLootHistoryRow {
-  id: number;
-  raider_id: number;
-  item_id: string | null;
-  item_string: string;
-  gear_points: number;
-  looted_at: string;
-}
-
-export interface EpgpConfigRow {
-  key: string;
-  value: string;
-}
-
 export interface GuildInfoContentRow {
   key: string;
   title: string | null;

@@ -56,10 +56,11 @@ import type { TrialRow, ApplicationRow } from '../../../src/types/index.js';
 // ---------------------------------------------------------------------------
 
 /** Minimal ThreadChannel-shaped object for threadUpdate tests. */
-function fakeThread(id: string, archived: boolean) {
+function fakeThread(id: string, archived: boolean, locked = false) {
   return {
     id,
     archived,
+    locked,
     setArchived: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -190,6 +191,46 @@ describe('threadUpdate — thread keep-alive event handler', () => {
     // Thread was un-archived (the reverse direction) — handler should skip
     const oldThread = fakeThread(THREAD_ID, true);
     const newThread = fakeThread(THREAD_ID, false);
+
+    await threadUpdateEvent.execute(oldThread, newThread);
+
+    expect(newThread.setArchived).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // 6. Deliberately closed (locked + archived) threads must stay closed.
+  //
+  // closeThread() locks AND archives in one edit when an application/trial is
+  // resolved. Discord's inactivity auto-archive never locks a thread, so a
+  // locked thread is always a deliberate close — the keep-alive must not fight
+  // it, even while the row still reads as active (the status UPDATE lands after
+  // closeThread in the resolution flows).
+  // =========================================================================
+
+  it('does NOT re-open an application thread that was locked + archived (deliberate close)', async () => {
+    const app = getApplicationRow();
+    expect(app, 'an application must exist after seed').toBeDefined();
+
+    const THREAD_ID = '555555555555555555';
+    setApplicationThreadId(app!.id, THREAD_ID);
+
+    const oldThread = fakeThread(THREAD_ID, false);
+    const newThread = fakeThread(THREAD_ID, true, true); // locked + archived
+
+    await threadUpdateEvent.execute(oldThread, newThread);
+
+    expect(newThread.setArchived).not.toHaveBeenCalled();
+  });
+
+  it('does NOT re-open a trial thread that was locked + archived (deliberate close)', async () => {
+    const trial = getTrialRow();
+    expect(trial, 'a trial must exist after seed').toBeDefined();
+
+    const THREAD_ID = '666666666666666666';
+    setTrialThreadId(trial!.id, THREAD_ID);
+
+    const oldThread = fakeThread(THREAD_ID, false);
+    const newThread = fakeThread(THREAD_ID, true, true); // locked + archived
 
     await threadUpdateEvent.execute(oldThread, newThread);
 

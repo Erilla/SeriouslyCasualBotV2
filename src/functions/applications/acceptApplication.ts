@@ -17,7 +17,9 @@ import { config } from '../../config.js';
 import { logger } from '../../services/logger.js';
 import { audit } from '../../services/auditLog.js';
 import { generateTranscript } from './generateTranscript.js';
+import { closeThread } from '../threads.js';
 import { createTrialReviewThread } from '../trial-review/createTrialReviewThread.js';
+import { assignRaiderRole } from './assignRaiderRole.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
 
 /**
@@ -176,8 +178,9 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
         // Update forum tags: remove Active, add Accepted
         await swapForumTag(thread, 'Active', 'Accepted');
 
-        // Lock the forum thread
-        await thread.setLocked(true);
+        // Close the forum post (lock + archive) last, after the result message
+        // and tag swap have landed.
+        await closeThread(thread);
       }
     } catch (error) {
       logger.warn('Applications', `Failed to update forum thread for application #${applicationId}: ${error}`);
@@ -224,6 +227,9 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
 
   // Audit log
   await audit(interaction.user, 'accepted application', `${characterName} as ${role} starting ${startDate}`);
+
+  // Give the accepted applicant the Raider role (best-effort; never fails accept)
+  await assignRaiderRole(guild, application.applicant_user_id);
 
   // Create trial review thread
   try {

@@ -3,17 +3,25 @@ import { generateSignupQuip } from '../../src/services/quipGenerator.js';
 
 const originalFetch = globalThis.fetch;
 const originalApiKey = process.env.GEMINI_API_KEY;
+const originalOpenAIKey = process.env.OPENAI_API_KEY;
+const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalApiKey === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = originalApiKey;
+  if (originalOpenAIKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalOpenAIKey;
+  if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+  else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
   vi.restoreAllMocks();
 });
 
 describe('generateSignupQuip', () => {
   it('falls back to a static quip when GEMINI_API_KEY is not set', async () => {
     delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
 
     const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
     expect(typeof quip).toBe('string');
@@ -162,6 +170,127 @@ describe('generateSignupQuip', () => {
     globalThis.fetch = vi.fn(async () => {
       throw new Error('ENETUNREACH');
     }) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(typeof quip).toBe('string');
+    expect(quip.length).toBeGreaterThan(0);
+  });
+
+  it('includes Overlord names in the prompt when provided', async () => {
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    let capturedBody = '';
+    globalThis.fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      capturedBody = String(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: 'Sign up!' }] } }],
+        }),
+        text: async () => '',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    await generateSignupQuip({
+      raidDay: 'Wednesday',
+      twoDayReminder: false,
+      overlordNames: ['Gandalf', 'Saruman'],
+    });
+
+    expect(capturedBody).toContain('Gandalf, Saruman');
+    expect(capturedBody).toContain('Overlords');
+  });
+
+  it('omits the leader-name clause when no Overlords are provided', async () => {
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    let capturedBody = '';
+    globalThis.fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      capturedBody = String(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: 'Sign up!' }] } }],
+        }),
+        text: async () => '',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+
+    expect(capturedBody).not.toContain('Overlords');
+  });
+
+  it('uses OpenAI when Gemini fails', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    process.env.OPENAI_API_KEY = 'openai-key';
+    delete process.env.ANTHROPIC_API_KEY;
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+      }
+      if (url.includes('api.openai.com')) {
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: 'OpenAI says sign up!' } }] }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(quip).toBe('OpenAI says sign up!');
+  });
+
+  it('skips OpenAI when its key is unset and falls back to static', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('api.openai.com')) throw new Error('OpenAI should not be called');
+      return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(typeof quip).toBe('string');
+    expect(quip.length).toBeGreaterThan(0);
+  });
+
+  it('uses Claude when Gemini and OpenAI both fail', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    process.env.OPENAI_API_KEY = 'openai-key';
+    process.env.ANTHROPIC_API_KEY = 'anthropic-key';
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('api.anthropic.com')) {
+        return {
+          ok: true,
+          json: async () => ({ content: [{ type: 'text', text: 'Claude says sign up!' }] }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      // Gemini + OpenAI both error
+      return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: true });
+    expect(quip).toBe('Claude says sign up!');
+  });
+
+  it('falls back to a static quip when all three providers fail', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    process.env.OPENAI_API_KEY = 'openai-key';
+    process.env.ANTHROPIC_API_KEY = 'anthropic-key';
+
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+      text: async () => 'boom',
+    })) as unknown as typeof fetch;
 
     const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
     expect(typeof quip).toBe('string');

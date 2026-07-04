@@ -25,7 +25,7 @@ function firstEmbedDescription(reply: { options: unknown }): string {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: insert a fresh raider with no EPGP data (for FK-safe ignore tests).
+// Helper: insert a fresh raider (for ignore tests).
 // ---------------------------------------------------------------------------
 function insertFreshRaider(characterName: string): void {
   const db = getDatabase();
@@ -166,11 +166,10 @@ describe('/raiders', () => {
   // ignore_character
   // =========================================================================
 
-  it('ignore_character — succeeds for a raider with no EPGP data and adds to ignored list', async () => {
+  it('ignore_character — succeeds for a raider and adds to ignored list', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
-    // Insert a fresh raider that has no EPGP FK deps.
     insertFreshRaider('Freshraider');
 
     const iact = fakeChatInput({
@@ -200,35 +199,6 @@ describe('/raiders', () => {
     // DB: character added to ignored_characters.
     const ignoredRow = queryOne('SELECT character_name FROM ignored_characters WHERE character_name = ?', ['Freshraider']);
     expect(ignoredRow).toBeDefined();
-  });
-
-  it('ignore_character — fails (FK constraint) for a seeded raider that has EPGP data', async () => {
-    const ctx = getE2EContext();
-    const channel = ctx.guild.systemChannel as TextBasedChannel;
-
-    // 'Azerothian' is the first seeded raider and has EPGP rows — delete will fail FK.
-    const iact = fakeChatInput({
-      client: ctx.client,
-      guild: ctx.guild,
-      channel,
-      member: ctx.officer,
-      user: ctx.officer.user,
-      commandName: 'raiders',
-      subcommand: 'ignore_character',
-      options: { character_name: 'Azerothian' },
-    });
-
-    await raidersCmd.execute(iact as unknown as ChatInputCommandInteraction);
-
-    expect(iact.__replies.length).toBe(1);
-    const reply = iact.__replies[0]!;
-    expect(reply.ephemeral).toBe(true);
-    const content = replyContent(reply);
-    expect(content).toContain('Failed to ignore');
-
-    // DB: raider must still exist (transaction was rolled back).
-    const raiderRow = queryOne('SELECT character_name FROM raiders WHERE character_name = ?', ['Azerothian']);
-    expect(raiderRow).toBeDefined();
   });
 
   // =========================================================================

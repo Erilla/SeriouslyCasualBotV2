@@ -31,11 +31,6 @@ describe('database schema', () => {
     expect(tableNames).toContain('promote_alerts');
     expect(tableNames).toContain('loot_posts');
     expect(tableNames).toContain('loot_responses');
-    expect(tableNames).toContain('epgp_effort_points');
-    expect(tableNames).toContain('epgp_gear_points');
-    expect(tableNames).toContain('epgp_upload_history');
-    expect(tableNames).toContain('epgp_loot_history');
-    expect(tableNames).toContain('epgp_config');
     expect(tableNames).toContain('guild_info_content');
     expect(tableNames).toContain('schedule_days');
     expect(tableNames).toContain('schedule_config');
@@ -47,6 +42,14 @@ describe('database schema', () => {
 
     // signup_messages was removed in migration v3 (#27).
     expect(tableNames).not.toContain('signup_messages');
+
+    // The EPGP feature was removed in migration v4 — none of its tables
+    // should exist on a fresh install.
+    expect(tableNames).not.toContain('epgp_effort_points');
+    expect(tableNames).not.toContain('epgp_gear_points');
+    expect(tableNames).not.toContain('epgp_upload_history');
+    expect(tableNames).not.toContain('epgp_loot_history');
+    expect(tableNames).not.toContain('epgp_config');
   });
 
   it('should enforce foreign keys', () => {
@@ -63,7 +66,7 @@ describe('database schema', () => {
     const db = getDatabase();
 
     const version = db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get() as { version: number };
-    expect(version.version).toBe(3);
+    expect(version.version).toBe(4);
   });
 
   it('should be idempotent (safe to run twice)', () => {

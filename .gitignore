@@ -9,6 +9,7 @@ db.sqlite*
 .DS_Store
 *.log
 .claude/*.local.*
+.claude/scheduled_tasks.lock
 .worktrees/
 .env.test
 tests/e2e/.data/

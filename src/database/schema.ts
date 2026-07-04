@@ -138,54 +138,14 @@ export function createTables(db: Database.Database): void {
       UNIQUE(loot_post_id, user_id)
     );
 
-    -- 17. epgp_effort_points (FK to raiders)
-    CREATE TABLE IF NOT EXISTS epgp_effort_points (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      raider_id INTEGER NOT NULL REFERENCES raiders(id),
-      points REAL NOT NULL,
-      timestamp TEXT DEFAULT (datetime('now'))
-    );
-
-    -- 18. epgp_gear_points (FK to raiders)
-    CREATE TABLE IF NOT EXISTS epgp_gear_points (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      raider_id INTEGER NOT NULL REFERENCES raiders(id),
-      points REAL NOT NULL,
-      timestamp TEXT DEFAULT (datetime('now'))
-    );
-
-    -- 19. epgp_upload_history
-    CREATE TABLE IF NOT EXISTS epgp_upload_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      timestamp TEXT DEFAULT (datetime('now')),
-      decay_percent REAL NOT NULL DEFAULT 0,
-      uploaded_content TEXT
-    );
-
-    -- 20. epgp_loot_history (FK to raiders)
-    CREATE TABLE IF NOT EXISTS epgp_loot_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      raider_id INTEGER NOT NULL REFERENCES raiders(id),
-      item_id TEXT,
-      item_string TEXT NOT NULL,
-      gear_points REAL NOT NULL,
-      looted_at TEXT NOT NULL
-    );
-
-    -- 21. epgp_config
-    CREATE TABLE IF NOT EXISTS epgp_config (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    -- 22. guild_info_content
+    -- 17. guild_info_content
     CREATE TABLE IF NOT EXISTS guild_info_content (
       key TEXT PRIMARY KEY,
       title TEXT,
       content TEXT NOT NULL
     );
 
-    -- 23. schedule_days
+    -- 18. schedule_days
     CREATE TABLE IF NOT EXISTS schedule_days (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       day TEXT NOT NULL,
@@ -193,19 +153,19 @@ export function createTables(db: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
-    -- 24. schedule_config
+    -- 19. schedule_config
     CREATE TABLE IF NOT EXISTS schedule_config (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
 
-    -- 25. guild_info_messages
+    -- 20. guild_info_messages
     CREATE TABLE IF NOT EXISTS guild_info_messages (
       key TEXT PRIMARY KEY,
       message_id TEXT NOT NULL
     );
 
-    -- 26. guild_info_links
+    -- 21. guild_info_links
     CREATE TABLE IF NOT EXISTS guild_info_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       label TEXT NOT NULL,
@@ -213,7 +173,7 @@ export function createTables(db: Database.Database): void {
       emoji_id TEXT
     );
 
-    -- 27. achievements_manual
+    -- 22. achievements_manual
     CREATE TABLE IF NOT EXISTS achievements_manual (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       raid TEXT NOT NULL,
@@ -223,7 +183,7 @@ export function createTables(db: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
-    -- 28. default_messages
+    -- 23. default_messages
     CREATE TABLE IF NOT EXISTS default_messages (
       key TEXT PRIMARY KEY,
       message TEXT NOT NULL

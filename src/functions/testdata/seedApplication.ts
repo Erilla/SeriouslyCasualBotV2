@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { seedApplicationQuestions } from './seedApplicationQuestions.js';
+import { seedApplicationQuestions } from '../../database/seedApplicationQuestions.js';
 
 const MOCK_ANSWERS = [
   'Warrior (Arms)',

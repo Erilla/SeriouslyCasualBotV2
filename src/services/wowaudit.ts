@@ -41,11 +41,12 @@ export interface WowAuditRaidDetail extends WowAuditRaid {
   signups: WowAuditSignup[];
 }
 
+// The /historical_data endpoint returns entries with name/realm at the top level
+// (not nested under a `character` object) and a free-form `data` blob.
 export interface WowAuditHistoricalEntry {
-  character: {
-    name: string;
-    realm: string;
-  };
+  id: number;
+  name: string;
+  realm: string;
   data: Record<string, unknown>;
 }
 
@@ -81,9 +82,11 @@ export async function getHistoricalData(): Promise<WowAuditHistoricalEntry[]> {
   const currentPeriod = await getCurrentPeriod();
   const previousPeriod = currentPeriod - 1;
 
-  return httpRequest<WowAuditHistoricalEntry[]>(
+  // The /historical_data endpoint wraps the list in an object: { period, characters: [...] }.
+  const data = await httpRequest<{ period: number; characters: WowAuditHistoricalEntry[] }>(
     'wowaudit',
     `${BASE_URL}/historical_data?period=${previousPeriod}`,
     { headers: headers() },
   );
+  return data.characters;
 }

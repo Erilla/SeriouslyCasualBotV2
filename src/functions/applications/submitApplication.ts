@@ -13,6 +13,8 @@ import { config } from '../../config.js';
 import { createForumPost } from './createForumPost.js';
 import { splitMessage } from './splitMessage.js';
 import { buildQAText } from './buildQAText.js';
+import { deriveCharacterNameFromAnswers } from './raiderIoName.js';
+import { linkCharacterIdentity } from '../raids/linkCharacterIdentity.js';
 import { getOverlords } from '../raids/overlords.js';
 import type { ApplicationRow } from '../../types/index.js';
 
@@ -60,7 +62,10 @@ export async function submitApplication(
     throw new Error('Guild not found');
   }
 
-  const characterName = application.character_name || user.displayName;
+  // Prefer the character name parsed from the applicant's Raider.IO URL; fall
+  // back to the name seeded at creation (their Discord display name).
+  const parsedCharacterName = deriveCharacterNameFromAnswers(answers);
+  const characterName = parsedCharacterName || application.character_name || user.displayName;
   const channelName = `app-${characterName.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 90)}`;
 
   // Build the Q&A text
@@ -94,12 +99,14 @@ export async function submitApplication(
     db.prepare(
       `UPDATE applications
        SET status = 'active',
+           character_name = ?,
            channel_id = ?,
            forum_post_id = ?,
            thread_id = ?,
            submitted_at = datetime('now')
        WHERE id = ?`,
     ).run(
+      characterName,
       channel.id,
       forumPost?.id ?? null,
       threadId ?? null,
@@ -109,6 +116,18 @@ export async function submitApplication(
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error('Applications', `Failed to update application #${applicationId} record: ${error.message}`, error);
     throw new Error(`Failed to update application record: ${error.message}`);
+  }
+
+  // Step 3b: Record the character -> Discord identity link so a future roster
+  // sync auto-links them once they're in the guild. Only when we have a real
+  // in-game name from Raider.IO (not the Discord-name fallback). Non-fatal.
+  if (parsedCharacterName) {
+    try {
+      linkCharacterIdentity(parsedCharacterName, user.id);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn('Applications', `Failed to link character identity for #${applicationId}: ${error.message}`);
+    }
   }
 
   // Step 4: Notify overlords in the forum thread (non-fatal if it fails)

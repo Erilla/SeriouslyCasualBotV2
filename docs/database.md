@@ -31,11 +31,6 @@ The database file defaults to `db.sqlite` in the working directory. Override wit
 | `promote_alerts` | Scheduled promotion reminders per trial |
 | `loot_posts` | Boss loot posts in loot channel |
 | `loot_responses` | Player loot responses per post |
-| `epgp_effort_points` | EPGP effort point transactions per raider |
-| `epgp_gear_points` | EPGP gear point transactions per raider |
-| `epgp_loot_history` | EPGP loot award history per raider |
-| `epgp_upload_history` | EPGP CSV upload history |
-| `epgp_config` | EPGP configuration key-value store |
 | `guild_info_content` | Editable sections for the guild info embed |
 | `guild_info_messages` | Pinned message IDs for guild info embeds |
 | `guild_info_links` | Links displayed in the guild info embed |

@@ -45,10 +45,10 @@ async function edit(interaction: ButtonInteraction, params: string[]): Promise<v
 
   try {
     await interaction.user.send('Which answer would you like to change? (enter the number)');
-    await interaction.reply({
-      content: 'Check your DMs to edit your answer.',
-      flags: MessageFlags.Ephemeral,
-    });
+    // The Edit Answer button only ever appears inside the applicant's DMs
+    // (showSummary always sends via user.send), so a "check your DMs" reply
+    // would be redundant. Just acknowledge the click silently.
+    await interaction.deferUpdate();
   } catch {
     activeSessions.delete(interaction.user.id);
     await interaction.reply({

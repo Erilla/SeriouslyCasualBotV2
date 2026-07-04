@@ -3,6 +3,7 @@ import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { createTables } from './schema.js';
 import { seedDatabase } from './seed.js';
+import { seedApplicationQuestions } from './seedApplicationQuestions.js';
 
 let db: Database.Database | null = null;
 
@@ -27,6 +28,10 @@ export function initDatabase(path?: string): Database.Database {
   createTables(database);
   runMigrations(database);
   seedDatabase(database);
+  // Ensure the default application questions exist. seedDatabase early-returns
+  // once guild_info_content is populated, so this is called separately and is
+  // idempotent on its own (no-ops when application_questions is non-empty).
+  seedApplicationQuestions(database);
   return database;
 }
 
@@ -90,6 +95,25 @@ export function runMigrations(database: Database.Database): void {
     database.transaction(() => {
       database.exec(`DROP TABLE IF EXISTS signup_messages;`);
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(3);
+    })();
+  }
+
+  if (currentVersion < 4) {
+    // Drop the EPGP feature entirely — it's no longer used. Removes the five
+    // EPGP tables and the now-orphaned channel config key (the epgp-rankings
+    // channel is no longer bootstrapped). DROP IF EXISTS keeps this safe on
+    // fresh DBs where createTables (which no longer defines these tables) ran
+    // before this migration. This supersedes the v2 key migration above.
+    database.transaction(() => {
+      database.exec(`
+        DROP TABLE IF EXISTS epgp_loot_history;
+        DROP TABLE IF EXISTS epgp_effort_points;
+        DROP TABLE IF EXISTS epgp_gear_points;
+        DROP TABLE IF EXISTS epgp_upload_history;
+        DROP TABLE IF EXISTS epgp_config;
+        DELETE FROM config WHERE key IN ('epgp_channel_id', 'epgp_rankings_channel_id');
+      `);
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(4);
     })();
   }
 }

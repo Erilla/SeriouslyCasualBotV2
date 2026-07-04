@@ -48,17 +48,19 @@ All commands are Discord slash commands registered to a single guild.
 | `/loot create_posts` | Auto-discover current raid tier and create loot priority posts | Yes | No |
 | `/loot delete_post` | Delete a single loot priority post by boss ID | Yes | No |
 | `/loot delete_posts` | Delete multiple loot priority posts by comma-separated boss IDs | Yes | No |
-| `/epgp upload` | Upload EPGP addon data (JSON file attachment) | Yes | No |
-| `/epgp get_by_token` | View EPGP standings filtered by tier token (Zenith/Dreadful/Mystic/Venerated) | Yes | No |
-| `/epgp get_by_armour` | View EPGP standings filtered by armour type (Cloth/Leather/Mail/Plate) | Yes | No |
-| `/epgp create_post` | Create the 3-message EPGP display in the configured channel | Yes | No |
-| `/epgp update_post` | Update the existing EPGP display messages | Yes | No |
+| `/loot delete_all_posts` | Delete ALL loot posts (Discord messages + database rows) | Yes | No |
+| `/migrate` | Import data from a V1 database | Yes | No |
 
 ## Notes
 
 **Admin commands** require the `Administrator` Discord permission. They are hidden from non-admin members via `setDefaultMemberPermissions(PermissionFlagsBits.Administrator)` and enforce a runtime `requireOfficer()` check.
 
 **Dev-only commands** are skipped at load time when `NODE_ENV=production`. No dev-only commands exist in the current foundation build.
+
+## Command Details
+
+### `/migrate`
+Admin only. One-time import from a V1 `db.sqlite` (uploaded as the `db_file` attachment): raider identity map, overlords, ignored characters, and the current raid tier's loot posts + votes. Idempotent — safe to re-run.
 
 ## Adding a Command
 

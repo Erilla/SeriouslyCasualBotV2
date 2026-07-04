@@ -24,5 +24,8 @@ export async function addLootPost(channel: TextChannel, boss: Boss): Promise<voi
     'INSERT INTO loot_posts (boss_id, boss_name, boss_url, channel_id, message_id) VALUES (?, ?, ?, ?, ?)',
   ).run(boss.id, boss.name, boss.url ?? null, channel.id, message.id);
 
-  logger.info('Loot', `Created loot post for boss "${boss.name}" (id=${boss.id}) in channel ${channel.id}`);
+  // debug, not info: addLootPost is only ever called in bulk loops (tier setup,
+  // migrate, test seed), each of which logs its own summary. A per-post info log
+  // mirrors to Discord and floods the log channel with one message per boss.
+  logger.debug('Loot', `Created loot post for boss "${boss.name}" (id=${boss.id}) in channel ${channel.id}`);
 }

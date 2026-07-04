@@ -48,9 +48,18 @@ function extractVaultOption(
   const categoryData = vaultOptions[category] as Record<string, unknown> | undefined;
   if (!categoryData) return '-';
 
-  const optionData = categoryData[option] as Record<string, unknown> | undefined;
-  if (!optionData) return '-';
+  const optionValue = categoryData[option];
+  // An unfilled slot comes back as null.
+  if (optionValue == null) return '-';
 
+  // The WoW Audit /historical_data endpoint returns each vault option as the
+  // reward item level directly (a number), so surface it as-is.
+  if (typeof optionValue === 'number' || typeof optionValue === 'string') {
+    return String(optionValue);
+  }
+
+  // Defensive fallback in case the payload is ever object-shaped.
+  const optionData = optionValue as Record<string, unknown>;
   const level = optionData.level ?? optionData.ilvl ?? optionData.item_level ?? '-';
   return String(level);
 }
@@ -64,7 +73,7 @@ export async function generateGreatVaultReport(
   // Build lookup from historical data
   const histMap = new Map<string, WowAuditHistoricalEntry>();
   for (const entry of historicalData) {
-    histMap.set(entry.character.name.toLowerCase(), entry);
+    histMap.set(entry.name.toLowerCase(), entry);
   }
 
   // Find max name length for alignment

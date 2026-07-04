@@ -34,27 +34,54 @@ const REQUEST_TIMEOUT_MS = 5_000;
 export interface GenerateQuipOptions {
   raidDay: string;
   twoDayReminder: boolean;
+  /** Names of the guild's Overlords to optionally reference. Empty = no name reference. */
+  overlordNames?: string[];
 }
 
+interface QuipProvider {
+  name: string;
+  getKey: () => string;
+  call: (apiKey: string, prompt: string) => Promise<string | null>;
+}
+
+const PROVIDERS: QuipProvider[] = [
+  { name: 'Gemini', getKey: () => config.geminiApiKey, call: callGemini },
+  { name: 'OpenAI', getKey: () => config.openaiApiKey, call: callOpenAI },
+  { name: 'Claude', getKey: () => config.anthropicApiKey, call: callClaude },
+];
+
 /**
- * Generate a one-line signup quip. Uses Google's free-tier Gemini 2.0 Flash
- * when GEMINI_API_KEY is set, and falls back to a randomly-chosen quip from
- * the V1 corpus when the key is missing or the call fails. Never throws —
- * the caller is an alert handler and should always get something postable.
+ * Generate a one-line signup quip. Tries each provider in `PROVIDERS` in
+ * order (Gemini, then OpenAI, then Claude), skipping any whose API key isn't
+ * set, and falls back to a randomly-chosen quip from the V1 corpus when
+ * every provider is skipped or fails. Never throws — the caller is an alert
+ * handler and should always get something postable.
  */
 export async function generateSignupQuip(options: GenerateQuipOptions): Promise<string> {
-  if (!config.geminiApiKey) {
-    return randomFallback();
-  }
+  const prompt = buildPrompt(options);
 
-  try {
-    const quip = await callGemini(config.geminiApiKey, options);
-    if (quip) return quip;
-  } catch (err) {
-    logger.warn(
-      'QuipGen',
-      `Gemini call failed, falling back to static quip: ${err instanceof Error ? err.message : String(err)}`,
-    );
+  for (const provider of PROVIDERS) {
+    const apiKey = provider.getKey();
+    if (!apiKey) continue;
+
+    try {
+      const raw = await provider.call(apiKey, prompt);
+      if (!raw) continue;
+
+      const cleaned = normalizeQuip(raw);
+      if (cleaned.length === 0 || cleaned.length > MAX_QUIP_LENGTH) {
+        logger.warn('QuipGen', `${provider.name} quip rejected (length ${cleaned.length}): ${cleaned.slice(0, 80)}`);
+        continue;
+      }
+
+      logger.debug('QuipGen', `Quip generated via ${provider.name}`);
+      return cleaned;
+    } catch (err) {
+      logger.warn(
+        'QuipGen',
+        `${provider.name} call failed, trying next provider: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   return randomFallback();
@@ -67,18 +94,23 @@ function randomFallback(): string {
   return V1_SAMPLE_QUIPS[index];
 }
 
-function buildPrompt({ raidDay, twoDayReminder }: GenerateQuipOptions): string {
+function buildPrompt({ raidDay, twoDayReminder, overlordNames = [] }: GenerateQuipOptions): string {
   const examples = V1_SAMPLE_QUIPS.map((q, i) => `${i + 1}. ${q}`).join('\n');
   const reminderNote = twoDayReminder
     ? 'This is the 48-hour early reminder, so a nudge-not-yell tone.'
     : 'This is the day-of reminder, so urgency is fair game.';
+
+  const toneLine =
+    overlordNames.length > 0
+      ? `Tone: playful, sarcastic, WoW-themed. Occasionally reference the guild's Overlords (${overlordNames.join(', ')}). OK to be cheeky; keep it safe for a shared Discord channel.`
+      : 'Tone: playful, sarcastic, WoW-themed. OK to be cheeky; keep it safe for a shared Discord channel.';
 
   return [
     'You write one-line nudges that a World of Warcraft raiding guild uses to get their raiders to sign up for the next raid.',
     '',
     `Context: the next raid is on ${raidDay}. ${reminderNote}`,
     '',
-    'Tone: playful, sarcastic, WoW-themed. Occasionally reference guild leaders (Warzania, Bing, Splo). OK to be cheeky; keep it safe for a shared Discord channel.',
+    toneLine,
     '',
     'Examples of the tone:',
     examples,
@@ -95,63 +127,135 @@ interface GeminiResponse {
   error?: { message?: string };
 }
 
-async function callGemini(
-  apiKey: string,
-  options: GenerateQuipOptions,
-): Promise<string | null> {
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    // Send the key in the x-goog-api-key header rather than as a query
-    // param. Query params are routinely captured in server access logs and
-    // client-side network panels, and a leaked key on the free tier still
-    // maps to an identifiable Google account.
-    const response = await fetch(GEMINI_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: buildPrompt(options) }] }],
-        generationConfig: {
-          temperature: 0.9,
-          topP: 0.95,
-          maxOutputTokens: 120,
-        },
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`Gemini HTTP ${response.status}: ${body.slice(0, 200)}`);
-    }
-
-    const json = (await response.json()) as GeminiResponse;
-    if (json.error?.message) {
-      throw new Error(`Gemini API error: ${json.error.message}`);
-    }
-
-    const candidate = json.candidates?.[0];
-    // parts can be absent when the model truncates or returns a finishReason
-    // of SAFETY/MAX_TOKENS. Default to [] so we don't try to .join undefined.
-    const parts = candidate?.content?.parts ?? [];
-    const text = parts.map((p) => p.text ?? '').join('').trim();
-    if (!text) {
-      logger.warn('QuipGen', `Gemini returned no text (finishReason: ${candidate?.finishReason ?? 'unknown'})`);
-      return null;
-    }
-
-    const cleaned = normalizeQuip(text);
-    if (cleaned.length === 0 || cleaned.length > MAX_QUIP_LENGTH) {
-      logger.warn('QuipGen', `Gemini quip rejected (length ${cleaned.length}): ${cleaned.slice(0, 80)}`);
-      return null;
-    }
-    return cleaned;
+    return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function callGemini(apiKey: string, prompt: string): Promise<string | null> {
+  // Send the key in the x-goog-api-key header rather than as a query param.
+  const response = await fetchWithTimeout(GEMINI_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.9, topP: 0.95, maxOutputTokens: 120 },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Gemini HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+
+  const json = (await response.json()) as GeminiResponse;
+  if (json.error?.message) {
+    throw new Error(`Gemini API error: ${json.error.message}`);
+  }
+
+  const candidate = json.candidates?.[0];
+  const parts = candidate?.content?.parts ?? [];
+  const text = parts.map((p) => p.text ?? '').join('').trim();
+  if (!text) {
+    logger.warn('QuipGen', `Gemini returned no text (finishReason: ${candidate?.finishReason ?? 'unknown'})`);
+    return null;
+  }
+  return text;
+}
+
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_MODEL = 'gpt-4o-mini';
+
+interface OpenAIResponse {
+  choices?: Array<{ message?: { content?: string } }>;
+  error?: { message?: string };
+}
+
+async function callOpenAI(apiKey: string, prompt: string): Promise<string | null> {
+  const response = await fetchWithTimeout(OPENAI_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 120,
+      temperature: 0.9,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`OpenAI HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+
+  const json = (await response.json()) as OpenAIResponse;
+  if (json.error?.message) {
+    throw new Error(`OpenAI API error: ${json.error.message}`);
+  }
+
+  const text = json.choices?.[0]?.message?.content?.trim() ?? '';
+  if (!text) {
+    logger.warn('QuipGen', 'OpenAI returned no text');
+    return null;
+  }
+  return text;
+}
+
+const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_MODEL = 'claude-haiku-4-5';
+const ANTHROPIC_VERSION = '2023-06-01';
+
+interface AnthropicResponse {
+  content?: Array<{ type?: string; text?: string }>;
+  error?: { message?: string };
+}
+
+async function callClaude(apiKey: string, prompt: string): Promise<string | null> {
+  const response = await fetchWithTimeout(ANTHROPIC_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 120,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Anthropic HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+
+  const json = (await response.json()) as AnthropicResponse;
+  if (json.error?.message) {
+    throw new Error(`Anthropic API error: ${json.error.message}`);
+  }
+
+  const text = (json.content ?? [])
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text ?? '')
+    .join('')
+    .trim();
+  if (!text) {
+    logger.warn('QuipGen', 'Anthropic returned no text');
+    return null;
+  }
+  return text;
 }
 
 // Gemini sometimes wraps its answer in quotes, returns a numbered list

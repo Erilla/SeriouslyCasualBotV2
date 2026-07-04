@@ -14,12 +14,18 @@ interface CronTask {
 }
 
 export class Scheduler {
-  private intervals: NodeJS.Timeout[] = [];
+  private intervalTimers: Map<string, NodeJS.Timeout> = new Map();
   private cronJobs: cron.ScheduledTask[] = [];
   private running: Map<string, boolean> = new Map();
+  private stopped = false;
 
   registerInterval(task: IntervalTask): void {
-    const interval = setInterval(async () => {
+    const runTick = async () => {
+      // Chain the next aligned tick up front so the cadence stays pinned to the
+      // wall clock regardless of how long this handler runs (a long run just
+      // skips the boundaries it overruns, see the running-guard below).
+      this.scheduleAlignedTick(task, runTick);
+
       if (this.running.get(task.name)) {
         logger.debug('scheduler', `Skipping ${task.name} - still running`);
         return;
@@ -38,9 +44,22 @@ export class Scheduler {
       } finally {
         this.running.set(task.name, false);
       }
-    }, task.intervalMs);
+    };
 
-    this.intervals.push(interval);
+    this.scheduleAlignedTick(task, runTick);
+  }
+
+  /**
+   * Schedule the next run on a wall-clock boundary instead of relative to bot
+   * start: a 10-minute task fires at :00, :10, :20 … A self-correcting setTimeout
+   * (rather than setInterval) keeps it aligned even after timer drift or a slow
+   * tick. Delay is in (0, intervalMs]; landing exactly on a boundary waits a full
+   * interval rather than firing twice.
+   */
+  private scheduleAlignedTick(task: IntervalTask, runTick: () => void): void {
+    if (this.stopped) return;
+    const delay = task.intervalMs - (Date.now() % task.intervalMs);
+    this.intervalTimers.set(task.name, setTimeout(runTick, delay));
   }
 
   registerCron(task: CronTask): void {
@@ -69,17 +88,19 @@ export class Scheduler {
   }
 
   start(): void {
-    logger.info('scheduler', `Started with ${this.intervals.length} intervals and ${this.cronJobs.length} cron jobs`);
+    this.stopped = false;
+    logger.info('scheduler', `Started with ${this.intervalTimers.size} intervals and ${this.cronJobs.length} cron jobs`);
   }
 
   shutdown(): void {
-    for (const interval of this.intervals) {
-      clearInterval(interval);
+    this.stopped = true;
+    for (const timer of this.intervalTimers.values()) {
+      clearTimeout(timer);
     }
     for (const job of this.cronJobs) {
       job.stop();
     }
-    this.intervals = [];
+    this.intervalTimers.clear();
     this.cronJobs = [];
     this.running.clear();
     logger.info('scheduler', 'Shut down all tasks');

@@ -35,12 +35,8 @@ describe('/testdata', () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
-    // Wipe EPGP data first (it references raiders via FK), then wipe raiders.
+    // Wipe raiders so the seed starts from a clean slate.
     const db = getDatabase();
-    db.prepare('DELETE FROM epgp_loot_history').run();
-    db.prepare('DELETE FROM epgp_effort_points').run();
-    db.prepare('DELETE FROM epgp_gear_points').run();
-    db.prepare('DELETE FROM epgp_upload_history').run();
     db.prepare('DELETE FROM raiders').run();
 
     const iact = fakeChatInput({
@@ -76,12 +72,8 @@ describe('/testdata', () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
-    // Delete EPGP data first (FK child of raiders), then delete raiders.
+    // Wipe raiders so the seed starts from a clean slate.
     const db = getDatabase();
-    db.prepare('DELETE FROM epgp_loot_history').run();
-    db.prepare('DELETE FROM epgp_effort_points').run();
-    db.prepare('DELETE FROM epgp_gear_points').run();
-    db.prepare('DELETE FROM epgp_upload_history').run();
     db.prepare('DELETE FROM raiders').run();
 
     const iact = fakeChatInput({
@@ -298,47 +290,6 @@ describe('/testdata', () => {
   });
 
   // =========================================================================
-  // seed_epgp
-  // =========================================================================
-
-  it('seed_epgp — defers ephemeral, inserts effort/gear/loot/upload records, reply lists counts', async () => {
-    const ctx = getE2EContext();
-    const channel = ctx.guild.systemChannel as TextBasedChannel;
-
-    const iact = fakeChatInput({
-      client: ctx.client,
-      guild: ctx.guild,
-      channel,
-      member: ctx.officer,
-      user: ctx.officer.user,
-      commandName: 'testdata',
-      subcommand: 'seed_epgp',
-    });
-
-    await testdataCmd.execute(iact as unknown as ChatInputCommandInteraction);
-
-    expect(iact.deferred).toBe(true);
-    expect(iact.__deferred?.ephemeral).toBe(true);
-    expect(iact.__editedReply).not.toBeNull();
-
-    const content = replyContent(iact.__editedReply!);
-    // "Seeded EPGP data for **N** raiders:\n• X effort point entries..."
-    expect(content).toMatch(/Seeded EPGP data/i);
-    expect(content).toContain('effort point');
-    expect(content).toContain('gear point');
-    expect(content).toContain('loot history');
-    expect(content).toContain('upload history');
-
-    // DB: at least 1 EP entry.
-    const ep = queryOne<{ c: number }>('SELECT COUNT(*) as c FROM epgp_effort_points');
-    expect(ep?.c).toBeGreaterThan(0);
-
-    // DB: upload history record present.
-    const upload = queryOne<{ c: number }>('SELECT COUNT(*) as c FROM epgp_upload_history');
-    expect(upload?.c).toBeGreaterThan(0);
-  });
-
-  // =========================================================================
   // seed_loot (DB only)
   // =========================================================================
 
@@ -424,10 +375,6 @@ describe('/testdata', () => {
     db.prepare('DELETE FROM application_votes').run();
     db.prepare('DELETE FROM applications').run();
     db.prepare('DELETE FROM loot_posts').run();
-    db.prepare('DELETE FROM epgp_loot_history').run();
-    db.prepare('DELETE FROM epgp_effort_points').run();
-    db.prepare('DELETE FROM epgp_gear_points').run();
-    db.prepare('DELETE FROM epgp_upload_history').run();
     db.prepare('DELETE FROM raiders').run();
 
     const iact = fakeChatInput({
@@ -478,10 +425,6 @@ describe('/testdata', () => {
     db.prepare('DELETE FROM application_votes').run();
     db.prepare('DELETE FROM applications').run();
     db.prepare('DELETE FROM loot_posts').run();
-    db.prepare('DELETE FROM epgp_loot_history').run();
-    db.prepare('DELETE FROM epgp_effort_points').run();
-    db.prepare('DELETE FROM epgp_gear_points').run();
-    db.prepare('DELETE FROM epgp_upload_history').run();
     db.prepare('DELETE FROM raiders').run();
 
     const iact = fakeChatInput({

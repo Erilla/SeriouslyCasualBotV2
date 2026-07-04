@@ -27,6 +27,14 @@ export const config = {
   get geminiApiKey() {
     return process.env.GEMINI_API_KEY ?? '';
   },
+  // Optional: second/third quip-generator providers, tried after Gemini.
+  // Read lazily so tests that toggle the env var between cases see the change.
+  get openaiApiKey() {
+    return process.env.OPENAI_API_KEY ?? '';
+  },
+  get anthropicApiKey() {
+    return process.env.ANTHROPIC_API_KEY ?? '';
+  },
   logLevel: optional('LOG_LEVEL', 'INFO') as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
   nodeEnv: optional('NODE_ENV', 'development'),
   get isDevelopment() {

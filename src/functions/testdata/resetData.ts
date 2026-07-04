@@ -1,7 +1,7 @@
 import type { Client } from 'discord.js';
 import type Database from 'better-sqlite3';
 import { seedDatabase } from '../../database/seed.js';
-import { seedApplicationQuestions } from './seedApplicationQuestions.js';
+import { seedApplicationQuestions } from '../../database/seedApplicationQuestions.js';
 import { resetDiscordArtifacts, type ResetArtifactsResult } from './resetDiscordArtifacts.js';
 
 export class ResetDiscordError extends Error {
@@ -60,12 +60,6 @@ export async function resetData(
 
     db.prepare('DELETE FROM loot_responses').run();
     db.prepare('DELETE FROM loot_posts').run();
-
-    db.prepare('DELETE FROM epgp_loot_history').run();
-    db.prepare('DELETE FROM epgp_effort_points').run();
-    db.prepare('DELETE FROM epgp_gear_points').run();
-    db.prepare('DELETE FROM epgp_upload_history').run();
-    db.prepare('DELETE FROM epgp_config').run();
 
     db.prepare('DELETE FROM raiders').run();
     db.prepare('DELETE FROM raider_identity_map').run();
