@@ -2,7 +2,7 @@ import type { Guild, GuildMember } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { normalizeName } from './normalizeName.js';
-import type { RaiderRow } from '../../types/index.js';
+import type { RaiderRow, ConfigRow } from '../../types/index.js';
 
 export interface AutoMatch {
   raider: RaiderRow;
@@ -23,12 +23,49 @@ export async function autoMatchRaiders(
     .all() as { discord_user_id: string }[];
   const linkedUserIds = new Set(linkedRows.map((r) => r.discord_user_id));
 
+  const totalUnlinkedCount = (
+    db
+      .prepare('SELECT COUNT(*) AS n FROM raiders WHERE discord_user_id IS NULL')
+      .get() as { n: number }
+  ).n;
+
+  const raiderRoleId =
+    (
+      db
+        .prepare('SELECT value FROM config WHERE key = ?')
+        .get('raider_role_id') as ConfigRow | undefined
+    )?.value ?? null;
+
   let members;
   try {
     members = await guild.members.fetch();
   } catch (error) {
     logger.error('AutoMatch', 'Failed to fetch guild members', error as Error);
     return [];
+  }
+
+  // Elimination short-circuit: when there is exactly one unlinked raider and
+  // exactly one unlinked Raider-role member, suggest that pairing directly and
+  // skip name matching. Requires raider_role_id to be configured.
+  if (totalUnlinkedCount === 1 && raiderRoleId) {
+    const eligible: GuildMember[] = [];
+    for (const [, member] of members) {
+      if (member.user.bot) continue;
+      if (linkedUserIds.has(member.id)) continue;
+      if (member.roles.cache.has(raiderRoleId)) {
+        eligible.push(member);
+      }
+    }
+
+    if (eligible.length === 1) {
+      const raider = unlinkedRaiders[0];
+      logger.info(
+        'AutoMatch',
+        `elimination match: ${raider.character_name} -> @${eligible[0].id} ` +
+          `(sole unlinked raider + sole unlinked Raider-role member)`,
+      );
+      return [{ raider, suggestedUser: eligible[0] }];
+    }
   }
 
   const matches: AutoMatch[] = [];

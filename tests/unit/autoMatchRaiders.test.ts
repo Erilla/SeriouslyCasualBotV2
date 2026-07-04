@@ -197,4 +197,76 @@ describe('autoMatchRaiders', () => {
     expect(result).toHaveLength(1);
     expect(result[0].suggestedUser.id).toBe('555');
   });
+
+  it('elimination: sole unlinked raider + sole unlinked Raider-role member is suggested', async () => {
+    const roleId = 'raider-role';
+    const member = createMockMember('SomeoneElse', 'g', 'u', '333', { roleIds: [roleId] });
+    const guild = createMockGuild([member]);
+    setRaiderRole(roleId);
+    insertRaider('Shadowleif', null); // the sole unlinked raider in the DB
+    const raider = createRaider('Shadowleif'); // name does NOT match 'SomeoneElse'
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].suggestedUser.id).toBe('333');
+    expect(logger.info).toHaveBeenCalledWith(
+      'AutoMatch',
+      expect.stringContaining('elimination match'),
+    );
+  });
+
+  it('elimination suppressed when more than one unlinked raider exists', async () => {
+    const roleId = 'raider-role';
+    const member = createMockMember('SomeoneElse', 'g', 'u', '333', { roleIds: [roleId] });
+    const guild = createMockGuild([member]);
+    setRaiderRole(roleId);
+    insertRaider('Shadowleif', null);
+    insertRaider('Otherguy', null); // now 2 unlinked raiders
+    const raider = createRaider('Shadowleif');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('elimination suppressed when more than one unlinked Raider-role member exists', async () => {
+    const roleId = 'raider-role';
+    const m1 = createMockMember('A', 'g', 'u', '333', { roleIds: [roleId] });
+    const m2 = createMockMember('B', 'g', 'u', '444', { roleIds: [roleId] });
+    const guild = createMockGuild([m1, m2]);
+    setRaiderRole(roleId);
+    insertRaider('Shadowleif', null);
+    const raider = createRaider('Shadowleif');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('elimination suppressed when raider_role_id is not configured', async () => {
+    const member = createMockMember('SomeoneElse', 'g', 'u', '333', { roleIds: ['raider-role'] });
+    const guild = createMockGuild([member]);
+    insertRaider('Shadowleif', null); // 1 unlinked, but no role configured
+    const raider = createRaider('Shadowleif');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('elimination does not count a bot toward the eligible member', async () => {
+    const roleId = 'raider-role';
+    const human = createMockMember('SomeoneElse', 'g', 'u', '333', { roleIds: [roleId] });
+    const bot = createMockMember('BotUser', 'g', 'u', '888', { roleIds: [roleId], bot: true });
+    const guild = createMockGuild([human, bot]);
+    setRaiderRole(roleId);
+    insertRaider('Shadowleif', null);
+    const raider = createRaider('Shadowleif');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].suggestedUser.id).toBe('333');
+  });
 });
