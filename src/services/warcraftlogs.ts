@@ -95,8 +95,12 @@ const ATTENDANCE_QUERY = `
 /**
  * From WCL attendance reports, return the codes of reports where a player
  * matching `characterName` (case- and accent-insensitive, via the shared
- * normalizeName) was present (`presence === 1`). Order is reversed relative to
- * input to preserve V1 ordering (see note in getTrialLogs).
+ * normalizeName) was present (`presence === 1`).
+ *
+ * The result is reversed relative to input to preserve V1 ordering: consumers
+ * number the output "1. Report ...", WCL's natural attendance order isn't
+ * contractually documented, and .reverse() has been in place since V1 —
+ * flipping it would silently change what reviewers see.
  */
 export function extractMatchingCodes(
   reports: AttendanceReport[],
@@ -142,10 +146,8 @@ export async function getTrialLogs(characterName: string): Promise<string[]> {
 
     const reports = result.data.guildData.guild.attendance.data;
 
-    // Match case- and accent-insensitively on both sides; extractMatchingCodes
-    // preserves V1 ordering by reversing (consumers number output "1. Report ...";
-    // WCL's natural attendance order isn't contractually documented, and .reverse()
-    // has been in place since V1 — flipping it would silently change what reviewers see).
+    // Case- and accent-insensitive match on both sides; ordering rationale
+    // lives on extractMatchingCodes.
     return extractMatchingCodes(reports, characterName);
   } catch (error) {
     if (error instanceof HttpError || error instanceof CircuitOpenError) {
