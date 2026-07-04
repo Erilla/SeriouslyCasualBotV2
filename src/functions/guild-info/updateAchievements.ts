@@ -185,7 +185,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
   const sections: AchievementSection[] = [];
   let expansionId = 6;
 
-  logger.info('Achievements', 'Fetching API achievements starting from expansion 6');
+  logger.debug('Achievements', 'Fetching API achievements starting from expansion 6');
 
   while (true) {
     let staticData;
@@ -200,7 +200,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
     if (raids.length === 0) break;
 
     const expName = getExpansionName(expansionId);
-    logger.info('Achievements', `Processing ${expName}: ${raids.length} raids found`);
+    logger.debug('Achievements', `Processing ${expName}: ${raids.length} raids found`);
 
     // Sort raids by end date descending (most recent first, ongoing at top)
     const sortedRaids = [...raids].sort((a, b) => {
@@ -255,7 +255,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
         const rank = typeof best.rank === 'number' ? best.rank : 0;
         const result = rank > 0 ? `WR ${rank}` : '';
 
-        logger.info('Achievements', `  ${raid.name}: ${progress} ${isCE ? 'CE' : ''} ${result}`);
+        logger.debug('Achievements', `  ${raid.name}: ${progress} ${isCE ? 'CE' : ''} ${result}`);
 
         sectionRows.push({
           raid: raid.name,
