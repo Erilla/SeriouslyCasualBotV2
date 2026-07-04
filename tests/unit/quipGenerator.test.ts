@@ -20,6 +20,8 @@ afterEach(() => {
 describe('generateSignupQuip', () => {
   it('falls back to a static quip when GEMINI_API_KEY is not set', async () => {
     delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
 
     const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
     expect(typeof quip).toBe('string');
