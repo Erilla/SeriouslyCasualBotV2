@@ -11,10 +11,16 @@ export async function deleteAllLootPosts(client: Client): Promise<number> {
   const db = getDatabase();
   const rows = db.prepare('SELECT boss_id FROM loot_posts ORDER BY boss_id').all() as { boss_id: number }[];
 
+  let deleted = 0;
   for (const { boss_id } of rows) {
-    await deleteLootPost(client, boss_id);
+    try {
+      await deleteLootPost(client, boss_id);
+      deleted++;
+    } catch (error) {
+      logger.warn('Loot', `Failed to delete loot post for boss ${boss_id}: ${error}`);
+    }
   }
 
-  logger.info('Loot', `Deleted all loot posts (${rows.length})`);
-  return rows.length;
+  logger.info('Loot', `Deleted ${deleted}/${rows.length} loot posts`);
+  return deleted;
 }

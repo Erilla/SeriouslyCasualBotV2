@@ -98,5 +98,19 @@ describe('recreateLootPosts', () => {
     expect(result).toEqual({ created: 1, merged: 0, failed: 1 });
     // the boss that failed created no loot_posts row
     expect(getDatabase().prepare('SELECT COUNT(*) c FROM loot_posts WHERE boss_id = ?').get(post.bossId)).toEqual({ c: 0 });
+    // the boss that succeeded DID create a row
+    expect(getDatabase().prepare('SELECT COUNT(*) c FROM loot_posts WHERE boss_id = ?').get(postB.bossId)).toEqual({ c: 1 });
+  });
+
+  it('returns early when the loot channel cannot be resolved', async () => {
+    const { getOrCreateChannel } = await import('../../../src/functions/channels.js');
+    vi.mocked(getOrCreateChannel).mockRejectedValueOnce(new Error('no channel'));
+
+    const client = { guilds: { fetch: vi.fn(async () => ({ id: 'guild-1' })) } } as never;
+    const result = await recreateLootPosts(client, [post]);
+
+    expect(result).toEqual({ created: 0, merged: 0, failed: 1 });
+    expect(vi.mocked(addLootPost)).not.toHaveBeenCalled();
+    expect(getDatabase().prepare('SELECT COUNT(*) c FROM loot_responses').get()).toEqual({ c: 0 });
   });
 });
