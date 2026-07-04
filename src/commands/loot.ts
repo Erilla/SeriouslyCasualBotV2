@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { requireOfficer } from '../utils.js';
 import { checkRaidExpansions } from '../functions/loot/checkRaidExpansions.js';
+import { deleteAllLootPosts } from '../functions/loot/deleteAllLootPosts.js';
 import { deleteLootPost } from '../functions/loot/deleteLootPost.js';
 
 export default {
@@ -34,6 +35,11 @@ export default {
             .setDescription('Comma-separated boss IDs to delete')
             .setRequired(true),
         ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('delete_all_posts')
+        .setDescription('Delete ALL loot posts (Discord messages + database rows)'),
     ),
   async execute(interaction: ChatInputCommandInteraction) {
     if (!(await requireOfficer(interaction))) return;
@@ -91,6 +97,19 @@ export default {
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           await interaction.editReply({ content: `Failed to delete some posts: ${err.message}` });
+        }
+        break;
+      }
+
+      case 'delete_all_posts': {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        try {
+          const count = await deleteAllLootPosts(interaction.client);
+          await interaction.editReply({ content: `Deleted ${count} loot post${count === 1 ? '' : 's'}.` });
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          await interaction.editReply({ content: `Failed to delete loot posts: ${err.message}` });
         }
         break;
       }
