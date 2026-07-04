@@ -43,6 +43,19 @@ describe('ensureTrialForumTags', () => {
     expect(setAvailableTags).not.toHaveBeenCalled();
     expect(result).toBe(forum);
   });
+
+  it('returns the original forum without throwing when setAvailableTags fails', async () => {
+    const forum = {
+      availableTags: [{ id: 'x', name: 'Existing' }],
+      setAvailableTags: vi.fn(async () => { throw new Error('rate limited'); }),
+      fetch: vi.fn(),
+    } as unknown as ForumChannel;
+
+    const result = await ensureTrialForumTags(forum);
+
+    expect(result).toBe(forum);
+    expect(forum.fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe('applyTrialTag', () => {

@@ -17,7 +17,7 @@ export async function ensureTrialForumTags(forum: ForumChannel): Promise<ForumCh
     await forum.setAvailableTags([...existing, ...missing.map((name) => ({ name }))]);
     return (await forum.fetch()) as ForumChannel;
   } catch (error) {
-    logger.warn('Trials', `Failed to set trial forum tags: ${error}`);
+    logger.error('Trials', 'Failed to seed trial forum tags', error as Error);
     return forum;
   }
 }
@@ -27,7 +27,10 @@ export async function ensureTrialForumTags(forum: ForumChannel): Promise<ForumCh
  * replaces any existing applied tags. No-ops (with a warning) if the tag or
  * the parent forum can't be resolved, so it never breaks the caller's flow.
  */
-export async function applyTrialTag(thread: AnyThreadChannel, tagName: string): Promise<void> {
+export async function applyTrialTag(
+  thread: AnyThreadChannel,
+  tagName: (typeof TRIAL_TAG_NAMES)[number],
+): Promise<void> {
   const parent = thread.parent;
   if (!parent || !('availableTags' in parent)) return;
 
