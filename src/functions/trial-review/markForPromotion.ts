@@ -1,6 +1,7 @@
 import type { Client, AnyThreadChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { config } from '../../config.js';
 import { schedulePromoteAlert } from './scheduleTrialAlerts.js';
 import { closeThread } from '../threads.js';
 import { applyTrialTag } from './trialForumTags.js';
@@ -47,7 +48,7 @@ export async function markForPromotion(
 
   // Send message to thread with green indicator
   try {
-    const guild = client.guilds.cache.first();
+    const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
 
     const thread = (await guild.channels.fetch(trial.thread_id)) as AnyThreadChannel | null;

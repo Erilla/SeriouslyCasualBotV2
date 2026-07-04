@@ -1,6 +1,7 @@
 import type { Client, AnyThreadChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { config } from '../../config.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
 import {
   buildReviewMessage,
@@ -64,7 +65,7 @@ export async function changeTrialInfo(
   // Update the thread name if character name changed
   if (updates.characterName && updates.characterName !== trial.character_name && trial.thread_id) {
     try {
-      const guild = client.guilds.cache.first();
+      const guild = client.guilds.cache.get(config.guildId);
       if (guild) {
         const thread = await guild.channels.fetch(trial.thread_id);
         if (thread?.isThread()) {
@@ -82,7 +83,7 @@ export async function changeTrialInfo(
   // Update the review message
   if (trial.thread_id) {
     try {
-      const guild = client.guilds.cache.first();
+      const guild = client.guilds.cache.get(config.guildId);
       if (!guild) return;
 
       const channel = await guild.channels.fetch(trial.thread_id);

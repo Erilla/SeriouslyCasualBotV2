@@ -1,6 +1,7 @@
 import type { Client, TextChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { config } from '../../config.js';
 import { generateTrialLogsContent } from './generateTrialLogs.js';
 import type { TrialRow } from '../../types/index.js';
 
@@ -16,7 +17,7 @@ export async function updateTrialLogs(client: Client): Promise<void> {
 
   if (trials.length === 0) return;
 
-  const guild = client.guilds.cache.first();
+  const guild = client.guilds.cache.get(config.guildId);
   if (!guild) {
     logger.warn('Trials', 'No guild found, cannot update trial logs');
     return;

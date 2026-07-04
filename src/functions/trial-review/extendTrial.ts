@@ -1,6 +1,7 @@
 import type { Client, AnyThreadChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { config } from '../../config.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
 import {
   buildReviewMessage,
@@ -45,7 +46,7 @@ export async function extendTrial(client: Client, trialId: number): Promise<void
   // Update the review message in the thread
   if (trial.thread_id) {
     try {
-      const guild = client.guilds.cache.first();
+      const guild = client.guilds.cache.get(config.guildId);
       if (!guild) return;
 
       const channel = await guild.channels.fetch(trial.thread_id);

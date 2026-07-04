@@ -1,6 +1,7 @@
 import type { Client, TextChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
+import { config } from '../../config.js';
 import type { TrialAlertRow, TrialRow, PromoteAlertRow } from '../../types/index.js';
 
 // ─── Constants ──────────────────────────────────────────────
@@ -72,7 +73,7 @@ async function fireAlert(client: Client, alert: TrialAlertRow): Promise<void> {
   const alertLabel = alert.alert_name.replace('_', '-');
 
   try {
-    const guild = client.guilds.cache.first();
+    const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
 
     const thread = await guild.channels.fetch(trial.thread_id) as TextChannel | null;
@@ -118,7 +119,7 @@ async function firePromoteAlert(
   }
 
   try {
-    const guild = client.guilds.cache.first();
+    const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
 
     const thread = await guild.channels.fetch(promoteAlert.thread_id) as TextChannel | null;
