@@ -28,14 +28,14 @@ export function insertLootResponses(db: Database.Database, lootPostId: number, v
   return inserted;
 }
 
-export interface LootRecreateResult { created: number; skipped: number; failed: number }
+export interface LootRecreateResult { created: number; merged: number; failed: number }
 
 export async function recreateLootPosts(
   client: Client,
   lootPosts: V1LootPost[],
 ): Promise<LootRecreateResult> {
   const db = getDatabase();
-  const result: LootRecreateResult = { created: 0, skipped: 0, failed: 0 };
+  const result: LootRecreateResult = { created: 0, merged: 0, failed: 0 };
   if (lootPosts.length === 0) return result;
 
   let channel: TextChannel;
@@ -49,25 +49,27 @@ export async function recreateLootPosts(
     })) as TextChannel;
   } catch (error) {
     logger.error('Migrate', 'Failed to resolve loot channel', error as Error);
-    return { created: 0, skipped: 0, failed: lootPosts.length };
+    return { created: 0, merged: 0, failed: lootPosts.length };
   }
 
-  const stmtExists = db.prepare('SELECT id FROM loot_posts WHERE boss_id = ?');
   const stmtFetch = db.prepare('SELECT * FROM loot_posts WHERE boss_id = ?');
 
   for (const post of lootPosts) {
-    const existing = stmtExists.get(post.bossId);
-    if (existing) {
-      result.skipped++;
-      continue;
-    }
     try {
-      await addLootPost(channel, { id: post.bossId, name: post.bossName, url: post.bossUrl ?? undefined });
-      const row = stmtFetch.get(post.bossId) as LootPostRow | undefined;
-      if (!row) throw new Error(`loot_posts row missing after addLootPost for boss ${post.bossId}`);
+      let row = stmtFetch.get(post.bossId) as LootPostRow | undefined;
+      const alreadyExisted = row !== undefined;
+
+      if (!row) {
+        await addLootPost(channel, { id: post.bossId, name: post.bossName, url: post.bossUrl ?? undefined });
+        row = stmtFetch.get(post.bossId) as LootPostRow | undefined;
+        if (!row) throw new Error(`loot_posts row missing after addLootPost for boss ${post.bossId}`);
+      }
+
       insertLootResponses(db, row.id, post.votes);
       await updateLootPost(client, post.bossId);
-      result.created++;
+
+      if (alreadyExisted) result.merged++;
+      else result.created++;
     } catch (error) {
       result.failed++;
       logger.error('Migrate', `Failed to recreate loot post for boss ${post.bossId}`, error as Error);

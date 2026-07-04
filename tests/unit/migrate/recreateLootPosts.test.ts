@@ -55,34 +55,48 @@ describe('insertLootResponses', () => {
 describe('recreateLootPosts', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('creates a post + responses, and skips a boss already present on re-run', async () => {
+  it('creates a post + responses on first run, then merges votes into the existing post on re-run', async () => {
     const client = { guilds: { fetch: vi.fn(async () => ({ id: 'guild-1' })) } } as never;
 
     const first = await recreateLootPosts(client, [post]);
-    expect(first).toEqual({ created: 1, skipped: 0, failed: 0 });
+    expect(first).toEqual({ created: 1, merged: 0, failed: 0 });
     expect(getDatabase().prepare('SELECT COUNT(*) c FROM loot_responses').get()).toEqual({ c: 4 });
 
+    // Re-run: post already exists → votes merged, no new post, INSERT OR IGNORE keeps count at 4.
     const second = await recreateLootPosts(client, [post]);
-    expect(second).toEqual({ created: 0, skipped: 1, failed: 0 });
+    expect(second).toEqual({ created: 0, merged: 1, failed: 0 });
+    expect(getDatabase().prepare('SELECT COUNT(*) c FROM loot_responses').get()).toEqual({ c: 4 });
   });
 
-  it('continues processing remaining posts after a per-post failure', async () => {
+  it('merges votes into a post that already existed (e.g. created by /loot create_posts) without creating a duplicate', async () => {
     const client = { guilds: { fetch: vi.fn(async () => ({ id: 'guild-1' })) } } as never;
-    const postB = {
-      bossId: 197139,
-      bossName: 'Other Boss',
-      bossUrl: 'https://x/ob',
-      votes: { major: [], minor: [], wantIn: ['u5'], wantOut: [] },
-    };
+    const { addLootPost } = await import('../../../src/functions/loot/addLootPost.js');
 
+    // Simulate a pre-existing post created by the normal loot flow.
+    getDatabase()
+      .prepare('INSERT INTO loot_posts (boss_id, boss_name, boss_url, channel_id, message_id) VALUES (?, ?, ?, ?, ?)')
+      .run(post.bossId, post.bossName, post.bossUrl, 'preexisting-chan', 'preexisting-msg');
+
+    const result = await recreateLootPosts(client, [post]);
+
+    expect(result).toEqual({ created: 0, merged: 1, failed: 0 });
+    expect(vi.mocked(addLootPost)).not.toHaveBeenCalled();      // no duplicate post
+    expect(getDatabase().prepare('SELECT COUNT(*) c FROM loot_responses').get()).toEqual({ c: 4 });
+    // votes attached to the pre-existing post, not a new one
+    const only = getDatabase().prepare('SELECT COUNT(*) c FROM loot_posts WHERE boss_id = ?').get(post.bossId);
+    expect(only).toEqual({ c: 1 });
+  });
+
+  it('isolates a per-post failure and still processes the rest', async () => {
+    const client = { guilds: { fetch: vi.fn(async () => ({ id: 'guild-1' })) } } as never;
+    const { addLootPost } = await import('../../../src/functions/loot/addLootPost.js');
     vi.mocked(addLootPost).mockRejectedValueOnce(new Error('discord fail'));
 
+    const postB = { ...post, bossId: 197139, bossName: "Belo'ren, Child of Al'ar" };
     const result = await recreateLootPosts(client, [post, postB]);
-    expect(result).toEqual({ created: 1, skipped: 0, failed: 1 });
 
-    const secondRow = getDatabase()
-      .prepare('SELECT id FROM loot_posts WHERE boss_id = ?')
-      .get(postB.bossId);
-    expect(secondRow).toBeDefined();
+    expect(result).toEqual({ created: 1, merged: 0, failed: 1 });
+    // the boss that failed created no loot_posts row
+    expect(getDatabase().prepare('SELECT COUNT(*) c FROM loot_posts WHERE boss_id = ?').get(post.bossId)).toEqual({ c: 0 });
   });
 });

@@ -87,7 +87,7 @@ export default {
         `• Existing raiders re-linked: ${dbCounts.backfilled}\n` +
         `• Overlords: ${dbCounts.overlords.inserted} added, ${dbCounts.overlords.skipped} already present\n` +
         `• Ignored characters: ${dbCounts.ignored.inserted} added, ${dbCounts.ignored.skipped} already present\n` +
-        `• Loot posts: ${loot.created} created, ${loot.skipped} skipped, ${loot.failed} failed\n` +
+        `• Loot posts: ${loot.created} created, ${loot.merged} merged into existing, ${loot.failed} failed\n` +
         `_(Loot posts show real names once roster sync + identity linking has run.)_`;
 
       await audit(interaction.user, 'ran V1 migration', summary.replace(/\n/g, ' '));
