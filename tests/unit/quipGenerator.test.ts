@@ -3,11 +3,17 @@ import { generateSignupQuip } from '../../src/services/quipGenerator.js';
 
 const originalFetch = globalThis.fetch;
 const originalApiKey = process.env.GEMINI_API_KEY;
+const originalOpenAIKey = process.env.OPENAI_API_KEY;
+const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalApiKey === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = originalApiKey;
+  if (originalOpenAIKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalOpenAIKey;
+  if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+  else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
   vi.restoreAllMocks();
 });
 
@@ -211,5 +217,43 @@ describe('generateSignupQuip', () => {
     await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
 
     expect(capturedBody).not.toContain('Overlords');
+  });
+
+  it('uses OpenAI when Gemini fails', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    process.env.OPENAI_API_KEY = 'openai-key';
+    delete process.env.ANTHROPIC_API_KEY;
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+      }
+      if (url.includes('api.openai.com')) {
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: 'OpenAI says sign up!' } }] }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected url ${url}`);
+    }) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(quip).toBe('OpenAI says sign up!');
+  });
+
+  it('skips OpenAI when its key is unset and falls back to static', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('api.openai.com')) throw new Error('OpenAI should not be called');
+      return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    expect(typeof quip).toBe('string');
+    expect(quip.length).toBeGreaterThan(0);
   });
 });
