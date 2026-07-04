@@ -3,6 +3,7 @@ import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { schedulePromoteAlert } from './scheduleTrialAlerts.js';
 import { closeThread } from '../threads.js';
+import { applyTrialTag } from './trialForumTags.js';
 import type { TrialRow, PromoteAlertRow } from '../../types/index.js';
 
 /**
@@ -57,6 +58,10 @@ export async function markForPromotion(
       `**${trial.character_name}** has been marked for promotion.\n` +
       `A promotion reminder will be sent on **${promoteDateStr}**.`,
     );
+
+    // Update the forum tag while the thread is un-archived (the send above
+    // un-archives it), before closeThread locks/archives it again.
+    await applyTrialTag(thread, 'To Be Promoted');
 
     // Close the thread (lock + archive). The next-day promotion reminder posts
     // back into the thread, which will auto-unarchive it; it stays locked.

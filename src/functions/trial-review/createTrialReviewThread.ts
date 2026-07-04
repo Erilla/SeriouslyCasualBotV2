@@ -14,6 +14,7 @@ import { getOrCreateChannel } from '../channels.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { generateTrialLogsContent } from './generateTrialLogs.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
+import { ensureTrialForumTags } from './trialForumTags.js';
 import type { TrialRow } from '../../types/index.js';
 
 export interface TrialData {
@@ -98,7 +99,7 @@ async function getOrCreateTrialForum(client: Client): Promise<ForumChannel> {
     configKey: 'trial_reviews_forum_id',
   });
 
-  return forum;
+  return ensureTrialForumTags(forum);
 }
 
 /**
@@ -135,6 +136,7 @@ export async function createTrialReviewThread(
 
   // Create forum thread
   const forum = await getOrCreateTrialForum(client);
+  const activeTag = forum.availableTags.find((t) => t.name === 'Active');
   const reviewContent = buildReviewMessage(
     characterName,
     role,
@@ -149,6 +151,7 @@ export async function createTrialReviewThread(
   const thread = await forum.threads.create({
     name: characterName,
     autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
+    appliedTags: activeTag ? [activeTag.id] : [],
     message: {
       content: reviewContent,
       components: [buttonRow],

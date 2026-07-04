@@ -2,6 +2,7 @@ import type { Client, ThreadChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { closeThread } from '../threads.js';
+import { applyTrialTag } from './trialForumTags.js';
 import type { TrialRow, TrialAlertRow } from '../../types/index.js';
 
 /**
@@ -38,6 +39,13 @@ export async function closeTrial(client: Client, trialId: number): Promise<void>
         await thread.send(
           `**Trial Closed**\nThe trial for **${trial.character_name}** has been closed.`,
         );
+
+        // A trial closed from the 'promoted' (To Be Promoted) state succeeded;
+        // anything else (still 'active') is a failed trial. `trial.status` here
+        // is the value read before the UPDATE above, i.e. the pre-close status.
+        const outcomeTag = trial.status === 'promoted' ? 'Promoted' : 'Failed';
+        await applyTrialTag(thread, outcomeTag);
+
         // Close the thread (lock + archive) after the closing message lands.
         await closeThread(thread);
       }
