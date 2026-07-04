@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { logger } from './logger.js';
 import { httpRequest, HttpError, CircuitOpenError } from './httpClient.js';
+import { normalizeName } from '../functions/raids/normalizeName.js';
 
 // ─── Token Cache ─────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ interface AttendancePlayer {
   type: string;
 }
 
-interface AttendanceReport {
+export interface AttendanceReport {
   code: string;
   players: AttendancePlayer[];
 }
@@ -92,6 +93,28 @@ const ATTENDANCE_QUERY = `
 `;
 
 /**
+ * From WCL attendance reports, return the codes of reports where a player
+ * matching `characterName` (case- and accent-insensitive, via the shared
+ * normalizeName) was present (`presence === 1`). Order is reversed relative to
+ * input to preserve V1 ordering (see note in getTrialLogs).
+ */
+export function extractMatchingCodes(
+  reports: AttendanceReport[],
+  characterName: string,
+): string[] {
+  const target = normalizeName(characterName);
+  return reports
+    .filter((report) =>
+      report.players.some(
+        (player) =>
+          player.presence === 1 && normalizeName(player.name) === target,
+      ),
+    )
+    .map((report) => report.code)
+    .reverse();
+}
+
+/**
  * Fetch WarcraftLogs report codes where `characterName` was present.
  * Returns empty array on any HTTP error or open circuit (fail-soft).
  */
@@ -119,21 +142,11 @@ export async function getTrialLogs(characterName: string): Promise<string[]> {
 
     const reports = result.data.guildData.guild.attendance.data;
 
-    const matchingCodes = reports
-      .filter((report) =>
-        report.players.some(
-          (player) =>
-            player.name === characterName && player.presence === 1,
-        ),
-      )
-      .map((report) => report.code);
-
-    // Preserve V1 ordering behavior. The exact natural order of WCL's
-    // attendance.data isn't contractually documented; .reverse() has been
-    // in place since V1 and consumers (`generateTrialLogsContent`) number
-    // the output as "1. Report <code>" — flipping the order here would
-    // silently change what reviewers see.
-    return matchingCodes.reverse();
+    // Match case- and accent-insensitively on both sides; extractMatchingCodes
+    // preserves V1 ordering by reversing (consumers number output "1. Report ...";
+    // WCL's natural attendance order isn't contractually documented, and .reverse()
+    // has been in place since V1 — flipping it would silently change what reviewers see).
+    return extractMatchingCodes(reports, characterName);
   } catch (error) {
     if (error instanceof HttpError || error instanceof CircuitOpenError) {
       logger.warn(
