@@ -167,4 +167,49 @@ describe('generateSignupQuip', () => {
     expect(typeof quip).toBe('string');
     expect(quip.length).toBeGreaterThan(0);
   });
+
+  it('includes Overlord names in the prompt when provided', async () => {
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    let capturedBody = '';
+    globalThis.fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      capturedBody = String(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: 'Sign up!' }] } }],
+        }),
+        text: async () => '',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    await generateSignupQuip({
+      raidDay: 'Wednesday',
+      twoDayReminder: false,
+      overlordNames: ['Gandalf', 'Saruman'],
+    });
+
+    expect(capturedBody).toContain('Gandalf, Saruman');
+    expect(capturedBody).toContain('Overlords');
+  });
+
+  it('omits the leader-name clause when no Overlords are provided', async () => {
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    let capturedBody = '';
+    globalThis.fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      capturedBody = String(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: 'Sign up!' }] } }],
+        }),
+        text: async () => '',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+
+    expect(capturedBody).not.toContain('Overlords');
+  });
 });

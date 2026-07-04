@@ -34,6 +34,8 @@ const REQUEST_TIMEOUT_MS = 5_000;
 export interface GenerateQuipOptions {
   raidDay: string;
   twoDayReminder: boolean;
+  /** Names of the guild's Overlords to optionally reference. Empty = no name reference. */
+  overlordNames?: string[];
 }
 
 /**
@@ -67,18 +69,23 @@ function randomFallback(): string {
   return V1_SAMPLE_QUIPS[index];
 }
 
-function buildPrompt({ raidDay, twoDayReminder }: GenerateQuipOptions): string {
+function buildPrompt({ raidDay, twoDayReminder, overlordNames = [] }: GenerateQuipOptions): string {
   const examples = V1_SAMPLE_QUIPS.map((q, i) => `${i + 1}. ${q}`).join('\n');
   const reminderNote = twoDayReminder
     ? 'This is the 48-hour early reminder, so a nudge-not-yell tone.'
     : 'This is the day-of reminder, so urgency is fair game.';
+
+  const toneLine =
+    overlordNames.length > 0
+      ? `Tone: playful, sarcastic, WoW-themed. Occasionally reference the guild's Overlords (${overlordNames.join(', ')}). OK to be cheeky; keep it safe for a shared Discord channel.`
+      : 'Tone: playful, sarcastic, WoW-themed. OK to be cheeky; keep it safe for a shared Discord channel.';
 
   return [
     'You write one-line nudges that a World of Warcraft raiding guild uses to get their raiders to sign up for the next raid.',
     '',
     `Context: the next raid is on ${raidDay}. ${reminderNote}`,
     '',
-    'Tone: playful, sarcastic, WoW-themed. Occasionally reference guild leaders (Warzania, Bing, Splo). OK to be cheeky; keep it safe for a shared Discord channel.',
+    toneLine,
     '',
     'Examples of the tone:',
     examples,
