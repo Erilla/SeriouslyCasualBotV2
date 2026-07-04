@@ -106,16 +106,21 @@ Keeps the DB logic unit-testable without Discord.
 - Loot layer (Discord + DB together, since `loot_posts.message_id` is `NOT NULL`):
   - `recreateLootPosts(client, lootPosts)` — resolve the V2 loot channel via
     `getOrCreateChannel(guild, { name: 'loot', categoryName: 'Raiders', configKey: 'loot_channel_id' })`;
-    for each boss, **skip if its `boss_id` already exists in `loot_posts`**, otherwise
-    create the message (reusing `addLootPost`), insert one `loot_responses` row per user
-    per response type, then `updateLootPost` to render the migrated votes. Per-post
-    failures are logged and do not abort the rest.
+    for each boss, create the Discord message (reusing `addLootPost`) **only when a
+    `loot_posts` row for that `boss_id` doesn't already exist**, but **always import the
+    votes** — insert one `loot_responses` row per user per response type (`INSERT OR
+    IGNORE`) and `updateLootPost` to re-render. This means votes land whether or not the
+    post was already created by the normal `/loot create_posts` flow (which shares the
+    same WoW journal `boss_id`s). Result counters are `created` (new post) / `merged`
+    (votes imported into a pre-existing post) / `failed`. Per-post failures are logged
+    and do not abort the rest.
 
 ## Idempotency / re-run
 
-`INSERT OR IGNORE` for identity map, overlords, ignored characters. Loot skips any
-`boss_id` already present in `loot_posts` (no duplicate Discord posts). A second run
-reports everything as "already present".
+`INSERT OR IGNORE` for identity map, overlords, ignored characters. Loot never creates a
+duplicate Discord post (it reuses an existing one for a given `boss_id`) and vote inserts
+are `INSERT OR IGNORE`, so a second run re-merges the same votes with no duplicates and
+reports the posts as `merged`.
 
 ## Error handling
 

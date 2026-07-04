@@ -48,6 +48,7 @@ All commands are Discord slash commands registered to a single guild.
 | `/loot create_posts` | Auto-discover current raid tier and create loot priority posts | Yes | No |
 | `/loot delete_post` | Delete a single loot priority post by boss ID | Yes | No |
 | `/loot delete_posts` | Delete multiple loot priority posts by comma-separated boss IDs | Yes | No |
+| `/loot delete_all_posts` | Delete ALL loot posts (Discord messages + database rows) | Yes | No |
 | `/migrate` | Import data from a V1 database | Yes | No |
 
 ## Notes
