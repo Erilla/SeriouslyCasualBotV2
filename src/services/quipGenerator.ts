@@ -52,7 +52,7 @@ const PROVIDERS: QuipProvider[] = [
 
 /**
  * Generate a one-line signup quip. Tries each provider in `PROVIDERS` in
- * order (currently Gemini, then OpenAI), skipping any whose API key isn't
+ * order (Gemini, then OpenAI, then Claude), skipping any whose API key isn't
  * set, and falls back to a randomly-chosen quip from the V1 corpus when
  * every provider is skipped or fails. Never throws — the caller is an alert
  * handler and should always get something postable.
