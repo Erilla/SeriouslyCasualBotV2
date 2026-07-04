@@ -21,8 +21,8 @@
     "node": ">=22.0.0"
   },
   "keywords": [],
-  "author": "",
-  "license": "UNLICENSED",
+  "author": "Ryan Wong",
+  "license": "MIT",
   "dependencies": {
     "@napi-rs/canvas": "^0.1.98",
     "better-sqlite3": "^12.9.0",
