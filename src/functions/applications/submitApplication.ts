@@ -4,6 +4,7 @@ import {
   type TextChannel,
   type Guild,
   ChannelType,
+  OverwriteType,
   PermissionFlagsBits,
 } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
@@ -148,6 +149,66 @@ export async function submitApplication(
 
 // ─── Channel Creation ─────────────────────────────────────────
 
+export interface ApplicationChannelOverwrite {
+  id: string;
+  type: OverwriteType;
+  allow?: bigint[];
+  deny?: bigint[];
+}
+
+/**
+ * Build the permission overwrites for an application channel.
+ *
+ * Every overwrite carries an explicit `type` (Role/Member). This matters:
+ * when `type` is omitted, discord.js's PermissionOverwrites.resolve falls back
+ * to `guild.roles.resolve(id) ?? client.users.resolve(id)` — a CACHE-only
+ * lookup — and throws "Supplied parameter is not a cached User or Role" for any
+ * id it can't find (an overlord who left the guild, a stale officer role, or
+ * simply a cold user cache after a restart). Setting the type takes the fast
+ * path and never touches the cache.
+ */
+export function buildApplicationChannelOverwrites(
+  guildId: string,
+  applicantId: string,
+  overlordUserIds: string[],
+  officerRoleId: string | null,
+): ApplicationChannelOverwrite[] {
+  const overwrites: ApplicationChannelOverwrite[] = [
+    {
+      id: guildId, // @everyone
+      type: OverwriteType.Role,
+      deny: [PermissionFlagsBits.ViewChannel],
+    },
+    {
+      id: applicantId,
+      type: OverwriteType.Member,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+    },
+    ...overlordUserIds.map((userId) => ({
+      id: userId,
+      type: OverwriteType.Member,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+    })),
+  ];
+
+  if (officerRoleId) {
+    overwrites.push({
+      id: officerRoleId,
+      type: OverwriteType.Role,
+      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+    });
+  }
+
+  // Discord rejects a channel with two overwrites for the same id (e.g. an
+  // overlord who is also the applicant). Keep the first occurrence of each id.
+  const seen = new Set<string>();
+  return overwrites.filter((ow) => {
+    if (seen.has(ow.id)) return false;
+    seen.add(ow.id);
+    return true;
+  });
+}
+
 async function createApplicationChannel(
   guild: Guild,
   channelName: string,
@@ -175,30 +236,12 @@ async function createApplicationChannel(
   // Get overlords for permissions
   const overlords = getOverlords();
 
-  // Build permission overwrites
-  const permissionOverwrites = [
-    {
-      id: guild.id, // @everyone
-      deny: [PermissionFlagsBits.ViewChannel],
-    },
-    {
-      id: applicant.id,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
-    },
-    ...overlords.map((o) => ({
-      id: o.user_id,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
-    })),
-  ];
-
-  // Also add officer role permission
-  const officerRoleId = config.officerRoleId;
-  if (officerRoleId) {
-    permissionOverwrites.push({
-      id: officerRoleId,
-      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
-    });
-  }
+  const permissionOverwrites = buildApplicationChannelOverwrites(
+    guild.id,
+    applicant.id,
+    overlords.map((o) => o.user_id),
+    config.officerRoleId,
+  );
 
   let channel: TextChannel;
   try {
