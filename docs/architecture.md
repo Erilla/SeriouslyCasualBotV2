@@ -15,10 +15,10 @@ src/
 ├── types/
 │   └── index.ts          # Command, BotEvent, BotClient interfaces + DB row types
 ├── database/
-│   ├── db.ts             # Singleton, WAL mode, migrations runner
-│   ├── schema.ts         # CREATE TABLE statements (29 tables)
+│   ├── db.ts             # Singleton, WAL mode, inline forward-only migrations runner
+│   ├── schema.ts         # CREATE TABLE statements (23 tables)
 │   ├── seed.ts           # Default data seeding
-│   └── migrations/       # Versioned migration files
+│   └── migrations/       # Vestigial — migrations live inline in db.ts, not here
 ├── services/
 │   ├── logger.ts         # Multi-level logger (console + Discord channel)
 │   └── auditLog.ts       # Officer action audit trail to Discord channel

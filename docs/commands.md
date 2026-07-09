@@ -50,12 +50,14 @@ All commands are Discord slash commands registered to a single guild.
 | `/loot delete_posts` | Delete multiple loot priority posts by comma-separated boss IDs | Yes | No |
 | `/loot delete_all_posts` | Delete ALL loot posts (Discord messages + database rows) | Yes | No |
 | `/migrate` | Import data from a V1 database | Yes | No |
+| `/test trigger` / `/test fire_trial_alert` / `/test list` | Manually fire scheduled or background actions immediately | Yes | Yes |
+| `/testdata seed_* / seed_all / reset` | Seed or reset mock data (raiders, applications, trials, loot) in the database | Yes | Yes |
 
 ## Notes
 
 **Admin commands** require the `Administrator` Discord permission. They are hidden from non-admin members via `setDefaultMemberPermissions(PermissionFlagsBits.Administrator)` and enforce a runtime `requireOfficer()` check.
 
-**Dev-only commands** are skipped at load time when `NODE_ENV=production`. No dev-only commands exist in the current foundation build.
+**Dev-only commands** (`devOnly: true`) are skipped at load time when `NODE_ENV=production`, so they are only registered in the local/test environment. `/test` and `/testdata` are the current dev-only commands — used to exercise scheduled jobs and seed mock data during development.
 
 ## Command Details
 

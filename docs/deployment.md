@@ -27,9 +27,9 @@ guild IDs, etc.) and its own volume.
 ## Railway setup (one-time)
 
 1. **Create the project** — at railway.com: *New Project → Deploy from GitHub
-   repo* → select this repo and the branch to deploy (`feat/test-server-deploy`
-   for the soak test, or `master`). Railway detects the `Dockerfile` and builds
-   it per `railway.json`.
+   repo* → select this repo and the branch to deploy (`develop` for the test
+   environment, `main` for production). Railway detects the `Dockerfile` and
+   builds it per `railway.json`.
 
 2. **Add a volume for SQLite** — service → *Settings → Volumes* → mount at
    **`/app/data`**. This persists the database and backups across redeploys.
@@ -48,6 +48,7 @@ guild IDs, etc.) and its own volume.
    | `WARCRAFTLOGS_GUILD_ID` | e.g. `486913` |
    | `RAIDERIO_GUILD_IDS` | e.g. `1061585%2C43113` |
    | `GEMINI_API_KEY` | optional (static quips fallback if unset) |
+   | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | optional (further quip fallbacks, tried after Gemini) |
    | `LOG_LEVEL` | `INFO` |
    | `NODE_ENV` | `production` |
    | `DB_PATH` | **`/app/data/db.sqlite`** — points SQLite at the volume |

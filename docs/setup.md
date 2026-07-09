@@ -44,6 +44,9 @@ The bot creates `db.sqlite` on first run and seeds it with default data.
 | `WARCRAFTLOGS_CLIENT_SECRET` | Yes | WarcraftLogs OAuth client secret |
 | `WARCRAFTLOGS_GUILD_ID` | Yes | WarcraftLogs numeric guild ID |
 | `RAIDERIO_GUILD_IDS` | Yes | Comma-separated Raider.IO guild IDs |
+| `GEMINI_API_KEY` | No | Signup-quip generator; falls back to static quips if unset |
+| `OPENAI_API_KEY` | No | Additional quip-generator fallback, tried after Gemini |
+| `ANTHROPIC_API_KEY` | No | Additional quip-generator fallback, tried after OpenAI |
 | `LOG_LEVEL` | No | `DEBUG`, `INFO`, `WARN`, or `ERROR` (default: `INFO`) |
 | `NODE_ENV` | No | `development` or `production` (default: `development`) |
 | `DB_PATH` | No | SQLite file path (default: `db.sqlite`) |

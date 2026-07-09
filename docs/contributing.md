@@ -14,10 +14,13 @@ Run `npm run deploy-commands` after adding or renaming slash commands.
 
 ## Branch Strategy
 
-- `master` — always deployable; direct pushes are blocked
+- `main` — production; always reflects what's live. Direct pushes are blocked.
+- `develop` — auto-deploys to the **test** environment for soak testing before promotion.
 - Feature branches: `feat/<short-description>` (e.g. `feat/raid-signups`)
 - Bug fixes: `fix/<short-description>`
 - Tasks follow the PRD task numbering: implement one task per branch/PR
+
+See [`deployment.md`](deployment.md) for the full environment/promotion topology.
 
 ## Worktree Usage
 
@@ -40,10 +43,11 @@ Each worktree shares the same git history but has an independent working directo
 
 1. Create a branch and worktree for the task.
 2. Implement the feature; commit logical units with clear messages.
-3. Open a PR targeting `master`.
+3. Open a PR targeting `develop`.
 4. CI must pass (typecheck + tests + build).
 5. Claude Code Review runs automatically and posts inline comments.
-6. Address review feedback, then merge.
+6. Address review feedback, then merge to `develop` (auto-deploys to test).
+7. Once validated on test, promote by opening a PR from `develop` → `main` (squash-merge).
 
 ## Testing Strategy
 

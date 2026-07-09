@@ -18,7 +18,7 @@ The database file defaults to `db.sqlite` in the working directory. Override wit
 | `schema_version` | Tracks applied migration versions |
 | `config` | Key-value channel/role configuration set by `/setup` |
 | `settings` | Key-value feature toggles (0/1) managed by `/settings` |
-| `raiders` | Guild roster synced from WoW Audit |
+| `raiders` | Guild roster synced from Raider.IO; tracks `missing_since` / `inactive_since` for the missing→inactive lifecycle |
 | `raider_identity_map` | Maps character names to Discord user IDs |
 | `overlords` | Officers/admins with elevated bot permissions |
 | `ignored_characters` | Characters excluded from roster sync |
@@ -37,15 +37,28 @@ The database file defaults to `db.sqlite` in the working directory. Override wit
 | `schedule_days` | Raid schedule entries |
 | `schedule_config` | Schedule display configuration |
 | `achievements_manual` | Manually entered raid achievement records |
-| `signup_messages` | Rotating messages sent with raid signups |
 | `default_messages` | Default text templates for various bot messages |
 
 ## Migration System
 
-Migrations are versioned files in `src/database/migrations/`. `initDatabase()` calls `runMigrations()` which:
+`createTables()` (in `schema.ts`) is the idempotent baseline — every table is `CREATE TABLE IF NOT EXISTS`, so a fresh database comes up fully formed. Migrations exist only to transform databases that predate a schema change.
+
+Migrations are inline, forward-only version blocks in `runMigrations()` (in `db.ts`), **not** separate files. `initDatabase()` runs them after `createTables()`:
 
 1. Creates `schema_version` if it doesn't exist
-2. Reads the highest applied version number
-3. Applies any pending migrations in order, recording each version in `schema_version`
+2. Reads the highest applied version number (`0` on a fresh DB)
+3. Runs each `if (currentVersion < N)` block in order, recording version `N` in `schema_version` inside the same transaction
 
-New migrations go in `migrations/00N_description.ts` and export `version: number` and `up(db): void`.
+The current head is **version 5**. Applied migrations:
+
+| Version | Change |
+|---|---|
+| 1 | Baseline marker |
+| 2 | Rename `epgp_channel_id` config key → `epgp_rankings_channel_id` (superseded by v4) |
+| 3 | Drop the `signup_messages` table (quips now generated on demand) |
+| 4 | Drop the EPGP feature (five `epgp_*` tables + orphaned config keys) |
+| 5 | Add `raiders.inactive_since` and retire long-missing raiders to inactive |
+
+Migrations must stay idempotent against fresh DBs, where `createTables()` has already produced the final schema — guard `ALTER`/`DROP` accordingly (e.g. v5 checks `table_info` before adding the column, drops use `IF EXISTS`).
+
+To add a migration, append a new `if (currentVersion < 6) { ... }` block that ends by inserting the version row. (The `src/database/migrations/` directory is a vestige of an earlier plan and is not loaded at runtime.)
