@@ -292,7 +292,7 @@ export default {
 
         try {
           const raiders = db
-            .prepare('SELECT * FROM raiders ORDER BY character_name')
+            .prepare('SELECT * FROM raiders WHERE inactive_since IS NULL ORDER BY character_name')
             .all() as RaiderRow[];
 
           const content = await generateMythicPlusReport(raiders);
@@ -319,7 +319,7 @@ export default {
 
         try {
           const raiders = db
-            .prepare('SELECT * FROM raiders ORDER BY character_name')
+            .prepare('SELECT * FROM raiders WHERE inactive_since IS NULL ORDER BY character_name')
             .all() as RaiderRow[];
 
           const historicalData = await getHistoricalData();

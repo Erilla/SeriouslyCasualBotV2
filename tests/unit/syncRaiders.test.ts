@@ -195,10 +195,11 @@ describe('syncRaiders', () => {
     await syncRaiders(mockClient);
 
     const raider = db
-      .prepare('SELECT inactive_since FROM raiders WHERE character_name = ?')
-      .get('LongGoneRaider') as { inactive_since: string | null };
+      .prepare('SELECT missing_since, inactive_since FROM raiders WHERE character_name = ?')
+      .get('LongGoneRaider') as { missing_since: string | null; inactive_since: string | null };
 
     expect(raider.inactive_since).not.toBeNull();
+    expect(raider.missing_since).not.toBeNull();
     expect(logger.info).toHaveBeenCalledWith(
       'SyncRaiders',
       expect.stringContaining('LongGoneRaider'),

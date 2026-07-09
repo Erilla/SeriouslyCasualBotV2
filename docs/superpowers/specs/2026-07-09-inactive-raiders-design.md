@@ -100,6 +100,9 @@ The completion summary log gains `markedInactive` and `reactivated` counts;
 Add `inactive_since IS NULL` to these roster-enumerating queries:
 
 - **`commands/raiders.ts:110`** — `get_raiders` (the primary requirement).
+- **`commands/raiders.ts`** — the `previous_highest_mythicplus` and
+  `previous_great_vault` manual report subcommands (same reports as the
+  scheduled weekly job).
 - **`commands/status.ts:82`** — raider total/linked count, so status reflects the
   active roster.
 - **`functions/raids/alertHighestMythicPlusDone.ts:131`** — weekly M+ report.
