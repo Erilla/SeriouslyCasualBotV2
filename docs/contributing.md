@@ -65,6 +65,10 @@ npm run test:watch # watch mode during development
 
 ## Code Style
 
+- Formatting is handled by Prettier (`.prettierrc.json`). Run `npm run format`
+  to apply it and `npm run format:check` to verify; CI runs the check and fails
+  on drift, so format before pushing.
+- Lint with `npm run lint` (ESLint flat config in `eslint.config.js`).
 - TypeScript strict mode; no `any` unless unavoidable.
 - ESM imports with `.js` extensions (required for Node16 module resolution).
 - Use `asSendable()` to narrow channel types before sending messages.

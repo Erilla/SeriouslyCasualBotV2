@@ -25,6 +25,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Format check
+        run: npm run format:check
+
       - name: Unit tests
         # Stub required env vars so config.ts module load succeeds. These
         # are only used if a test actually hits a code path that reads them;
