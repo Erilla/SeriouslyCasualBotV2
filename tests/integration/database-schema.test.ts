@@ -66,7 +66,7 @@ describe('database schema', () => {
     const db = getDatabase();
 
     const version = db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get() as { version: number };
-    expect(version.version).toBe(5);
+    expect(version.version).toBe(6);
   });
 
   it('should be idempotent (safe to run twice)', () => {

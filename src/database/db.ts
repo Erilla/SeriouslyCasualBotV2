@@ -130,6 +130,18 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(5);
     })();
   }
+
+  if (currentVersion < 6) {
+    // The officer role is no longer a /setup value — it's fixed at boot via the
+    // OFFICER_ROLE_ID env var, which is the single source of truth for both
+    // permission checks and officer-alert pings. Drop the now-orphaned config
+    // key so it stops showing under get_config's "unknown keys". Harmless on
+    // DBs that never set it.
+    database.transaction(() => {
+      database.exec("DELETE FROM config WHERE key = 'officer_role_id';");
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(6);
+    })();
+  }
 }
 
 export function closeDatabase(): void {

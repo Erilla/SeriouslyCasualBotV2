@@ -27,8 +27,11 @@ const CHANNEL_CONFIG: Record<string, { label: string; type: ConfigurableChannelT
   applications_category_id: { label: 'Applications Category', type: ChannelType.GuildCategory },
 };
 
+// The officer role is NOT configurable here: it's the permission gate for
+// /setup itself (via requireOfficer → config.officerRoleId), so it must be
+// fixed at boot via the OFFICER_ROLE_ID env var to avoid a chicken-and-egg
+// lockout. Only roles the bot merely reads/assigns belong in this table.
 const ROLE_CONFIG: Record<string, { label: string }> = {
-  officer_role_id: { label: 'Officer' },
   raider_role_id: { label: 'Raider' },
 };
 

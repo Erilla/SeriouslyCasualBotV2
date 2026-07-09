@@ -1,6 +1,6 @@
 import type { TextChannel, User } from 'discord.js';
 import { logger } from './logger.js';
-import { getDatabase } from '../database/db.js';
+import { config } from '../config.js';
 
 let auditChannel: TextChannel | null = null;
 
@@ -22,12 +22,16 @@ export async function audit(officer: User, action: string, detail: string): Prom
 }
 
 /**
- * Post an officer-visible alert to the audit channel, pinging the configured
- * officer role so someone actually sees it. Used for background/autonomous
- * failures that would otherwise only surface in stdout (see #42).
+ * Post an officer-visible alert to the audit channel, pinging the officer role
+ * so someone actually sees it. Used for background/autonomous failures that
+ * would otherwise only surface in stdout (see #42).
  *
- * Falls back to logging only if the audit channel or role is not configured —
- * the alert must never throw back into the caller's error path.
+ * The officer role is the single source of truth from OFFICER_ROLE_ID (the same
+ * role that gates officer commands), not a separate /setup value — so the ping
+ * can never target a different role than the permission checks.
+ *
+ * Falls back to logging only if the audit channel is not configured — the alert
+ * must never throw back into the caller's error path.
  */
 export async function alertOfficers(title: string, detail: string): Promise<void> {
   const logLine = `${title}: ${detail}`;
@@ -35,20 +39,16 @@ export async function alertOfficers(title: string, detail: string): Promise<void
 
   if (!auditChannel) return;
 
-  // Callers fire-and-forget this with `void`, so any throw from the DB query
-  // or the Discord call becomes an unhandled rejection. The entire function
-  // must be non-throwing — log and swallow.
+  // Callers fire-and-forget this with `void`, so any throw from the Discord
+  // call becomes an unhandled rejection. The entire function must be
+  // non-throwing — log and swallow.
   try {
-    const row = getDatabase()
-      .prepare('SELECT value FROM config WHERE key = ?')
-      .get('officer_role_id') as { value: string } | undefined;
-
-    const mention = row ? `<@&${row.value}> ` : '';
-    const content = `${mention}**${title}**\n${detail}`;
+    const roleId = config.officerRoleId;
+    const content = `<@&${roleId}> **${title}**\n${detail}`;
 
     await auditChannel.send({
       content,
-      allowedMentions: row ? { roles: [row.value] } : { parse: [] },
+      allowedMentions: { roles: [roleId] },
     });
   } catch (err) {
     logger.error(

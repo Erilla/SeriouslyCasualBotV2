@@ -49,7 +49,7 @@ Migrations are inline, forward-only version blocks in `runMigrations()` (in `db.
 2. Reads the highest applied version number (`0` on a fresh DB)
 3. Runs each `if (currentVersion < N)` block in order, recording version `N` in `schema_version` inside the same transaction
 
-The current head is **version 5**. Applied migrations:
+The current head is **version 6**. Applied migrations:
 
 | Version | Change |
 |---|---|
@@ -58,7 +58,8 @@ The current head is **version 5**. Applied migrations:
 | 3 | Drop the `signup_messages` table (quips now generated on demand) |
 | 4 | Drop the EPGP feature (five `epgp_*` tables + orphaned config keys) |
 | 5 | Add `raiders.inactive_since` and retire long-missing raiders to inactive |
+| 6 | Drop the orphaned `officer_role_id` config key (officer role now env-only) |
 
 Migrations must stay idempotent against fresh DBs, where `createTables()` has already produced the final schema — guard `ALTER`/`DROP` accordingly (e.g. v5 checks `table_info` before adding the column, drops use `IF EXISTS`).
 
-To add a migration, append a new `if (currentVersion < 6) { ... }` block that ends by inserting the version row. (The `src/database/migrations/` directory is a vestige of an earlier plan and is not loaded at runtime.)
+To add a migration, append a new `if (currentVersion < 7) { ... }` block that ends by inserting the version row. (The `src/database/migrations/` directory is a vestige of an earlier plan and is not loaded at runtime.)

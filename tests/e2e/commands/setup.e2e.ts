@@ -129,7 +129,9 @@ describe('/setup', () => {
       commandName: 'setup',
       subcommand: 'set_role',
       options: {
-        key: 'officer_role_id',
+        // officer_role_id is intentionally not a /setup key (it's fixed via the
+        // OFFICER_ROLE_ID env var); raider_role_id is the configurable role.
+        key: 'raider_role_id',
         role: { id: targetRole.id, name: targetRole.name },
       },
     });
@@ -141,9 +143,9 @@ describe('/setup', () => {
     expect(reply.ephemeral).toBe(true);
 
     const content = replyContent(reply);
-    expect(content).toContain('officer_role_id');
+    expect(content).toContain('raider_role_id');
 
-    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', ['officer_role_id']);
+    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', ['raider_role_id']);
     expect(row?.value).toBe(targetRole.id);
   });
 
