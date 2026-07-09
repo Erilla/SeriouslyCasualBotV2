@@ -60,6 +60,47 @@ describe('runMigrations — v4 removes the EPGP feature', () => {
   });
 });
 
+describe('runMigrations — v5 adds inactive_since to raiders', () => {
+  it('adds the column to a legacy raiders table missing it', () => {
+    const db = getDatabase();
+
+    // Represent a pre-v5 install: recreate raiders WITHOUT inactive_since.
+    db.exec('DROP TABLE raiders;');
+    db.exec(`
+      CREATE TABLE raiders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        character_name TEXT NOT NULL UNIQUE,
+        realm TEXT DEFAULT 'silvermoon',
+        region TEXT DEFAULT 'eu',
+        rank INTEGER,
+        class TEXT,
+        discord_user_id TEXT,
+        message_id TEXT,
+        missing_since TEXT
+      );
+    `);
+    db.exec('DELETE FROM schema_version;');
+
+    runMigrations(db);
+
+    const cols = db.pragma('table_info(raiders)') as { name: string }[];
+    expect(cols.some((c) => c.name === 'inactive_since')).toBe(true);
+
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number };
+    expect(version.v).toBeGreaterThanOrEqual(5);
+  });
+
+  it('is a no-op on a fresh DB where the column already exists', () => {
+    const db = getDatabase(); // beforeEach already ran createTables (column present)
+
+    expect(() => runMigrations(db)).not.toThrow();
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const cols = db.pragma('table_info(raiders)') as { name: string }[];
+    expect(cols.filter((c) => c.name === 'inactive_since')).toHaveLength(1);
+  });
+});
+
 describe('runMigrations — v3 drops signup_messages', () => {
   it('drops the signup_messages table if it exists from a prior install', () => {
     const db = getDatabase();

@@ -38,6 +38,7 @@ function makeRaider(name: string): RaiderRow {
     discord_user_id: null,
     message_id: null,
     missing_since: null,
+    inactive_since: null,
   };
 }
 

@@ -46,6 +46,7 @@ export interface RaiderRow {
   discord_user_id: string | null;
   message_id: string | null;
   missing_since: string | null;
+  inactive_since: string | null;
 }
 
 export interface RaiderIdentityMapRow {

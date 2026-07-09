@@ -116,6 +116,20 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(4);
     })();
   }
+
+  if (currentVersion < 5) {
+    // Retire long-missing raiders to an inactive state. Add the
+    // inactive_since column. Fresh DBs already have it from createTables, so
+    // guard the ALTER against a duplicate-column error and keep the migration
+    // idempotent.
+    database.transaction(() => {
+      const cols = database.pragma('table_info(raiders)') as { name: string }[];
+      if (!cols.some((c) => c.name === 'inactive_since')) {
+        database.exec('ALTER TABLE raiders ADD COLUMN inactive_since TEXT');
+      }
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(5);
+    })();
+  }
 }
 
 export function closeDatabase(): void {

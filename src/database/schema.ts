@@ -48,7 +48,8 @@ export function createTables(db: Database.Database): void {
       class TEXT,
       discord_user_id TEXT,
       message_id TEXT,
-      missing_since TEXT
+      missing_since TEXT,
+      inactive_since TEXT
     );
 
     -- 8. application_questions (must come BEFORE applications)
