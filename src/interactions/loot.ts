@@ -19,7 +19,8 @@ async function handleLoot(interaction: ButtonInteraction, params: string[]): Pro
 
   if (!raider) {
     await interaction.reply({
-      content: 'Could not find a character linked to your Discord account. Please contact an officer!',
+      content:
+        'Could not find a character linked to your Discord account. Please contact an officer!',
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -27,9 +28,9 @@ async function handleLoot(interaction: ButtonInteraction, params: string[]): Pro
 
   await updateLootResponse(interaction.client, responseType, bossId, interaction.user.id);
 
-  const lootPost = db
-    .prepare('SELECT * FROM loot_posts WHERE boss_id = ?')
-    .get(bossId) as LootPostRow | undefined;
+  const lootPost = db.prepare('SELECT * FROM loot_posts WHERE boss_id = ?').get(bossId) as
+    | LootPostRow
+    | undefined;
 
   if (lootPost) {
     const responses = db
@@ -73,6 +74,4 @@ async function handleLoot(interaction: ButtonInteraction, params: string[]): Pro
   }
 }
 
-export const buttons: ButtonHandler[] = [
-  { prefix: 'loot', handle: handleLoot },
-];
+export const buttons: ButtonHandler[] = [{ prefix: 'loot', handle: handleLoot }];

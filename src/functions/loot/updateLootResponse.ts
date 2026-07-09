@@ -12,9 +12,9 @@ export async function updateLootResponse(
 ): Promise<string> {
   const db = getDatabase();
 
-  const lootPost = db
-    .prepare('SELECT * FROM loot_posts WHERE boss_id = ?')
-    .get(bossId) as LootPostRow | undefined;
+  const lootPost = db.prepare('SELECT * FROM loot_posts WHERE boss_id = ?').get(bossId) as
+    | LootPostRow
+    | undefined;
 
   if (!lootPost) {
     logger.warn('Loot', `No loot post found for boss_id ${bossId}`);
@@ -22,16 +22,22 @@ export async function updateLootResponse(
   }
 
   const txn = db.transaction(() => {
-    db.prepare('DELETE FROM loot_responses WHERE loot_post_id = ? AND user_id = ?')
-      .run(lootPost.id, userId);
+    db.prepare('DELETE FROM loot_responses WHERE loot_post_id = ? AND user_id = ?').run(
+      lootPost.id,
+      userId,
+    );
 
-    db.prepare('INSERT INTO loot_responses (loot_post_id, user_id, response_type) VALUES (?, ?, ?)')
-      .run(lootPost.id, userId, responseType);
+    db.prepare(
+      'INSERT INTO loot_responses (loot_post_id, user_id, response_type) VALUES (?, ?, ?)',
+    ).run(lootPost.id, userId, responseType);
   });
 
   txn();
 
-  logger.info('Loot', `Recorded ${responseType} response from user ${userId} for boss_id ${bossId}`);
+  logger.info(
+    'Loot',
+    `Recorded ${responseType} response from user ${userId} for boss_id ${bossId}`,
+  );
 
   await updateLootPost(client, bossId);
 

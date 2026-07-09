@@ -89,7 +89,10 @@ export class Scheduler {
 
   start(): void {
     this.stopped = false;
-    logger.info('scheduler', `Started with ${this.intervalTimers.size} intervals and ${this.cronJobs.length} cron jobs`);
+    logger.info(
+      'scheduler',
+      `Started with ${this.intervalTimers.size} intervals and ${this.cronJobs.length} cron jobs`,
+    );
   }
 
   shutdown(): void {

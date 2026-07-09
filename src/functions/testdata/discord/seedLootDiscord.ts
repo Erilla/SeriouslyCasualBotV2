@@ -7,7 +7,7 @@ import { addLootPost, type Boss } from '../../loot/addLootPost.js';
 
 const MOCK_BOSSES: Boss[] = [
   { id: 99901, name: 'Mock Boss Alpha', url: 'https://www.wowhead.com/npc/99901/mock-boss-alpha' },
-  { id: 99902, name: 'Mock Boss Beta',  url: 'https://www.wowhead.com/npc/99902/mock-boss-beta' },
+  { id: 99902, name: 'Mock Boss Beta', url: 'https://www.wowhead.com/npc/99902/mock-boss-beta' },
   { id: 99903, name: 'Mock Boss Gamma' },
 ];
 
@@ -30,16 +30,17 @@ export async function seedLootDiscord(
 ): Promise<SeedLootDiscordResult> {
   const dbResult = seedLoot(db);
 
-  const row = db
-    .prepare('SELECT value FROM config WHERE key = ?')
-    .get('loot_channel_id') as { value: string } | undefined;
+  const row = db.prepare('SELECT value FROM config WHERE key = ?').get('loot_channel_id') as
+    | { value: string }
+    | undefined;
 
   if (!row) {
     return {
       dbPostsInserted: dbResult.postsInserted,
       postsAttempted: 0,
       postsCreated: 0,
-      skippedReason: 'loot_channel_id not configured — run /setup set_channel key:loot_channel_id first',
+      skippedReason:
+        'loot_channel_id not configured — run /setup set_channel key:loot_channel_id first',
     };
   }
 
@@ -77,7 +78,10 @@ export async function seedLootDiscord(
       await addLootPost(channel, boss);
       created++;
     } catch (error) {
-      logger.warn('TestData', `Failed to post loot for boss ${boss.id}: ${(error as Error).message}`);
+      logger.warn(
+        'TestData',
+        `Failed to post loot for boss ${boss.id}: ${(error as Error).message}`,
+      );
     }
   }
 

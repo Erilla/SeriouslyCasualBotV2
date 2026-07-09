@@ -36,20 +36,29 @@ describe('runMigrations — v4 removes the EPGP feature', () => {
       .all();
     expect(epgpTables).toEqual([]);
 
-    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number };
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
     expect(version.v).toBeGreaterThanOrEqual(4);
   });
 
   it('deletes leftover EPGP channel config keys', () => {
     const db = getDatabase();
     db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_channel_id', 'chan-123');
-    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('epgp_rankings_channel_id', 'chan-456');
+    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run(
+      'epgp_rankings_channel_id',
+      'chan-456',
+    );
     db.exec('DELETE FROM schema_version;');
 
     runMigrations(db);
 
-    expect(db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_channel_id')).toBeUndefined();
-    expect(db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_rankings_channel_id')).toBeUndefined();
+    expect(
+      db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_channel_id'),
+    ).toBeUndefined();
+    expect(
+      db.prepare('SELECT value FROM config WHERE key = ?').get('epgp_rankings_channel_id'),
+    ).toBeUndefined();
   });
 
   it('is a no-op when EPGP tables are already gone', () => {
@@ -86,7 +95,9 @@ describe('runMigrations — v5 adds inactive_since to raiders', () => {
     const cols = db.pragma('table_info(raiders)') as { name: string }[];
     expect(cols.some((c) => c.name === 'inactive_since')).toBe(true);
 
-    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number };
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
     expect(version.v).toBeGreaterThanOrEqual(5);
   });
 
@@ -125,9 +136,9 @@ describe('runMigrations — v3 drops signup_messages', () => {
       .get();
     expect(tableExists).toBeUndefined();
 
-    const version = db
-      .prepare('SELECT MAX(version) as v FROM schema_version')
-      .get() as { v: number };
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
     expect(version.v).toBeGreaterThanOrEqual(3);
   });
 
@@ -149,9 +160,13 @@ describe('runMigrations — v6 drops the orphaned officer_role_id config key', (
 
     runMigrations(db);
 
-    expect(db.prepare('SELECT value FROM config WHERE key = ?').get('officer_role_id')).toBeUndefined();
+    expect(
+      db.prepare('SELECT value FROM config WHERE key = ?').get('officer_role_id'),
+    ).toBeUndefined();
 
-    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number };
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
     expect(version.v).toBeGreaterThanOrEqual(6);
   });
 

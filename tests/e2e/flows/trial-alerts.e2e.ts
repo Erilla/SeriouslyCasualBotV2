@@ -68,10 +68,9 @@ import type { TrialAlertRow } from '../../../src/types/index.js';
 
 /** Return all trial_alerts rows for a given trial_id. */
 function getAlerts(trialId: number): TrialAlertRow[] {
-  return queryAll<TrialAlertRow>(
-    'SELECT * FROM trial_alerts WHERE trial_id = ? ORDER BY id',
-    [trialId],
-  );
+  return queryAll<TrialAlertRow>('SELECT * FROM trial_alerts WHERE trial_id = ? ORDER BY id', [
+    trialId,
+  ]);
 }
 
 /** Return a single trial row by id. */
@@ -85,7 +84,6 @@ function getTrialId(): number | undefined {
 // ---------------------------------------------------------------------------
 
 describe('trial-alerts — scheduled-job flow', () => {
-
   // =========================================================================
   // Tier A: discord: false (DB-only seed, thread_id = null)
   // =========================================================================
@@ -182,7 +180,9 @@ describe('trial-alerts — scheduled-job flow', () => {
       ).run(trialId!, '000000000000000000');
 
       const beforeCount = (
-        db.prepare('SELECT COUNT(*) as c FROM promote_alerts WHERE trial_id = ?').get(trialId!) as { c: number }
+        db.prepare('SELECT COUNT(*) as c FROM promote_alerts WHERE trial_id = ?').get(trialId!) as {
+          c: number;
+        }
       ).c;
       expect(beforeCount).toBe(1);
 
@@ -191,7 +191,9 @@ describe('trial-alerts — scheduled-job flow', () => {
 
       // firePromoteAlert deletes the row when thread is not found.
       const afterCount = (
-        db.prepare('SELECT COUNT(*) as c FROM promote_alerts WHERE trial_id = ?').get(trialId!) as { c: number }
+        db.prepare('SELECT COUNT(*) as c FROM promote_alerts WHERE trial_id = ?').get(trialId!) as {
+          c: number;
+        }
       ).c;
       expect(afterCount).toBe(0);
     });
@@ -231,9 +233,7 @@ describe('trial-alerts — scheduled-job flow', () => {
       if (!trial?.thread_id) {
         // Sandbox hit the active-thread limit — skip rather than fail.
         // The Tier A tests cover the no-thread path exhaustively.
-        testCtx.skip(
-          'sandbox active-thread limit reached; no real thread_id to exercise Tier B',
-        );
+        testCtx.skip('sandbox active-thread limit reached; no real thread_id to exercise Tier B');
         return;
       }
 

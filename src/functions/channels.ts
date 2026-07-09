@@ -74,9 +74,7 @@ function readConfig(key: string): string | undefined {
 }
 
 function writeConfig(key: string, value: string): void {
-  getDatabase()
-    .prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)')
-    .run(key, value);
+  getDatabase().prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(key, value);
 }
 
 function deleteConfig(key: string): void {
@@ -181,9 +179,7 @@ async function resolveChannelImpl(
   // operators can clean up stray channels.
   // Dedup via Set to avoid redundant cache iterations when name === aliasName[i].
   // new Set preserves insertion order per spec, so primary name still beats aliases.
-  const targets = [...new Set(
-    [opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase()),
-  )];
+  const targets = [...new Set([opts.name, ...(opts.aliasNames ?? [])].map((n) => n.toLowerCase()))];
 
   const { correctMatches, wrongMatches } = scanChannelsByTargets(
     guild.channels.cache.values() as Iterable<GuildBasedChannel>,
@@ -247,17 +243,17 @@ async function resolveChannelImpl(
       );
     }
 
-    const {
-      correctMatches: refreshedCorrectMatches,
-      wrongMatches: refreshedWrongMatches,
-    } = scanChannelsByTargets(
-      guild.channels.cache.values() as Iterable<GuildBasedChannel>,
-      targets,
-      opts.type,
-    );
+    const { correctMatches: refreshedCorrectMatches, wrongMatches: refreshedWrongMatches } =
+      scanChannelsByTargets(
+        guild.channels.cache.values() as Iterable<GuildBasedChannel>,
+        targets,
+        opts.type,
+      );
 
     const existingWrongIds = new Set(wrongMatches.map((m) => m.channel.id));
-    const freshWrongMatches = refreshedWrongMatches.filter((m) => !existingWrongIds.has(m.channel.id));
+    const freshWrongMatches = refreshedWrongMatches.filter(
+      (m) => !existingWrongIds.has(m.channel.id),
+    );
     if (freshWrongMatches.length > 0) {
       const details = freshWrongMatches
         .map((m) => `"${m.channel.name}" (${m.channel.id}, type ${ChannelType[m.channel.type]})`)
@@ -304,7 +300,10 @@ async function resolveChannelImpl(
     ...opts.createOptions,
     name: opts.name,
     type: opts.type,
-    parent: opts.type === ChannelType.GuildCategory ? undefined : (parentId ?? opts.createOptions?.parent),
+    parent:
+      opts.type === ChannelType.GuildCategory
+        ? undefined
+        : (parentId ?? opts.createOptions?.parent),
   })) as GuildBasedChannel;
 
   writeConfig(opts.configKey, created.id);

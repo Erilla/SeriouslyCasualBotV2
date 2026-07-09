@@ -68,18 +68,16 @@ interface LootResponseRow {
 
 /** Return the seeded loot post for the given boss_id. */
 function getLootPost(bossId: number): LootPostRow | undefined {
-  return queryOne<LootPostRow>(
-    'SELECT id, boss_id, boss_name FROM loot_posts WHERE boss_id = ?',
-    [bossId],
-  );
+  return queryOne<LootPostRow>('SELECT id, boss_id, boss_name FROM loot_posts WHERE boss_id = ?', [
+    bossId,
+  ]);
 }
 
 /** Return all loot_responses rows for a given loot_post_id. */
 function getResponses(lootPostId: number): LootResponseRow[] {
-  return queryAll<LootResponseRow>(
-    'SELECT * FROM loot_responses WHERE loot_post_id = ?',
-    [lootPostId],
-  );
+  return queryAll<LootResponseRow>('SELECT * FROM loot_responses WHERE loot_post_id = ?', [
+    lootPostId,
+  ]);
 }
 
 /**
@@ -92,7 +90,7 @@ function getResponses(lootPostId: number): LootResponseRow[] {
 function linkRaiderToUser(userId: string, raiderIndex = 0): void {
   const db = getDatabase();
   // Clear any previous link for this user (avoid UNIQUE conflicts across tests).
-  db.prepare("UPDATE raiders SET discord_user_id = NULL WHERE discord_user_id = ?").run(userId);
+  db.prepare('UPDATE raiders SET discord_user_id = NULL WHERE discord_user_id = ?').run(userId);
 
   const raider = db
     .prepare('SELECT id FROM raiders ORDER BY id LIMIT 1 OFFSET ?')
@@ -243,9 +241,7 @@ describe('loot-award — claim flow', () => {
     // Boss ID 0 will never exist in the seed.
     const beforeCount = queryAll('SELECT id FROM loot_responses').length;
 
-    await expect(
-      updateLootResponse(ctx.client, 'major', 0, ctx.tester.id),
-    ).resolves.not.toThrow();
+    await expect(updateLootResponse(ctx.client, 'major', 0, ctx.tester.id)).resolves.not.toThrow();
 
     const afterCount = queryAll('SELECT id FROM loot_responses').length;
     expect(afterCount).toBe(beforeCount);

@@ -20,7 +20,12 @@ import {
   addQuestion,
   removeQuestion,
 } from '../functions/applications/applicationQuestions.js';
-import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';
+import {
+  paginateLines,
+  buildPageEmbed,
+  buildPageButtons,
+  cachePaginatedData,
+} from '../functions/pagination.js';
 import type { ApplicationRow } from '../types/index.js';
 
 export default {
@@ -56,14 +61,10 @@ export default {
       sub.setName('view_pending').setDescription('View all pending applications'),
     )
     .addSubcommand((sub) =>
-      sub
-        .setName('set_accept_message')
-        .setDescription('Set the default acceptance DM message'),
+      sub.setName('set_accept_message').setDescription('Set the default acceptance DM message'),
     )
     .addSubcommand((sub) =>
-      sub
-        .setName('set_reject_message')
-        .setDescription('Set the default rejection DM message'),
+      sub.setName('set_reject_message').setDescription('Set the default rejection DM message'),
     ),
   async execute(interaction: ChatInputCommandInteraction) {
     if (!(await requireOfficer(interaction))) return;
@@ -97,7 +98,11 @@ export default {
         const questionText = interaction.options.getString('question', true);
         const result = addQuestion(questionText);
 
-        await audit(interaction.user, 'added application question', `#${result.id}: ${questionText}`);
+        await audit(
+          interaction.user,
+          'added application question',
+          `#${result.id}: ${questionText}`,
+        );
         await interaction.reply({
           content: `Added question #${result.id} (order: ${result.sort_order}): ${questionText}`,
           flags: MessageFlags.Ephemeral,
@@ -129,7 +134,7 @@ export default {
           .setTitle('Apply to SeriouslyCasual')
           .setDescription(
             'Interested in joining our guild? Click the button below to start your application!\n\n' +
-            'You will be asked a series of questions via DM. Make sure your DMs are open.',
+              'You will be asked a series of questions via DM. Make sure your DMs are open.',
           )
           .setColor(Colors.Green)
           .setTimestamp()
@@ -182,9 +187,7 @@ export default {
 
         const lines = applications.map((app) => {
           const statusEmoji =
-            app.status === 'active' ? '🟢' :
-            app.status === 'in_progress' ? '🟡' :
-            '🔴';
+            app.status === 'active' ? '🟢' : app.status === 'in_progress' ? '🟡' : '🔴';
           const channelRef = app.channel_id ? ` | <#${app.channel_id}>` : '';
           return `${statusEmoji} **#${app.id}** - ${app.character_name || 'Unknown'} (<@${app.applicant_user_id}>) - ${app.status}${channelRef}`;
         });

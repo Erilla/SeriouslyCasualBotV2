@@ -5,22 +5,13 @@ import {
   userSelectHandlers,
 } from '../../../src/interactions/registry.js';
 
-function assertNoCollisions(
-  handlers: Array<{ prefix: string }>,
-  kind: string,
-): void {
+function assertNoCollisions(handlers: Array<{ prefix: string }>, kind: string): void {
   for (let i = 0; i < handlers.length; i++) {
     for (let j = i + 1; j < handlers.length; j++) {
       const a = handlers[i].prefix;
       const b = handlers[j].prefix;
-      const collides =
-        a === b ||
-        a.startsWith(b + ':') ||
-        b.startsWith(a + ':');
-      expect(
-        collides,
-        `${kind} prefix collision: "${a}" and "${b}"`,
-      ).toBe(false);
+      const collides = a === b || a.startsWith(b + ':') || b.startsWith(a + ':');
+      expect(collides, `${kind} prefix collision: "${a}" and "${b}"`).toBe(false);
     }
   }
 }

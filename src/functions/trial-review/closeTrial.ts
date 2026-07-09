@@ -12,9 +12,9 @@ import type { TrialRow } from '../../types/index.js';
 export async function closeTrial(client: Client, trialId: number): Promise<void> {
   const db = getDatabase();
 
-  const trial = db
-    .prepare('SELECT * FROM trials WHERE id = ?')
-    .get(trialId) as TrialRow | undefined;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
 
   if (!trial) throw new Error(`Trial #${trialId} not found`);
 
@@ -22,9 +22,7 @@ export async function closeTrial(client: Client, trialId: number): Promise<void>
   db.prepare("UPDATE trials SET status = 'closed' WHERE id = ?").run(trialId);
 
   // Mark all pending alerts as alerted (so they won't fire)
-  db.prepare(
-    'UPDATE trial_alerts SET alerted = 1 WHERE trial_id = ? AND alerted = 0',
-  ).run(trialId);
+  db.prepare('UPDATE trial_alerts SET alerted = 1 WHERE trial_id = ? AND alerted = 0').run(trialId);
 
   // Delete any promote alerts
   db.prepare('DELETE FROM promote_alerts WHERE trial_id = ?').run(trialId);
@@ -51,15 +49,9 @@ export async function closeTrial(client: Client, trialId: number): Promise<void>
         await closeThread(thread);
       }
     } catch (error) {
-      logger.warn(
-        'Trials',
-        `Failed to archive thread for trial #${trialId}: ${error}`,
-      );
+      logger.warn('Trials', `Failed to archive thread for trial #${trialId}: ${error}`);
     }
   }
 
-  logger.info(
-    'Trials',
-    `Closed trial #${trialId} (${trial.character_name})`,
-  );
+  logger.info('Trials', `Closed trial #${trialId} (${trial.character_name})`);
 }

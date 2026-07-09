@@ -18,7 +18,10 @@ export async function voteOnApplication(
     'INSERT OR REPLACE INTO application_votes (application_id, user_id, vote_type) VALUES (?, ?, ?)',
   ).run(applicationId, interaction.user.id, voteType);
 
-  logger.info('Applications', `Vote recorded: user ${interaction.user.id} voted '${voteType}' on application #${applicationId}`);
+  logger.info(
+    'Applications',
+    `Vote recorded: user ${interaction.user.id} voted '${voteType}' on application #${applicationId}`,
+  );
 
   // Regenerate the embed and update the message in place
   const updated = generateVotingEmbed(applicationId);

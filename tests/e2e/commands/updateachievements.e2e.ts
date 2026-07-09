@@ -43,7 +43,7 @@ describe('/updateachievements', () => {
       const content =
         typeof reply.options === 'string'
           ? reply.options
-          : (reply.options as { content?: string }).content ?? '';
+          : ((reply.options as { content?: string }).content ?? '');
       expect(content).toMatch(/Updating achievements/i);
 
       // After raider.io calls complete, editReply must have been called with the
@@ -52,7 +52,7 @@ describe('/updateachievements', () => {
       const editedContent =
         typeof iact.__editedReply!.options === 'string'
           ? iact.__editedReply!.options
-          : (iact.__editedReply!.options as { content?: string }).content ?? '';
+          : ((iact.__editedReply!.options as { content?: string }).content ?? '');
       expect(editedContent).toMatch(/Achievements updated/i);
     },
   );

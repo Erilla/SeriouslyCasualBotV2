@@ -52,7 +52,10 @@ describe('dispatch', () => {
     expect(result).toBe(false);
     expect(handleA).not.toHaveBeenCalled();
     expect(handleB).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith('interaction', expect.stringMatching(/Unhandled button: unknown:id/));
+    expect(logger.warn).toHaveBeenCalledWith(
+      'interaction',
+      expect.stringMatching(/Unhandled button: unknown:id/),
+    );
   });
 
   it('returns true when a handler runs', async () => {
@@ -81,7 +84,9 @@ describe('dispatch', () => {
   });
 
   it('catches and logs a handler throw via wrapErrors', async () => {
-    const throwing: ButtonHandler[] = [{ prefix: 'boom', handle: vi.fn().mockRejectedValue(new Error('kaboom')) }];
+    const throwing: ButtonHandler[] = [
+      { prefix: 'boom', handle: vi.fn().mockRejectedValue(new Error('kaboom')) },
+    ];
     const interaction = stubInteraction();
     await dispatch(throwing, 'button', interaction, 'boom');
     expect((interaction as any).reply).toHaveBeenCalledWith(

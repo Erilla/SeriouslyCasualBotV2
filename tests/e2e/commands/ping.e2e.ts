@@ -27,7 +27,8 @@ describe('/ping', () => {
     expect(iact.__replies.length).toBe(1);
     expect(iact.__editedReply).not.toBeNull();
     const reply = iact.__editedReply!.options;
-    const text = typeof reply === 'string' ? reply : (reply as { content?: string }).content ?? '';
+    const text =
+      typeof reply === 'string' ? reply : ((reply as { content?: string }).content ?? '');
     expect(text).toMatch(/Pong!/);
     expect(text).toMatch(/API Latency/);
   });

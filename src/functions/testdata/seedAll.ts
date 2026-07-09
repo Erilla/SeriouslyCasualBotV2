@@ -33,7 +33,10 @@ export interface SeedAllResult {
  * Error model: fail-soft. Every step is caught individually; failures are recorded
  * in `skipped`. A failure in one step does not prevent subsequent steps from running.
  */
-export async function seedAll(db: Database.Database, options: SeedAllOptions = {}): Promise<SeedAllResult> {
+export async function seedAll(
+  db: Database.Database,
+  options: SeedAllOptions = {},
+): Promise<SeedAllResult> {
   const discord = Boolean(options.client);
   const skipped: string[] = [];
 
@@ -74,7 +77,9 @@ export async function seedAll(db: Database.Database, options: SeedAllOptions = {
   let trialId: number | null = null;
   try {
     if (options.client) {
-      const r = await seedTrialDiscord(options.client, { applicationId: applicationId ?? undefined });
+      const r = await seedTrialDiscord(options.client, {
+        applicationId: applicationId ?? undefined,
+      });
       trialId = r.trialId;
       if (r.skippedReason) skipped.push(`trial: ${r.skippedReason}`);
     } else {

@@ -8,9 +8,9 @@ import type { LootPostRow, LootResponseRow, RaiderRow } from '../../types/index.
 export async function updateLootPost(client: Client, bossId: number): Promise<void> {
   const db = getDatabase();
 
-  const lootPost = db
-    .prepare('SELECT * FROM loot_posts WHERE boss_id = ?')
-    .get(bossId) as LootPostRow | undefined;
+  const lootPost = db.prepare('SELECT * FROM loot_posts WHERE boss_id = ?').get(bossId) as
+    | LootPostRow
+    | undefined;
 
   if (!lootPost) {
     logger.warn('Loot', `No loot post found for boss_id ${bossId}`);
@@ -64,7 +64,10 @@ export async function updateLootPost(client: Client, bossId: number): Promise<vo
 
     const message = await channel.messages.fetch(lootPost.message_id);
     await message.edit(postData);
-    logger.info('Loot', `Updated loot post for boss_id ${bossId} with ${responses.length} responses`);
+    logger.info(
+      'Loot',
+      `Updated loot post for boss_id ${bossId} with ${responses.length} responses`,
+    );
   } catch (error) {
     logger.error('Loot', `Failed to update loot post for boss_id ${bossId}`, error as Error);
   }

@@ -65,7 +65,9 @@ describe('seedRaiders', () => {
       character_name: string;
     }>;
 
-    const hasSpecialChar = rows.some((r) => /[àáâãäåæçèéêëìíîïðñòóôõöùúûüýþÿ']/i.test(r.character_name));
+    const hasSpecialChar = rows.some((r) =>
+      /[àáâãäåæçèéêëìíîïðñòóôõöùúûüýþÿ']/i.test(r.character_name),
+    );
     expect(hasSpecialChar).toBe(true);
   });
 
@@ -104,7 +106,9 @@ describe('seedApplicationQuestions', () => {
     const result = seedApplicationQuestions(db);
     expect(result.inserted).toBe(9);
 
-    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
     expect(count).toBe(9);
   });
 
@@ -113,13 +117,17 @@ describe('seedApplicationQuestions', () => {
     const second = seedApplicationQuestions(db);
 
     expect(second.inserted).toBe(0);
-    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
     expect(count).toBe(9);
   });
 
   it('questions are ordered by sort_order starting at 1', () => {
     seedApplicationQuestions(db);
-    const rows = db.prepare('SELECT sort_order FROM application_questions ORDER BY sort_order').all() as Array<{ sort_order: number }>;
+    const rows = db
+      .prepare('SELECT sort_order FROM application_questions ORDER BY sort_order')
+      .all() as Array<{ sort_order: number }>;
     expect(rows.map((r) => r.sort_order)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 });
@@ -151,21 +159,27 @@ describe('seedApplication', () => {
   it('inserts default questions when none exist', () => {
     seedApplication(db);
 
-    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
     expect(count).toBe(9);
   });
 
   it('inserts one answer per question', () => {
     const result = seedApplication(db);
 
-    const answers = db.prepare('SELECT * FROM application_answers WHERE application_id = ?').all(result.applicationId);
+    const answers = db
+      .prepare('SELECT * FROM application_answers WHERE application_id = ?')
+      .all(result.applicationId);
     expect(answers).toHaveLength(result.questionCount);
   });
 
   it('inserts 2 votes for the application', () => {
     const result = seedApplication(db);
 
-    const votes = db.prepare('SELECT * FROM application_votes WHERE application_id = ?').all(result.applicationId) as Array<{
+    const votes = db
+      .prepare('SELECT * FROM application_votes WHERE application_id = ?')
+      .all(result.applicationId) as Array<{
       vote_type: string;
     }>;
 
@@ -179,7 +193,9 @@ describe('seedApplication', () => {
     seedApplication(db);
     seedApplication(db);
 
-    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
     expect(count).toBe(9);
   });
 
@@ -211,7 +227,9 @@ describe('seedApplication', () => {
     const result = seedApplication(db, { answerCount: 3 });
     expect(result.answersInserted).toBe(3);
 
-    const answers = db.prepare('SELECT * FROM application_answers WHERE application_id = ?').all(result.applicationId);
+    const answers = db
+      .prepare('SELECT * FROM application_answers WHERE application_id = ?')
+      .all(result.applicationId);
     expect(answers).toHaveLength(3);
   });
 
@@ -219,7 +237,9 @@ describe('seedApplication', () => {
     const result = seedApplication(db, { status: 'in_progress', answerCount: 2 });
     expect(result.votesInserted).toBe(0);
 
-    const votes = db.prepare('SELECT * FROM application_votes WHERE application_id = ?').all(result.applicationId);
+    const votes = db
+      .prepare('SELECT * FROM application_votes WHERE application_id = ?')
+      .all(result.applicationId);
     expect(votes).toHaveLength(0);
   });
 
@@ -237,7 +257,9 @@ describe('seedApplicationVariety', () => {
 
     expect(result.applicationIds).toHaveLength(5);
 
-    const rows = db.prepare('SELECT status, COUNT(*) as count FROM applications GROUP BY status').all() as Array<{ status: string; count: number }>;
+    const rows = db
+      .prepare('SELECT status, COUNT(*) as count FROM applications GROUP BY status')
+      .all() as Array<{ status: string; count: number }>;
     const byStatus = Object.fromEntries(rows.map((r) => [r.status, r.count]));
 
     expect(byStatus.in_progress).toBe(1);
@@ -250,9 +272,15 @@ describe('seedApplicationVariety', () => {
   it('in_progress application has 3 answers and 0 votes', () => {
     seedApplicationVariety(db);
 
-    const app = db.prepare("SELECT id FROM applications WHERE status = 'in_progress'").get() as { id: number };
-    const answers = db.prepare('SELECT * FROM application_answers WHERE application_id = ?').all(app.id);
-    const votes = db.prepare('SELECT * FROM application_votes WHERE application_id = ?').all(app.id);
+    const app = db.prepare("SELECT id FROM applications WHERE status = 'in_progress'").get() as {
+      id: number;
+    };
+    const answers = db
+      .prepare('SELECT * FROM application_answers WHERE application_id = ?')
+      .all(app.id);
+    const votes = db
+      .prepare('SELECT * FROM application_votes WHERE application_id = ?')
+      .all(app.id);
 
     expect(answers).toHaveLength(3);
     expect(votes).toHaveLength(0);
@@ -261,8 +289,12 @@ describe('seedApplicationVariety', () => {
   it('abandoned application has 0 votes', () => {
     seedApplicationVariety(db);
 
-    const app = db.prepare("SELECT id FROM applications WHERE status = 'abandoned'").get() as { id: number };
-    const votes = db.prepare('SELECT * FROM application_votes WHERE application_id = ?').all(app.id);
+    const app = db.prepare("SELECT id FROM applications WHERE status = 'abandoned'").get() as {
+      id: number;
+    };
+    const votes = db
+      .prepare('SELECT * FROM application_votes WHERE application_id = ?')
+      .all(app.id);
     expect(votes).toHaveLength(0);
   });
 });
@@ -297,7 +329,9 @@ describe('seedTrial', () => {
   it('inserts 3 trial alerts for the trial', () => {
     const result = seedTrial(db);
 
-    const alerts = db.prepare('SELECT * FROM trial_alerts WHERE trial_id = ?').all(result.trialId) as Array<{
+    const alerts = db
+      .prepare('SELECT * FROM trial_alerts WHERE trial_id = ?')
+      .all(result.trialId) as Array<{
       alert_name: string;
       alert_date: string;
       alerted: number;
@@ -309,7 +343,9 @@ describe('seedTrial', () => {
   it('alert names are 7-day, 14-day, and 28-day review', () => {
     const result = seedTrial(db);
 
-    const alerts = db.prepare('SELECT alert_name FROM trial_alerts WHERE trial_id = ? ORDER BY alert_date').all(result.trialId) as Array<{ alert_name: string }>;
+    const alerts = db
+      .prepare('SELECT alert_name FROM trial_alerts WHERE trial_id = ? ORDER BY alert_date')
+      .all(result.trialId) as Array<{ alert_name: string }>;
     const names = alerts.map((a) => a.alert_name);
 
     expect(names).toContain('7-day review');
@@ -320,7 +356,9 @@ describe('seedTrial', () => {
   it('all alerts start with alerted = 0', () => {
     const result = seedTrial(db);
 
-    const alerts = db.prepare('SELECT alerted FROM trial_alerts WHERE trial_id = ?').all(result.trialId) as Array<{ alerted: number }>;
+    const alerts = db
+      .prepare('SELECT alerted FROM trial_alerts WHERE trial_id = ?')
+      .all(result.trialId) as Array<{ alerted: number }>;
 
     for (const alert of alerts) {
       expect(alert.alerted).toBe(0);
@@ -330,7 +368,9 @@ describe('seedTrial', () => {
   it('trial start_date is 7 days ago', () => {
     const result = seedTrial(db);
 
-    const trial = db.prepare('SELECT start_date FROM trials WHERE id = ?').get(result.trialId) as { start_date: string };
+    const trial = db.prepare('SELECT start_date FROM trials WHERE id = ?').get(result.trialId) as {
+      start_date: string;
+    };
 
     const startDate = new Date(trial.start_date);
     const expected = new Date();
@@ -344,7 +384,9 @@ describe('seedTrial', () => {
   it('14-day and 28-day alerts are in the future', () => {
     const result = seedTrial(db);
 
-    const alerts = db.prepare('SELECT alert_name, alert_date FROM trial_alerts WHERE trial_id = ?').all(result.trialId) as Array<{
+    const alerts = db
+      .prepare('SELECT alert_name, alert_date FROM trial_alerts WHERE trial_id = ?')
+      .all(result.trialId) as Array<{
       alert_name: string;
       alert_date: string;
     }>;
@@ -362,14 +404,18 @@ describe('seedTrial', () => {
 
     const trialResult = seedTrial(db, { applicationId: appResult.applicationId });
 
-    const trial = db.prepare('SELECT application_id FROM trials WHERE id = ?').get(trialResult.trialId) as { application_id: number };
+    const trial = db
+      .prepare('SELECT application_id FROM trials WHERE id = ?')
+      .get(trialResult.trialId) as { application_id: number };
     expect(trial.application_id).toBe(appResult.applicationId);
   });
 
   it('application_id is NULL when not provided', () => {
     const result = seedTrial(db);
 
-    const trial = db.prepare('SELECT application_id FROM trials WHERE id = ?').get(result.trialId) as { application_id: number | null };
+    const trial = db
+      .prepare('SELECT application_id FROM trials WHERE id = ?')
+      .get(result.trialId) as { application_id: number | null };
     expect(trial.application_id).toBeNull();
   });
 });
@@ -389,7 +435,9 @@ describe('seedLoot', () => {
   it('uses boss_ids 99901, 99902, 99903', () => {
     seedLoot(db);
 
-    const rows = db.prepare('SELECT boss_id FROM loot_posts ORDER BY boss_id').all() as Array<{ boss_id: number }>;
+    const rows = db.prepare('SELECT boss_id FROM loot_posts ORDER BY boss_id').all() as Array<{
+      boss_id: number;
+    }>;
     const ids = rows.map((r) => r.boss_id);
 
     expect(ids).toEqual([99901, 99902, 99903]);
@@ -414,7 +462,9 @@ describe('seedLoot', () => {
   it('third post has null boss_url', () => {
     seedLoot(db);
 
-    const row = db.prepare('SELECT boss_url FROM loot_posts WHERE boss_id = 99903').get() as { boss_url: string | null };
+    const row = db.prepare('SELECT boss_url FROM loot_posts WHERE boss_id = 99903').get() as {
+      boss_url: string | null;
+    };
     expect(row.boss_url).toBeNull();
   });
 
@@ -457,38 +507,58 @@ describe('resetData', () => {
     seedLoot(db);
 
     // Verify data exists
-    expect((db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count).toBeGreaterThan(0);
-    expect((db.prepare('SELECT COUNT(*) as count FROM loot_posts').get() as { count: number }).count).toBeGreaterThan(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count,
+    ).toBeGreaterThan(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM loot_posts').get() as { count: number }).count,
+    ).toBeGreaterThan(0);
 
     // Reset (no client → DB-only path)
     await resetData(db);
 
     // All user data cleared
-    expect((db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) as count FROM loot_posts').get() as { count: number }).count).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }).count).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) as count FROM trials').get() as { count: number }).count).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) as count FROM trial_alerts').get() as { count: number }).count).toBe(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count,
+    ).toBe(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM loot_posts').get() as { count: number }).count,
+    ).toBe(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }).count,
+    ).toBe(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM trials').get() as { count: number }).count,
+    ).toBe(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) as count FROM trial_alerts').get() as { count: number }).count,
+    ).toBe(0);
   });
 
   it('re-seeds default guild_info_content after reset', async () => {
     await resetData(db);
 
-    const count = (db.prepare('SELECT COUNT(*) as count FROM guild_info_content').get() as { count: number }).count;
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM guild_info_content').get() as { count: number }
+    ).count;
     expect(count).toBeGreaterThan(0);
   });
 
   it('re-seeds schedule defaults after reset', async () => {
     await resetData(db);
 
-    const days = (db.prepare('SELECT COUNT(*) as count FROM schedule_days').get() as { count: number }).count;
+    const days = (
+      db.prepare('SELECT COUNT(*) as count FROM schedule_days').get() as { count: number }
+    ).count;
     expect(days).toBeGreaterThan(0);
   });
 
   it('re-seeds default_messages after reset', async () => {
     await resetData(db);
 
-    const msgs = (db.prepare('SELECT COUNT(*) as count FROM default_messages').get() as { count: number }).count;
+    const msgs = (
+      db.prepare('SELECT COUNT(*) as count FROM default_messages').get() as { count: number }
+    ).count;
     expect(msgs).toBeGreaterThan(0);
   });
 
@@ -498,7 +568,9 @@ describe('resetData', () => {
 
     await resetData(db);
 
-    const count = (db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }).count;
+    const count = (
+      db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
+    ).count;
     expect(count).toBe(9);
   });
 
@@ -511,7 +583,8 @@ describe('resetData', () => {
     await resetData(db);
     expect(() => seedRaiders(db)).not.toThrow();
 
-    const count = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count;
+    const count = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number })
+      .count;
     expect(count).toBe(15);
   });
 
@@ -533,8 +606,7 @@ describe('resetData', () => {
       (fkDb.prepare('SELECT COUNT(*) as count FROM trials').get() as { count: number }).count,
     ).toBe(0);
     expect(
-      (fkDb.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number })
-        .count,
+      (fkDb.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }).count,
     ).toBe(0);
 
     fkDb.close();
@@ -549,8 +621,12 @@ describe('resetData', () => {
     // Seed some data that should survive the aborted reset.
     seedRaiders(db);
     seedApplication(db);
-    const raidersBefore = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count;
-    const appsBefore = (db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }).count;
+    const raidersBefore = (
+      db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }
+    ).count;
+    const appsBefore = (
+      db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }
+    ).count;
     expect(raidersBefore).toBeGreaterThan(0);
     expect(appsBefore).toBeGreaterThan(0);
 
@@ -558,8 +634,9 @@ describe('resetData', () => {
     // try to delete. resetDiscordArtifacts will fail to fetch the parent
     // channel and that failure will surface as a real error (not a 404),
     // which should abort the reset.
-    db.prepare(`INSERT INTO loot_posts (boss_id, boss_name, channel_id, message_id) VALUES (?, ?, ?, ?)`)
-      .run(99999, 'mock', 'parent-channel-id', 'some-message-id');
+    db.prepare(
+      `INSERT INTO loot_posts (boss_id, boss_name, channel_id, message_id) VALUES (?, ?, ?, ?)`,
+    ).run(99999, 'mock', 'parent-channel-id', 'some-message-id');
 
     // Minimal mock: guild.fetch resolves, guild.channels.fetch rejects with a
     // non-404 error.
@@ -579,8 +656,12 @@ describe('resetData', () => {
     await expect(resetData(db, mockClient)).rejects.toBeInstanceOf(ResetDiscordError);
 
     // DB state should be untouched.
-    const raidersAfter = (db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }).count;
-    const appsAfter = (db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }).count;
+    const raidersAfter = (
+      db.prepare('SELECT COUNT(*) as count FROM raiders').get() as { count: number }
+    ).count;
+    const appsAfter = (
+      db.prepare('SELECT COUNT(*) as count FROM applications').get() as { count: number }
+    ).count;
     expect(raidersAfter).toBe(raidersBefore);
     expect(appsAfter).toBe(appsBefore);
     expect(

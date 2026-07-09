@@ -24,9 +24,15 @@ describe('getUpcomingRaids', () => {
   it('should fetch upcoming raids with correct headers', async () => {
     const mockRaids = [
       {
-        id: 1, date: '2026-04-20', start_time: '20:00', end_time: '23:00',
-        instance: 'Test Raid', difficulty: 'Mythic', status: 'Planned',
-        present_size: 0, total_size: 25,
+        id: 1,
+        date: '2026-04-20',
+        start_time: '20:00',
+        end_time: '23:00',
+        instance: 'Test Raid',
+        difficulty: 'Mythic',
+        status: 'Planned',
+        present_size: 0,
+        total_size: 25,
       },
     ];
 
@@ -53,7 +59,10 @@ describe('getUpcomingRaids', () => {
 
   it('throws HttpError without retry on 401', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: false, status: 401, statusText: 'Unauthorized', headers: new Headers(),
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      headers: new Headers(),
     });
     globalThis.fetch = fetchMock;
 
@@ -65,9 +74,15 @@ describe('getUpcomingRaids', () => {
 describe('getRaid', () => {
   it('fetches a single raid (with signups) by id', async () => {
     const raid = {
-      id: 7, date: '2026-04-20', difficulty: 'Mythic', status: 'Planned',
+      id: 7,
+      date: '2026-04-20',
+      difficulty: 'Mythic',
+      status: 'Planned',
       signups: [
-        { character: { name: 'Aspectial', realm: 'silvermoon', class: 'Evoker', role: 'Ranged' }, status: 'Unknown' },
+        {
+          character: { name: 'Aspectial', realm: 'silvermoon', class: 'Evoker', role: 'Ranged' },
+          status: 'Unknown',
+        },
       ],
     };
 
@@ -97,7 +112,8 @@ describe('getHistoricalData', () => {
     ];
     const mockResponse = { period: 41, characters };
 
-    globalThis.fetch = vi.fn()
+    globalThis.fetch = vi
+      .fn()
       .mockResolvedValueOnce({
         // getCurrentPeriod call
         ok: true,
@@ -135,7 +151,9 @@ describe('getHistoricalData', () => {
   it('retries on 500 from getCurrentPeriod and throws HttpError', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: false, status: 500, statusText: 'Internal Server Error',
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
       headers: new Headers(),
     });
     globalThis.fetch = fetchMock;
@@ -151,13 +169,18 @@ describe('getHistoricalData', () => {
   });
 
   it('throws HttpError without retry when historical data returns 404', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce({
-        ok: true, headers: new Headers(),
+        ok: true,
+        headers: new Headers(),
         json: async () => ({ current_period: 42 }),
       })
       .mockResolvedValueOnce({
-        ok: false, status: 404, statusText: 'Not Found', headers: new Headers(),
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        headers: new Headers(),
       });
     globalThis.fetch = fetchMock;
 

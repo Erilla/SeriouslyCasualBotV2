@@ -6,11 +6,11 @@ import { config } from '../config.js';
 // is down or the key isn't set. Anything appended here shows up in the
 // fallback pool and as few-shot inspiration in the Gemini prompt.
 const V1_SAMPLE_QUIPS: readonly string[] = [
-  "Oi, sign up innit?",
-  "Have you considered signing up on time?",
-  "Missing raid sign-ups is like going into battle without armor. Suit up and sign up!",
+  'Oi, sign up innit?',
+  'Have you considered signing up on time?',
+  'Missing raid sign-ups is like going into battle without armor. Suit up and sign up!',
   "Don't be the ghost of raiding past — haunt the sign-up sheet instead!",
-  "Raid sign-ups: where the only thing better than your DPS is your punctuality!",
+  'Raid sign-ups: where the only thing better than your DPS is your punctuality!',
   "Bing's checklist: snacks, buffs, and raid sign-ups. Don't make him hunt you down for the last one!",
   "Warzania's decree: Thou shalt sign up for the raid or face the wrath of a thousand guildies!",
 ];
@@ -70,7 +70,10 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
 
       const cleaned = normalizeQuip(raw);
       if (cleaned.length === 0 || cleaned.length > MAX_QUIP_LENGTH) {
-        logger.warn('QuipGen', `${provider.name} quip rejected (length ${cleaned.length}): ${cleaned.slice(0, 80)}`);
+        logger.warn(
+          'QuipGen',
+          `${provider.name} quip rejected (length ${cleaned.length}): ${cleaned.slice(0, 80)}`,
+        );
         continue;
       }
 
@@ -163,9 +166,15 @@ async function callGemini(apiKey: string, prompt: string): Promise<string | null
 
   const candidate = json.candidates?.[0];
   const parts = candidate?.content?.parts ?? [];
-  const text = parts.map((p) => p.text ?? '').join('').trim();
+  const text = parts
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim();
   if (!text) {
-    logger.warn('QuipGen', `Gemini returned no text (finishReason: ${candidate?.finishReason ?? 'unknown'})`);
+    logger.warn(
+      'QuipGen',
+      `Gemini returned no text (finishReason: ${candidate?.finishReason ?? 'unknown'})`,
+    );
     return null;
   }
   return text;

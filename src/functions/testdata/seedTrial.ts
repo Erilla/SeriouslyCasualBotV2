@@ -24,10 +24,14 @@ export function seedTrial(db: Database.Database, options: SeedTrialOptions = {})
   const applicationId = options.applicationId ?? null;
 
   const tx = db.transaction((): SeedTrialResult => {
-    const trialResult = db.prepare(`
+    const trialResult = db
+      .prepare(
+        `
       INSERT INTO trials (character_name, role, start_date, status, application_id)
       VALUES (?, ?, date('now', '-7 days'), 'active', ?)
-    `).run(characterName, role, applicationId);
+    `,
+      )
+      .run(characterName, role, applicationId);
 
     const trialId = trialResult.lastInsertRowid as number;
 
@@ -42,8 +46,8 @@ export function seedTrial(db: Database.Database, options: SeedTrialOptions = {})
       INSERT INTO trial_alerts (trial_id, alert_name, alert_date, alerted) VALUES (?, ?, ?, ?)
     `);
 
-    insertAlert.run(trialId, '7-day review',  addDays(now, 0),  0);
-    insertAlert.run(trialId, '14-day review', addDays(now, 7),  0);
+    insertAlert.run(trialId, '7-day review', addDays(now, 0), 0);
+    insertAlert.run(trialId, '14-day review', addDays(now, 7), 0);
     insertAlert.run(trialId, '28-day review', addDays(now, 21), 0);
 
     return { trialId, alertCount: 3 };

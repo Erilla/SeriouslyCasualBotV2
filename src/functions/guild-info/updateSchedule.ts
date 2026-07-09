@@ -17,14 +17,20 @@ export async function updateSchedule(client: Client): Promise<void> {
   const db = getDatabase();
 
   // Get schedule config
-  const titleRow = db.prepare('SELECT value FROM schedule_config WHERE key = ?').get('title') as ScheduleConfigRow | undefined;
-  const timezoneRow = db.prepare('SELECT value FROM schedule_config WHERE key = ?').get('timezone') as ScheduleConfigRow | undefined;
+  const titleRow = db.prepare('SELECT value FROM schedule_config WHERE key = ?').get('title') as
+    | ScheduleConfigRow
+    | undefined;
+  const timezoneRow = db
+    .prepare('SELECT value FROM schedule_config WHERE key = ?')
+    .get('timezone') as ScheduleConfigRow | undefined;
 
   const title = titleRow?.value ?? 'Raid Schedule';
   const timezone = timezoneRow?.value ?? 'Server Time';
 
   // Get schedule days ordered by sort_order
-  const days = db.prepare('SELECT * FROM schedule_days ORDER BY sort_order').all() as ScheduleDayRow[];
+  const days = db
+    .prepare('SELECT * FROM schedule_days ORDER BY sort_order')
+    .all() as ScheduleDayRow[];
 
   if (days.length === 0) {
     logger.warn('guild-info', 'No schedule days found');

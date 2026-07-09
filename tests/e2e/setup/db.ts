@@ -66,4 +66,3 @@ export async function wipeTestDb(): Promise<void> {
   }
   throw lastErr;
 }
-

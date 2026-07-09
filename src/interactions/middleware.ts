@@ -1,5 +1,9 @@
 import { GuildMember, MessageFlags } from 'discord.js';
-import type { ButtonInteraction, ModalSubmitInteraction, UserSelectMenuInteraction } from 'discord.js';
+import type {
+  ButtonInteraction,
+  ModalSubmitInteraction,
+  UserSelectMenuInteraction,
+} from 'discord.js';
 import { config } from '../config.js';
 import { logger } from '../services/logger.js';
 
@@ -11,10 +15,12 @@ export async function requireOfficer(interaction: Gatable): Promise<boolean> {
   const member = interaction.member;
   if (member instanceof GuildMember && member.roles.cache.has(config.officerRoleId)) return true;
 
-  await interaction.reply({
-    content: 'You do not have permission to do this.',
-    flags: MessageFlags.Ephemeral,
-  }).catch(() => {});
+  await interaction
+    .reply({
+      content: 'You do not have permission to do this.',
+      flags: MessageFlags.Ephemeral,
+    })
+    .catch(() => {});
   return false;
 }
 
@@ -30,7 +36,10 @@ export async function wrapErrors(
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error('interaction', `${kind} handler failed (${customId}): ${err.message}`, err);
 
-    const reply = { content: `An error occurred handling this ${kind}.`, flags: MessageFlags.Ephemeral } as const;
+    const reply = {
+      content: `An error occurred handling this ${kind}.`,
+      flags: MessageFlags.Ephemeral,
+    } as const;
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(reply).catch(() => {});
     } else {

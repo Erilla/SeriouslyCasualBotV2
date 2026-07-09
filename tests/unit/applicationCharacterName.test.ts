@@ -13,7 +13,10 @@ vi.mock('../../src/services/logger.js', () => ({
 }));
 
 import { startApplication } from '../../src/functions/applications/startApplication.js';
-import { handleDmMessage, activeSessions } from '../../src/functions/applications/dmQuestionnaire.js';
+import {
+  handleDmMessage,
+  activeSessions,
+} from '../../src/functions/applications/dmQuestionnaire.js';
 import type { ApplicationRow } from '../../src/types/index.js';
 
 /** Minimal User stand-in for the DM questionnaire flow. */
@@ -38,10 +41,14 @@ describe('application character_name source', () => {
     createTables(db);
     // The first question asks for class — NOT the character name. This mirrors
     // the seeded default question set that triggered the bug.
-    db.prepare('INSERT INTO application_questions (question, sort_order) VALUES (?, ?)')
-      .run('What class and spec are you applying as?', 1);
-    db.prepare('INSERT INTO application_questions (question, sort_order) VALUES (?, ?)')
-      .run('Please link your Raider.IO profile', 2);
+    db.prepare('INSERT INTO application_questions (question, sort_order) VALUES (?, ?)').run(
+      'What class and spec are you applying as?',
+      1,
+    );
+    db.prepare('INSERT INTO application_questions (question, sort_order) VALUES (?, ?)').run(
+      'Please link your Raider.IO profile',
+      2,
+    );
   });
 
   afterEach(() => {

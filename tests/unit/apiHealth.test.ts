@@ -28,7 +28,12 @@ describe('apiHealth tracker core', () => {
   it('starts with zeroed totals and closed breaker', () => {
     const s = getSummary('raiderio');
     expect(s.totals).toEqual({
-      ok: 0, retried: 0, rateLimited: 0, timeouts: 0, failed: 0, circuitRejected: 0,
+      ok: 0,
+      retried: 0,
+      rateLimited: 0,
+      timeouts: 0,
+      failed: 0,
+      circuitRejected: 0,
     });
     expect(s.breaker).toBe('closed');
     expect(s.lastError).toBeUndefined();

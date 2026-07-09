@@ -11,7 +11,11 @@ import type { LootPostRow } from '../../types/index.js';
 
 const RESPONSE_TYPES: (keyof V1Votes)[] = ['major', 'minor', 'wantIn', 'wantOut'];
 
-export function insertLootResponses(db: Database.Database, lootPostId: number, votes: V1Votes): number {
+export function insertLootResponses(
+  db: Database.Database,
+  lootPostId: number,
+  votes: V1Votes,
+): number {
   const stmt = db.prepare(
     'INSERT OR IGNORE INTO loot_responses (loot_post_id, user_id, response_type) VALUES (?, ?, ?)',
   );
@@ -28,7 +32,11 @@ export function insertLootResponses(db: Database.Database, lootPostId: number, v
   return inserted;
 }
 
-export interface LootRecreateResult { created: number; merged: number; failed: number }
+export interface LootRecreateResult {
+  created: number;
+  merged: number;
+  failed: number;
+}
 
 export async function recreateLootPosts(
   client: Client,
@@ -60,9 +68,14 @@ export async function recreateLootPosts(
       const alreadyExisted = row !== undefined;
 
       if (!row) {
-        await addLootPost(channel, { id: post.bossId, name: post.bossName, url: post.bossUrl ?? undefined });
+        await addLootPost(channel, {
+          id: post.bossId,
+          name: post.bossName,
+          url: post.bossUrl ?? undefined,
+        });
         row = stmtFetch.get(post.bossId) as LootPostRow | undefined;
-        if (!row) throw new Error(`loot_posts row missing after addLootPost for boss ${post.bossId}`);
+        if (!row)
+          throw new Error(`loot_posts row missing after addLootPost for boss ${post.bossId}`);
       }
 
       insertLootResponses(db, row.id, post.votes);
@@ -72,7 +85,11 @@ export async function recreateLootPosts(
       else result.created++;
     } catch (error) {
       result.failed++;
-      logger.error('Migrate', `Failed to recreate loot post for boss ${post.bossId}`, error as Error);
+      logger.error(
+        'Migrate',
+        `Failed to recreate loot post for boss ${post.bossId}`,
+        error as Error,
+      );
     }
   }
 

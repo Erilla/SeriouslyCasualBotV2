@@ -6,10 +6,9 @@ function makeV1Db(): Database.Database {
   const db = new Database(':memory:');
   db.exec('CREATE TABLE keyv (key TEXT PRIMARY KEY, value TEXT)');
   const put = (key: string, payload: unknown) =>
-    db.prepare('INSERT INTO keyv (key, value) VALUES (?, ?)').run(
-      key,
-      JSON.stringify({ value: payload, expires: null }),
-    );
+    db
+      .prepare('INSERT INTO keyv (key, value) VALUES (?, ?)')
+      .run(key, JSON.stringify({ value: payload, expires: null }));
   put('raiders:Eldrítch', '230118286229110784');
   put('overlords:Bing', '111111111111111111');
   // ignoredCharacters entries have NO `value` field in V1 — only `{expires:null}`.
@@ -18,13 +17,25 @@ function makeV1Db(): Database.Database {
     JSON.stringify({ expires: null }),
   );
   put('lootResponses:197140', {
-    major: ['u1', 'u2'], minor: ['u3'], wantIn: [], wantOut: ['u4'],
-    bossName: 'Midnight Falls', bossUrl: 'https://x/mf', channelId: 'c', messageId: 'm',
+    major: ['u1', 'u2'],
+    minor: ['u3'],
+    wantIn: [],
+    wantOut: ['u4'],
+    bossName: 'Midnight Falls',
+    bossUrl: 'https://x/mf',
+    channelId: 'c',
+    messageId: 'm',
   });
   // Old-tier boss must be filtered out.
   put('lootResponses:184972', {
-    major: ['u9'], minor: [], wantIn: [], wantOut: [],
-    bossName: 'Eranog', bossUrl: 'https://x/er', channelId: 'c', messageId: 'm',
+    major: ['u9'],
+    minor: [],
+    wantIn: [],
+    wantOut: [],
+    bossName: 'Eranog',
+    bossUrl: 'https://x/er',
+    channelId: 'c',
+    messageId: 'm',
   });
   return db;
 }

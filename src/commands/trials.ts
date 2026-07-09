@@ -12,7 +12,12 @@ import { getDatabase } from '../database/db.js';
 import { requireOfficer } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
-import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';
+import {
+  paginateLines,
+  buildPageEmbed,
+  buildPageButtons,
+  cachePaginatedData,
+} from '../functions/pagination.js';
 import { closeTrial } from '../functions/trial-review/closeTrial.js';
 import { changeTrialInfo } from '../functions/trial-review/changeTrialInfo.js';
 import { updateTrialLogs } from '../functions/trial-review/updateTrialLogs.js';
@@ -39,10 +44,7 @@ export default {
         .setName('remove_trial')
         .setDescription('Close and remove a trial')
         .addStringOption((opt) =>
-          opt
-            .setName('thread_id')
-            .setDescription('The thread ID of the trial')
-            .setRequired(true),
+          opt.setName('thread_id').setDescription('The thread ID of the trial').setRequired(true),
         ),
     )
     .addSubcommand((sub) =>
@@ -50,23 +52,14 @@ export default {
         .setName('change_trial_info')
         .setDescription('Update trial character name, role, or start date')
         .addStringOption((opt) =>
-          opt
-            .setName('thread_id')
-            .setDescription('The thread ID of the trial')
-            .setRequired(true),
+          opt.setName('thread_id').setDescription('The thread ID of the trial').setRequired(true),
         )
         .addStringOption((opt) =>
-          opt
-            .setName('character_name')
-            .setDescription('New character name'),
+          opt.setName('character_name').setDescription('New character name'),
         )
+        .addStringOption((opt) => opt.setName('role').setDescription('New role'))
         .addStringOption((opt) =>
-          opt.setName('role').setDescription('New role'),
-        )
-        .addStringOption((opt) =>
-          opt
-            .setName('start_date')
-            .setDescription('New start date (YYYY-MM-DD)'),
+          opt.setName('start_date').setDescription('New start date (YYYY-MM-DD)'),
         ),
     )
     .addSubcommand((sub) =>
@@ -126,7 +119,9 @@ export default {
       case 'get_current_trials': {
         const db = getDatabase();
         const trials = db
-          .prepare("SELECT * FROM trials WHERE status IN ('active', 'promoted') ORDER BY start_date DESC")
+          .prepare(
+            "SELECT * FROM trials WHERE status IN ('active', 'promoted') ORDER BY start_date DESC",
+          )
           .all() as TrialRow[];
 
         if (trials.length === 0) {
@@ -168,9 +163,9 @@ export default {
         const threadId = interaction.options.getString('thread_id', true);
         const db = getDatabase();
 
-        const trial = db
-          .prepare('SELECT * FROM trials WHERE thread_id = ?')
-          .get(threadId) as TrialRow | undefined;
+        const trial = db.prepare('SELECT * FROM trials WHERE thread_id = ?').get(threadId) as
+          | TrialRow
+          | undefined;
 
         if (!trial) {
           await interaction.reply({
@@ -219,9 +214,9 @@ export default {
         }
 
         const db = getDatabase();
-        const trial = db
-          .prepare('SELECT * FROM trials WHERE thread_id = ?')
-          .get(threadId) as TrialRow | undefined;
+        const trial = db.prepare('SELECT * FROM trials WHERE thread_id = ?').get(threadId) as
+          | TrialRow
+          | undefined;
 
         if (!trial) {
           await interaction.reply({

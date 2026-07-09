@@ -1,7 +1,11 @@
 import type { ServiceName } from './apiHealth.js';
 import {
-  recordOutcome, noteFailure, noteSuccess,
-  isBreakerOpen, onBreakerTrialResult, tryClaimTrialSlot,
+  recordOutcome,
+  noteFailure,
+  noteSuccess,
+  isBreakerOpen,
+  onBreakerTrialResult,
+  tryClaimTrialSlot,
   releaseBreakerTrialSlot,
 } from './apiHealth.js';
 
@@ -158,8 +162,11 @@ export async function httpRequest<T>(
           noteFailure(service);
           onFinalFailure(service, breakerWasHalfOpen);
           throw new HttpError({
-            service, attempts: attempt, status: response.status,
-            message: `${service} JSON parse error: ${e.message}`, lastError: e,
+            service,
+            attempts: attempt,
+            status: response.status,
+            message: `${service} JSON parse error: ${e.message}`,
+            lastError: e,
           });
         }
       }
@@ -176,7 +183,9 @@ export async function httpRequest<T>(
         noteFailure(service);
         onFinalFailure(service, breakerWasHalfOpen);
         throw new HttpError({
-          service, attempts: attempt, status: response.status,
+          service,
+          attempts: attempt,
+          status: response.status,
           message: `${service} API error: ${response.status} ${response.statusText}`,
         });
       }
@@ -194,7 +203,9 @@ export async function httpRequest<T>(
         noteFailure(service);
         onFinalFailure(service, breakerWasHalfOpen);
         throw new HttpError({
-          service, attempts: attempt, status: response.status,
+          service,
+          attempts: attempt,
+          status: response.status,
           message: `${service} Retry-After exceeds ${RETRY_AFTER_CAP_MS / 1_000}s cap`,
         });
       }
@@ -208,8 +219,8 @@ export async function httpRequest<T>(
     const msg = lastError
       ? lastError.message
       : lastStatus !== undefined
-      ? `${lastStatus}`
-      : 'unknown error';
+        ? `${lastStatus}`
+        : 'unknown error';
     recordOutcome(service, classifyFinalFailure(sawRateLimit, sawTimeout), {
       msg,
       status: lastStatus,
@@ -217,7 +228,9 @@ export async function httpRequest<T>(
     noteFailure(service);
     onFinalFailure(service, breakerWasHalfOpen);
     throw new HttpError({
-      service, attempts: attempt, status: lastStatus,
+      service,
+      attempts: attempt,
+      status: lastStatus,
       message: `${service} request failed after ${attempt} attempt(s): ${msg}`,
       lastError,
     });
@@ -310,4 +323,3 @@ function computeBackoffMs(attemptJustCompleted: number): number {
   const jitter = Math.random() * (base * Math.pow(2, exponent - 1));
   return Math.floor(computed + jitter);
 }
-

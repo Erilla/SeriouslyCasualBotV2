@@ -108,7 +108,7 @@ describe('/apply', () => {
     // If DM send fails the row is abandoned; if it succeeds the row stays in_progress.
     // Either way the row is created. Check either status.
     const after = db
-      .prepare("SELECT status FROM applications WHERE applicant_user_id = ?")
+      .prepare('SELECT status FROM applications WHERE applicant_user_id = ?')
       .get(userId) as { status: string } | undefined;
     expect(after).toBeDefined();
     expect(['in_progress', 'abandoned']).toContain(after!.status);

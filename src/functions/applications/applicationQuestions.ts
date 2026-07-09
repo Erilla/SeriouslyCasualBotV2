@@ -17,9 +17,9 @@ export function getQuestions(): ApplicationQuestionRow[] {
  */
 export function getQuestionById(id: number): ApplicationQuestionRow | undefined {
   const db = getDatabase();
-  return db
-    .prepare('SELECT * FROM application_questions WHERE id = ?')
-    .get(id) as ApplicationQuestionRow | undefined;
+  return db.prepare('SELECT * FROM application_questions WHERE id = ?').get(id) as
+    | ApplicationQuestionRow
+    | undefined;
 }
 
 /**
@@ -36,7 +36,10 @@ export function addQuestion(question: string): ApplicationQuestionRow {
     .prepare('INSERT INTO application_questions (question, sort_order) VALUES (?, ?)')
     .run(question, nextOrder);
 
-  logger.info('Applications', `Added question #${result.lastInsertRowid} (sort_order=${nextOrder})`);
+  logger.info(
+    'Applications',
+    `Added question #${result.lastInsertRowid} (sort_order=${nextOrder})`,
+  );
 
   return {
     id: result.lastInsertRowid as number,
@@ -51,9 +54,7 @@ export function addQuestion(question: string): ApplicationQuestionRow {
  */
 export function removeQuestion(id: number): boolean {
   const db = getDatabase();
-  const result = db
-    .prepare('DELETE FROM application_questions WHERE id = ?')
-    .run(id);
+  const result = db.prepare('DELETE FROM application_questions WHERE id = ?').run(id);
 
   if (result.changes > 0) {
     logger.info('Applications', `Removed question #${id}`);

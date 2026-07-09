@@ -32,10 +32,14 @@ export function linkCharacterIdentity(characterName: string, discordUserId: stri
     return false;
   }
 
-  db.prepare(
-    'INSERT INTO raider_identity_map (character_name, discord_user_id) VALUES (?, ?)',
-  ).run(characterName, discordUserId);
+  db.prepare('INSERT INTO raider_identity_map (character_name, discord_user_id) VALUES (?, ?)').run(
+    characterName,
+    discordUserId,
+  );
 
-  logger.info('LinkIdentity', `Linked character "${characterName}" to Discord user ${discordUserId}`);
+  logger.info(
+    'LinkIdentity',
+    `Linked character "${characterName}" to Discord user ${discordUserId}`,
+  );
   return true;
 }

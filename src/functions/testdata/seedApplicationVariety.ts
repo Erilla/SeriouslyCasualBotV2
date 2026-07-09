@@ -14,11 +14,16 @@ interface VarietySpec {
 }
 
 const VARIETY: VarietySpec[] = [
-  { status: 'in_progress', characterName: 'InProgressChar', userId: 'mock-applicant-inprogress', answerCount: 3 },
-  { status: 'submitted',   characterName: 'SubmittedChar',  userId: 'mock-applicant-submitted' },
-  { status: 'accepted',    characterName: 'AcceptedChar',   userId: 'mock-applicant-accepted' },
-  { status: 'rejected',    characterName: 'RejectedChar',   userId: 'mock-applicant-rejected' },
-  { status: 'abandoned',   characterName: 'AbandonedChar',  userId: 'mock-applicant-abandoned' },
+  {
+    status: 'in_progress',
+    characterName: 'InProgressChar',
+    userId: 'mock-applicant-inprogress',
+    answerCount: 3,
+  },
+  { status: 'submitted', characterName: 'SubmittedChar', userId: 'mock-applicant-submitted' },
+  { status: 'accepted', characterName: 'AcceptedChar', userId: 'mock-applicant-accepted' },
+  { status: 'rejected', characterName: 'RejectedChar', userId: 'mock-applicant-rejected' },
+  { status: 'abandoned', characterName: 'AbandonedChar', userId: 'mock-applicant-abandoned' },
 ];
 
 /**

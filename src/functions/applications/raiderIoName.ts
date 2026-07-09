@@ -9,8 +9,7 @@
  * just look for the unambiguous `raider.io/characters/...` shape in any answer.
  */
 
-const RAIDER_IO_CHARACTER_URL =
-  /raider\.io\/characters\/[^/\s]+\/[^/\s]+\/([^/?#\s]+)/i;
+const RAIDER_IO_CHARACTER_URL = /raider\.io\/characters\/[^/\s]+\/[^/\s]+\/([^/?#\s]+)/i;
 
 /**
  * Extract a character name from a single piece of text containing a Raider.IO
@@ -40,9 +39,7 @@ export function parseRaiderIoCharacterName(text: string): string | null {
  * Scan a set of application answers for a Raider.IO profile URL and return the
  * character name from the first one found, or null if none contain one.
  */
-export function deriveCharacterNameFromAnswers(
-  answers: { answer: string }[],
-): string | null {
+export function deriveCharacterNameFromAnswers(answers: { answer: string }[]): string | null {
   for (const a of answers) {
     const name = parseRaiderIoCharacterName(a.answer);
     if (name) return name;

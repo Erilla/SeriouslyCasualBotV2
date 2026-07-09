@@ -51,11 +51,9 @@ export interface WowAuditHistoricalEntry {
 }
 
 async function getCurrentPeriod(): Promise<number> {
-  const data = await httpRequest<{ current_period: number }>(
-    'wowaudit',
-    `${BASE_URL}/period`,
-    { headers: headers() },
-  );
+  const data = await httpRequest<{ current_period: number }>('wowaudit', `${BASE_URL}/period`, {
+    headers: headers(),
+  });
   return data.current_period;
 }
 
@@ -71,11 +69,9 @@ export async function getUpcomingRaids(): Promise<WowAuditRaid[]> {
 
 // Signups are only returned by the per-raid endpoint, not the list above.
 export async function getRaid(id: number): Promise<WowAuditRaidDetail> {
-  return httpRequest<WowAuditRaidDetail>(
-    'wowaudit',
-    `${BASE_URL}/raids/${id}`,
-    { headers: headers() },
-  );
+  return httpRequest<WowAuditRaidDetail>('wowaudit', `${BASE_URL}/raids/${id}`, {
+    headers: headers(),
+  });
 }
 
 export async function getHistoricalData(): Promise<WowAuditHistoricalEntry[]> {

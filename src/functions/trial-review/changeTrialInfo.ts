@@ -28,9 +28,9 @@ export async function changeTrialInfo(
 ): Promise<void> {
   const db = getDatabase();
 
-  const trial = db
-    .prepare('SELECT * FROM trials WHERE id = ?')
-    .get(trialId) as TrialRow | undefined;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
 
   if (!trial) throw new Error(`Trial #${trialId} not found`);
 
@@ -39,9 +39,12 @@ export async function changeTrialInfo(
   const newStartDate = updates.startDate ?? trial.start_date;
 
   // Update the trial record
-  db.prepare(
-    'UPDATE trials SET character_name = ?, role = ?, start_date = ? WHERE id = ?',
-  ).run(newCharName, newRole, newStartDate, trialId);
+  db.prepare('UPDATE trials SET character_name = ?, role = ?, start_date = ? WHERE id = ?').run(
+    newCharName,
+    newRole,
+    newStartDate,
+    trialId,
+  );
 
   // If start_date changed, recalculate alerts
   if (updates.startDate && updates.startDate !== trial.start_date) {
@@ -73,10 +76,7 @@ export async function changeTrialInfo(
         }
       }
     } catch (error) {
-      logger.warn(
-        'Trials',
-        `Failed to rename thread for trial #${trialId}: ${error}`,
-      );
+      logger.warn('Trials', `Failed to rename thread for trial #${trialId}: ${error}`);
     }
   }
 
@@ -108,10 +108,7 @@ export async function changeTrialInfo(
         });
       }
     } catch (error) {
-      logger.warn(
-        'Trials',
-        `Failed to update review message for trial #${trialId}: ${error}`,
-      );
+      logger.warn('Trials', `Failed to update review message for trial #${trialId}: ${error}`);
     }
   }
 

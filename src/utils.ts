@@ -57,7 +57,11 @@ export function createEmbed(title?: string): EmbedBuilder {
 /**
  * Build pagination buttons for lists.
  */
-export function paginationRow(currentPage: number, totalPages: number, customIdPrefix: string): ActionRowBuilder<ButtonBuilder> {
+export function paginationRow(
+  currentPage: number,
+  totalPages: number,
+  customIdPrefix: string,
+): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`${customIdPrefix}:prev:${currentPage}`)

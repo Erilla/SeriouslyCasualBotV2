@@ -45,9 +45,7 @@ function getSeededTrialThreadId(): string | null {
 // Helper: get the id for the seeded trial.
 // ---------------------------------------------------------------------------
 function getSeededTrialId(): number | null {
-  const row = queryOne<{ id: number }>(
-    "SELECT id FROM trials WHERE status = 'active' LIMIT 1",
-  );
+  const row = queryOne<{ id: number }>("SELECT id FROM trials WHERE status = 'active' LIMIT 1");
   return row?.id ?? null;
 }
 
@@ -261,10 +259,7 @@ describe('/trials', () => {
     expect(content).toMatch(/[Cc]losed trial/);
 
     // DB: trial must now be closed.
-    const row = queryOne<{ status: string }>(
-      'SELECT status FROM trials WHERE id = ?',
-      [trialId!],
-    );
+    const row = queryOne<{ status: string }>('SELECT status FROM trials WHERE id = ?', [trialId!]);
     expect(row?.status).toBe('closed');
   });
 
@@ -375,10 +370,7 @@ describe('/trials', () => {
     expect(content).toContain('Trial info updated');
 
     // DB: role must have changed.
-    const row = queryOne<{ role: string }>(
-      'SELECT role FROM trials WHERE id = ?',
-      [trialId!],
-    );
+    const row = queryOne<{ role: string }>('SELECT role FROM trials WHERE id = ?', [trialId!]);
     expect(row?.role).toBe('Healer');
   });
 

@@ -50,9 +50,9 @@ async function rejectLink(interaction: ButtonInteraction, params: string[]): Pro
   }
 
   const db = getDatabase();
-  const raider = db
-    .prepare('SELECT * FROM raiders WHERE character_name = ?')
-    .get(characterName) as RaiderRow | undefined;
+  const raider = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get(characterName) as
+    | RaiderRow
+    | undefined;
 
   if (raider) {
     db.prepare('UPDATE raiders SET message_id = NULL WHERE character_name = ?').run(characterName);
@@ -94,7 +94,11 @@ async function selectUser(interaction: UserSelectMenuInteraction, params: string
   const success = await updateRaiderDiscordUser(interaction.client, characterName, selectedUserId);
 
   if (success) {
-    await audit(interaction.user, 'linked raider via select', `${characterName} -> <@${selectedUserId}>`);
+    await audit(
+      interaction.user,
+      'linked raider via select',
+      `${characterName} -> <@${selectedUserId}>`,
+    );
 
     try {
       await interaction.message.delete();

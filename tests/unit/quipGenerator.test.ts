@@ -51,7 +51,9 @@ describe('generateSignupQuip', () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
       json: async () => ({
-        candidates: [{ content: { parts: [{ text: '"Sign up or face the wrath of Warzania!"' }] } }],
+        candidates: [
+          { content: { parts: [{ text: '"Sign up or face the wrath of Warzania!"' }] } },
+        ],
       }),
       text: async () => '',
     })) as unknown as typeof fetch;
@@ -90,7 +92,7 @@ describe('generateSignupQuip', () => {
         candidates: [
           {
             content: {
-              parts: [{ text: '1. Sign up, you slackers!\n2. Or face Warzania\'s wrath.' }],
+              parts: [{ text: "1. Sign up, you slackers!\n2. Or face Warzania's wrath." }],
             },
           },
         ],
@@ -228,7 +230,12 @@ describe('generateSignupQuip', () => {
 
     globalThis.fetch = vi.fn(async (url: string) => {
       if (url.includes('generativelanguage.googleapis.com')) {
-        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({}),
+          text: async () => 'boom',
+        } as unknown as Response;
       }
       if (url.includes('api.openai.com')) {
         return {
@@ -251,7 +258,12 @@ describe('generateSignupQuip', () => {
 
     globalThis.fetch = vi.fn(async (url: string) => {
       if (url.includes('api.openai.com')) throw new Error('OpenAI should not be called');
-      return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+      return {
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+        text: async () => 'boom',
+      } as unknown as Response;
     }) as unknown as typeof fetch;
 
     const quip = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
@@ -273,7 +285,12 @@ describe('generateSignupQuip', () => {
         } as unknown as Response;
       }
       // Gemini + OpenAI both error
-      return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' } as unknown as Response;
+      return {
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+        text: async () => 'boom',
+      } as unknown as Response;
     }) as unknown as typeof fetch;
 
     const quip = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: true });

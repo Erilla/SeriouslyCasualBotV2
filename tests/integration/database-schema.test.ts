@@ -11,7 +11,9 @@ describe('database schema', () => {
     const db = getDatabase();
 
     const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
       .all() as { name: string }[];
 
     const tableNames = tables.map((t) => t.name);
@@ -57,7 +59,9 @@ describe('database schema', () => {
     const db = getDatabase();
 
     expect(() => {
-      db.prepare('INSERT INTO application_answers (application_id, question_id, answer) VALUES (999, 999, ?)').run('test');
+      db.prepare(
+        'INSERT INTO application_answers (application_id, question_id, answer) VALUES (999, 999, ?)',
+      ).run('test');
     }).toThrow();
   });
 
@@ -65,7 +69,9 @@ describe('database schema', () => {
     initDatabase(':memory:');
     const db = getDatabase();
 
-    const version = db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get() as { version: number };
+    const version = db
+      .prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1')
+      .get() as { version: number };
     expect(version.version).toBe(6);
   });
 
@@ -79,23 +85,35 @@ describe('database schema', () => {
     initDatabase(':memory:');
     const db = getDatabase();
 
-    const aboutUs = db.prepare("SELECT * FROM guild_info_content WHERE key = 'aboutus'").get() as { content: string } | undefined;
+    const aboutUs = db.prepare("SELECT * FROM guild_info_content WHERE key = 'aboutus'").get() as
+      | { content: string }
+      | undefined;
     expect(aboutUs).toBeDefined();
     expect(aboutUs!.content).toContain('SeriouslyCasual');
 
-    const schedDays = db.prepare('SELECT COUNT(*) as count FROM schedule_days').get() as { count: number };
+    const schedDays = db.prepare('SELECT COUNT(*) as count FROM schedule_days').get() as {
+      count: number;
+    };
     expect(schedDays.count).toBe(2);
 
-    const settings = db.prepare('SELECT COUNT(*) as count FROM settings').get() as { count: number };
+    const settings = db.prepare('SELECT COUNT(*) as count FROM settings').get() as {
+      count: number;
+    };
     expect(settings.count).toBe(4);
 
-    const defaultMsgs = db.prepare('SELECT COUNT(*) as count FROM default_messages').get() as { count: number };
+    const defaultMsgs = db.prepare('SELECT COUNT(*) as count FROM default_messages').get() as {
+      count: number;
+    };
     expect(defaultMsgs.count).toBe(2);
 
-    const achievements = db.prepare('SELECT COUNT(*) as count FROM achievements_manual').get() as { count: number };
+    const achievements = db.prepare('SELECT COUNT(*) as count FROM achievements_manual').get() as {
+      count: number;
+    };
     expect(achievements.count).toBe(4);
 
-    const links = db.prepare('SELECT COUNT(*) as count FROM guild_info_links').get() as { count: number };
+    const links = db.prepare('SELECT COUNT(*) as count FROM guild_info_links').get() as {
+      count: number;
+    };
     expect(links.count).toBe(3);
   });
 
@@ -108,7 +126,9 @@ describe('database schema', () => {
     // initDatabase on same connection shouldn't re-seed
     initDatabase(':memory:');
 
-    const aboutUs = db.prepare("SELECT * FROM guild_info_content WHERE key = 'aboutus'").get() as { content: string };
+    const aboutUs = db.prepare("SELECT * FROM guild_info_content WHERE key = 'aboutus'").get() as {
+      content: string;
+    };
     expect(aboutUs.content).toBe('modified');
   });
 });

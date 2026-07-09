@@ -74,8 +74,8 @@ describe('extend adds 7 days to unalerted alerts', () => {
       return extended.toISOString().split('T')[0];
     };
 
-    expect(extendDate(twoWeek)).toBe('2025-01-22');  // 14 + 7 = 21 days from start
-    expect(extendDate(fourWeek)).toBe('2025-02-05');  // 28 + 7 = 35 days from start
-    expect(extendDate(sixWeek)).toBe('2025-02-19');   // 42 + 7 = 49 days from start
+    expect(extendDate(twoWeek)).toBe('2025-01-22'); // 14 + 7 = 21 days from start
+    expect(extendDate(fourWeek)).toBe('2025-02-05'); // 28 + 7 = 35 days from start
+    expect(extendDate(sixWeek)).toBe('2025-02-19'); // 42 + 7 = 49 days from start
   });
 });

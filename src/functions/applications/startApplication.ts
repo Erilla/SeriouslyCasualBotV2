@@ -16,7 +16,9 @@ export async function startApplication(user: User): Promise<boolean> {
 
   if (questions.length === 0) {
     try {
-      await user.send('No application questions are currently configured. Please contact an officer.');
+      await user.send(
+        'No application questions are currently configured. Please contact an officer.',
+      );
       return true;
     } catch {
       return false;
@@ -59,10 +61,15 @@ async function resumeApplication(
     .all(application.id) as { question_id: number }[];
 
   const currentQuestionIds = new Set(questions.map((q) => q.id));
-  const hasOrphanedAnswers = answeredQuestionIds.some((a) => !currentQuestionIds.has(a.question_id));
+  const hasOrphanedAnswers = answeredQuestionIds.some(
+    (a) => !currentQuestionIds.has(a.question_id),
+  );
 
   if (hasOrphanedAnswers) {
-    logger.info('Applications', `Application #${application.id} has orphaned answers (questions changed) - abandoning and starting fresh`);
+    logger.info(
+      'Applications',
+      `Application #${application.id} has orphaned answers (questions changed) - abandoning and starting fresh`,
+    );
     db.prepare('UPDATE applications SET status = ? WHERE id = ?').run('abandoned', application.id);
 
     // Create a fresh application instead
@@ -93,8 +100,10 @@ async function resumeApplication(
   startSessionTimeout(user);
 
   // Update current_question_id
-  db.prepare('UPDATE applications SET current_question_id = ? WHERE id = ?')
-    .run(questions[questionIndex].id, application.id);
+  db.prepare('UPDATE applications SET current_question_id = ? WHERE id = ?').run(
+    questions[questionIndex].id,
+    application.id,
+  );
 
   try {
     await user.send(
@@ -122,7 +131,9 @@ async function createNewApplication(
   // name, post header, and officer prefills until an officer sets the real
   // character name on accept.
   const result = db
-    .prepare('INSERT INTO applications (applicant_user_id, status, current_question_id, character_name) VALUES (?, ?, ?, ?)')
+    .prepare(
+      'INSERT INTO applications (applicant_user_id, status, current_question_id, character_name) VALUES (?, ?, ?, ?)',
+    )
     .run(user.id, 'in_progress', questions[0].id, user.displayName);
 
   const applicationId = result.lastInsertRowid as number;

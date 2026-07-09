@@ -20,7 +20,9 @@ import type { TrialRow } from '../types/index.js';
 async function updateInfo(interaction: ButtonInteraction, params: string[]): Promise<void> {
   const trialId = parseInt(params[0], 10);
   const db = getDatabase();
-  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as TrialRow | undefined;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
 
   if (!trial) {
     await interaction.reply({ content: 'Trial not found.', flags: MessageFlags.Ephemeral });
@@ -32,16 +34,25 @@ async function updateInfo(interaction: ButtonInteraction, params: string[]): Pro
     .setTitle('Update Trial Info');
 
   const charNameInput = new TextInputBuilder()
-    .setCustomId('character_name').setLabel('Character Name')
-    .setStyle(TextInputStyle.Short).setValue(trial.character_name).setRequired(true);
+    .setCustomId('character_name')
+    .setLabel('Character Name')
+    .setStyle(TextInputStyle.Short)
+    .setValue(trial.character_name)
+    .setRequired(true);
 
   const roleInput = new TextInputBuilder()
-    .setCustomId('role').setLabel('Role')
-    .setStyle(TextInputStyle.Short).setValue(trial.role).setRequired(true);
+    .setCustomId('role')
+    .setLabel('Role')
+    .setStyle(TextInputStyle.Short)
+    .setValue(trial.role)
+    .setRequired(true);
 
   const startDateInput = new TextInputBuilder()
-    .setCustomId('start_date').setLabel('Start Date (YYYY-MM-DD)')
-    .setStyle(TextInputStyle.Short).setValue(trial.start_date).setRequired(true);
+    .setCustomId('start_date')
+    .setLabel('Start Date (YYYY-MM-DD)')
+    .setStyle(TextInputStyle.Short)
+    .setValue(trial.start_date)
+    .setRequired(true);
 
   modal.addComponents(
     new ActionRowBuilder<TextInputBuilder>().addComponents(charNameInput),
@@ -110,7 +121,11 @@ async function modalCreate(interaction: ModalSubmitInteraction, _params: string[
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   try {
-    const trial = await createTrialReviewThread(interaction.client, { characterName, role, startDate });
+    const trial = await createTrialReviewThread(interaction.client, {
+      characterName,
+      role,
+      startDate,
+    });
     await audit(interaction.user, 'created trial', `${characterName} as ${role} (#${trial.id})`);
     await interaction.editReply({
       content: `Trial created for **${characterName}**. Thread: <#${trial.thread_id}>`,
@@ -140,7 +155,9 @@ async function modalUpdate(interaction: ModalSubmitInteraction, params: string[]
 
   try {
     const db = getDatabase();
-    const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as TrialRow | undefined;
+    const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+      | TrialRow
+      | undefined;
 
     if (!trial) {
       await interaction.editReply({ content: 'Trial not found.' });
@@ -158,7 +175,11 @@ async function modalUpdate(interaction: ModalSubmitInteraction, params: string[]
     }
 
     await changeTrialInfo(interaction.client, trialId, updates);
-    await audit(interaction.user, 'updated trial info via modal', `${trial.character_name} (#${trialId})`);
+    await audit(
+      interaction.user,
+      'updated trial info via modal',
+      `${trial.character_name} (#${trialId})`,
+    );
     await interaction.editReply({ content: 'Trial info updated.' });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

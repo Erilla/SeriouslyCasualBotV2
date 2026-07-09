@@ -3,9 +3,7 @@ import type { BotClient } from '../types/index.js';
 import { createEmbed } from '../utils.js';
 
 export default {
-  data: new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('List all available commands'),
+  data: new SlashCommandBuilder().setName('help').setDescription('List all available commands'),
   async execute(interaction: ChatInputCommandInteraction) {
     const client = interaction.client as BotClient;
 

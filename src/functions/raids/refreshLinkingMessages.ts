@@ -72,9 +72,7 @@ export async function refreshLinkingMessages(client: Client): Promise<void> {
   // Raiders who have left the roster (missing_since set) are excluded; we don't
   // want to pester for someone who's gone.
   const unlinkedRaiders = db
-    .prepare(
-      'SELECT * FROM raiders WHERE discord_user_id IS NULL AND missing_since IS NULL',
-    )
+    .prepare('SELECT * FROM raiders WHERE discord_user_id IS NULL AND missing_since IS NULL')
     .all() as RaiderRow[];
 
   // Message ids the channel should keep: exactly one live post per awaiting

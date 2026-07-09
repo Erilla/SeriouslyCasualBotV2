@@ -37,9 +37,9 @@ export async function rejectApplication(interaction: ButtonInteraction): Promise
   const applicationId = parseInt(interaction.customId.split(':')[2], 10);
   const db = getDatabase();
 
-  const application = db
-    .prepare('SELECT * FROM applications WHERE id = ?')
-    .get(applicationId) as ApplicationRow | undefined;
+  const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(applicationId) as
+    | ApplicationRow
+    | undefined;
 
   if (!application) {
     await interaction.reply({
@@ -55,7 +55,8 @@ export async function rejectApplication(interaction: ButtonInteraction): Promise
     .get('application_reject') as DefaultMessageRow | undefined;
 
   const defaultMessage =
-    defaultMsg?.message ?? 'Thank you for your interest. Unfortunately, your application has been declined.';
+    defaultMsg?.message ??
+    'Thank you for your interest. Unfortunately, your application has been declined.';
 
   // Build and show modal
   const modal = new ModalBuilder()
@@ -69,9 +70,7 @@ export async function rejectApplication(interaction: ButtonInteraction): Promise
     .setValue(defaultMessage)
     .setRequired(true);
 
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(messageInput),
-  );
+  modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(messageInput));
 
   await interaction.showModal(modal);
 }
@@ -83,9 +82,9 @@ export async function processRejectModal(interaction: ModalSubmitInteraction): P
   const applicationId = parseInt(interaction.customId.split(':')[3], 10);
   const db = getDatabase();
 
-  const application = db
-    .prepare('SELECT * FROM applications WHERE id = ?')
-    .get(applicationId) as ApplicationRow | undefined;
+  const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(applicationId) as
+    | ApplicationRow
+    | undefined;
 
   if (!application) {
     await interaction.reply({
@@ -110,13 +109,18 @@ export async function processRejectModal(interaction: ModalSubmitInteraction): P
   let transcriptBuffer: Buffer | null = null;
   if (application.channel_id) {
     try {
-      const appChannel = guild.channels.cache.get(application.channel_id) as TextChannel | undefined;
+      const appChannel = guild.channels.cache.get(application.channel_id) as
+        | TextChannel
+        | undefined;
       if (appChannel) {
         const transcript = await generateTranscript(appChannel);
         transcriptBuffer = transcript.buffer;
       }
     } catch (error) {
-      logger.warn('Applications', `Failed to generate transcript for application #${applicationId}: ${error}`);
+      logger.warn(
+        'Applications',
+        `Failed to generate transcript for application #${applicationId}: ${error}`,
+      );
     }
   }
 
@@ -144,7 +148,10 @@ export async function processRejectModal(interaction: ModalSubmitInteraction): P
         await closeThread(thread);
       }
     } catch (error) {
-      logger.warn('Applications', `Failed to update forum thread for application #${applicationId}: ${error}`);
+      logger.warn(
+        'Applications',
+        `Failed to update forum thread for application #${applicationId}: ${error}`,
+      );
     }
   }
 
@@ -161,7 +168,10 @@ export async function processRejectModal(interaction: ModalSubmitInteraction): P
       await applicant.send(messageToApplicant);
     }
   } catch (error) {
-    logger.warn('Applications', `Failed to DM applicant for application #${applicationId}: ${error}`);
+    logger.warn(
+      'Applications',
+      `Failed to DM applicant for application #${applicationId}: ${error}`,
+    );
   }
 
   // Delete the app text channel
@@ -172,7 +182,10 @@ export async function processRejectModal(interaction: ModalSubmitInteraction): P
         await appChannel.delete();
       }
     } catch (error) {
-      logger.warn('Applications', `Failed to delete app channel for application #${applicationId}: ${error}`);
+      logger.warn(
+        'Applications',
+        `Failed to delete app channel for application #${applicationId}: ${error}`,
+      );
     }
   }
 

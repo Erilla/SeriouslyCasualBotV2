@@ -28,6 +28,4 @@ async function handlePage(interaction: ButtonInteraction, params: string[]): Pro
   });
 }
 
-export const buttons: ButtonHandler[] = [
-  { prefix: 'page', handle: handlePage },
-];
+export const buttons: ButtonHandler[] = [{ prefix: 'page', handle: handlePage }];

@@ -1,4 +1,11 @@
-import { Client, Collection, GatewayIntentBits, Partials, type Guild, type GuildMember } from 'discord.js';
+import {
+  Client,
+  Collection,
+  GatewayIntentBits,
+  Partials,
+  type Guild,
+  type GuildMember,
+} from 'discord.js';
 import { loadE2EEnv } from './env.js';
 import { loadCommands } from '../../../src/loadCommands.js';
 import type { BotClient, Command } from '../../../src/types/index.js';
@@ -40,9 +47,18 @@ export async function bootstrapE2E(): Promise<E2EContext> {
     const timeout = setTimeout(() => {
       reject(new Error(`Discord client failed to reach 'ready' within ${LOGIN_TIMEOUT_MS}ms`));
     }, LOGIN_TIMEOUT_MS);
-    client.once('ready', () => { clearTimeout(timeout); resolve(); });
-    client.once('error', (err) => { clearTimeout(timeout); reject(err); });
-    client.login(env.discordToken).catch((err) => { clearTimeout(timeout); reject(err); });
+    client.once('ready', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    client.once('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+    client.login(env.discordToken).catch((err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
   });
 
   const guild = await client.guilds.fetch(env.sandboxGuildId);
@@ -75,4 +91,3 @@ export function getE2EContext(): E2EContext {
   if (!context) throw new Error('bootstrapE2E() must be called before getE2EContext()');
   return context;
 }
-

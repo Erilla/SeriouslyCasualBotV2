@@ -71,9 +71,9 @@ function insertRaider(name: string, messageId: string | null): RaiderRow {
 
 function getMessageId(name: string): string | null {
   return (
-    getDatabase()
-      .prepare('SELECT message_id FROM raiders WHERE character_name = ?')
-      .get(name) as { message_id: string | null }
+    getDatabase().prepare('SELECT message_id FROM raiders WHERE character_name = ?').get(name) as {
+      message_id: string | null;
+    }
   ).message_id;
 }
 

@@ -67,10 +67,7 @@ export async function updateRecruitment(client: Client): Promise<void> {
     }
   }
 
-  const embed = new EmbedBuilder()
-    .setColor(Colors.Green)
-    .setTitle('Recruitment')
-    .addFields(fields);
+  const embed = new EmbedBuilder().setColor(Colors.Green).setTitle('Recruitment').addFields(fields);
 
   // Build Apply Here button. This reuses the existing application flow: the
   // custom id is handled in src/interactions/application.ts (same handler as

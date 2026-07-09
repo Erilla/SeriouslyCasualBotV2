@@ -10,15 +10,12 @@ import type { TrialRow, PromoteAlertRow } from '../../types/index.js';
 /**
  * Mark a trial for promotion. Schedules a promote alert for the next day.
  */
-export async function markForPromotion(
-  client: Client,
-  trialId: number,
-): Promise<void> {
+export async function markForPromotion(client: Client, trialId: number): Promise<void> {
   const db = getDatabase();
 
-  const trial = db
-    .prepare('SELECT * FROM trials WHERE id = ?')
-    .get(trialId) as TrialRow | undefined;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
 
   if (!trial) throw new Error(`Trial #${trialId} not found`);
   if (trial.status !== 'active') throw new Error(`Trial #${trialId} is not active`);
@@ -56,8 +53,8 @@ export async function markForPromotion(
 
     await thread.send(
       `**Marked for Promotion**\n` +
-      `**${trial.character_name}** has been marked for promotion.\n` +
-      `A promotion reminder will be sent on **${promoteDateStr}**.`,
+        `**${trial.character_name}** has been marked for promotion.\n` +
+        `A promotion reminder will be sent on **${promoteDateStr}**.`,
     );
 
     // Update the forum tag while the thread is un-archived (the send above
@@ -68,10 +65,7 @@ export async function markForPromotion(
     // back into the thread, which will auto-unarchive it; it stays locked.
     await closeThread(thread);
   } catch (error) {
-    logger.warn(
-      'Trials',
-      `Failed to send promotion message for trial #${trialId}: ${error}`,
-    );
+    logger.warn('Trials', `Failed to send promotion message for trial #${trialId}: ${error}`);
   }
 
   logger.info(

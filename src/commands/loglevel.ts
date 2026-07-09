@@ -38,7 +38,10 @@ export default {
     const subcommand = interaction.options.getSubcommand();
 
     if (subcommand === 'get') {
-      await interaction.reply({ content: `Current log level: **${logger.getLevel()}**`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: `Current log level: **${logger.getLevel()}**`,
+        flags: MessageFlags.Ephemeral,
+      });
     }
 
     if (subcommand === 'set') {
@@ -46,7 +49,10 @@ export default {
       const oldLevel = logger.getLevel();
       logger.setLevel(level);
       await audit(interaction.user, 'changed log level', `${oldLevel} -> ${level}`);
-      await interaction.reply({ content: `Log level changed from **${oldLevel}** to **${level}**`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: `Log level changed from **${oldLevel}** to **${level}**`,
+        flags: MessageFlags.Ephemeral,
+      });
     }
   },
 };

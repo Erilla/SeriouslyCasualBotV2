@@ -65,14 +65,16 @@ describe('raids roster sync flow (integration)', () => {
 
     const db = getDatabase();
     const raiders = db
-      .prepare('SELECT character_name, realm, region, rank, class FROM raiders ORDER BY character_name')
+      .prepare(
+        'SELECT character_name, realm, region, rank, class FROM raiders ORDER BY character_name',
+      )
       .all() as Array<{
-        character_name: string;
-        realm: string;
-        region: string;
-        rank: number;
-        class: string;
-      }>;
+      character_name: string;
+      realm: string;
+      region: string;
+      rank: number;
+      class: string;
+    }>;
 
     expect(raiders).toHaveLength(2);
     const names = raiders.map((r) => r.character_name);
@@ -88,9 +90,11 @@ describe('raids roster sync flow (integration)', () => {
 
   it('should set missing_since for raiders not in API', async () => {
     const db = getDatabase();
-    db.prepare(
-      'INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)',
-    ).run('GoneMember', 'silvermoon', 'eu');
+    db.prepare('INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)').run(
+      'GoneMember',
+      'silvermoon',
+      'eu',
+    );
 
     // API returns empty — GoneMember is no longer in the roster
     mockedGetGuildRoster.mockResolvedValue([]);
@@ -146,16 +150,13 @@ describe('raids roster sync flow (integration)', () => {
     const db = getDatabase();
     db.prepare('INSERT INTO ignored_characters (character_name) VALUES (?)').run('Ignoredchar');
 
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('Ignoredchar'),
-      makeMember('Regularchar'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('Ignoredchar'), makeMember('Regularchar')]);
 
     await syncRaiders(mockClient);
 
-    const raiders = db
-      .prepare('SELECT character_name FROM raiders')
-      .all() as Array<{ character_name: string }>;
+    const raiders = db.prepare('SELECT character_name FROM raiders').all() as Array<{
+      character_name: string;
+    }>;
 
     const names = raiders.map((r) => r.character_name);
     expect(names).not.toContain('Ignoredchar');
@@ -176,7 +177,9 @@ describe('raids roster sync flow (integration)', () => {
 
     // Mirrors the query get_raiders runs (src/commands/raiders.ts).
     const rows = db
-      .prepare('SELECT character_name FROM raiders WHERE inactive_since IS NULL ORDER BY character_name')
+      .prepare(
+        'SELECT character_name FROM raiders WHERE inactive_since IS NULL ORDER BY character_name',
+      )
       .all() as Array<{ character_name: string }>;
 
     const names = rows.map((r) => r.character_name);

@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { __resetForTests } from '../../src/services/apiHealth.js';
-import {
-  httpRequest,
-  HttpError,
-  CircuitOpenError,
-} from '../../src/services/httpClient.js';
+import { httpRequest, HttpError, CircuitOpenError } from '../../src/services/httpClient.js';
 import { getSummary, isBreakerOpen } from '../../src/services/apiHealth.js';
 
 const originalFetch = globalThis.fetch;
@@ -40,9 +36,9 @@ function mockResponse(init: {
 
 describe('httpRequest — happy path', () => {
   it('returns parsed JSON on 200', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ ok: true, json: { hello: 'world' } }),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: true, json: { hello: 'world' } }));
 
     const result = await httpRequest<{ hello: string }>('raiderio', 'https://x.test/');
     expect(result).toEqual({ hello: 'world' });
@@ -60,22 +56,20 @@ describe('httpRequest — non-retryable failures', () => {
   it.each([400, 401, 403, 404, 410, 422])(
     'throws HttpError immediately on %s without retry',
     async (status) => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        mockResponse({ ok: false, status, statusText: 'Bad' }),
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(mockResponse({ ok: false, status, statusText: 'Bad' }));
       globalThis.fetch = fetchMock;
 
-      await expect(httpRequest('raiderio', 'https://x.test/')).rejects.toBeInstanceOf(
-        HttpError,
-      );
+      await expect(httpRequest('raiderio', 'https://x.test/')).rejects.toBeInstanceOf(HttpError);
       expect(fetchMock).toHaveBeenCalledTimes(1);
     },
   );
 
   it('HttpError carries service, status, attempts', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ ok: false, status: 404, statusText: 'Not Found' }),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'Not Found' }));
 
     try {
       await httpRequest('raiderio', 'https://x.test/');
@@ -90,9 +84,9 @@ describe('httpRequest — non-retryable failures', () => {
   });
 
   it('records failed outcome on non-retryable error', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ ok: false, status: 404, statusText: 'Not Found' }),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'Not Found' }));
 
     await httpRequest('raiderio', 'https://x.test/').catch(() => {});
     const s = getSummary('raiderio');
@@ -111,9 +105,7 @@ describe('httpRequest — non-retryable failures', () => {
       },
     } as unknown as Response);
 
-    await expect(httpRequest('raiderio', 'https://x.test/')).rejects.toBeInstanceOf(
-      HttpError,
-    );
+    await expect(httpRequest('raiderio', 'https://x.test/')).rejects.toBeInstanceOf(HttpError);
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });
@@ -160,9 +152,9 @@ describe('httpRequest — retry loop', () => {
   it.each([429, 500, 502, 503, 504])(
     'retries on %s up to maxRetries+1 attempts',
     async (status) => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        mockResponse({ ok: false, status, statusText: 'x' }),
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(mockResponse({ ok: false, status, statusText: 'x' }));
       globalThis.fetch = fetchMock;
 
       const promise = httpRequest('raiderio', 'https://x.test/').catch((e) => e);
@@ -191,9 +183,9 @@ describe('httpRequest — retry loop', () => {
   });
 
   it('records `rate_limited` when any attempt saw a 429 and the call ultimately fails', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ ok: false, status: 429, statusText: 'Too Many Requests' }),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 429, statusText: 'Too Many Requests' }));
 
     const promise = httpRequest('raiderio', 'https://x.test/').catch((e) => e);
     await vi.advanceTimersByTimeAsync(5_000);
@@ -227,9 +219,9 @@ describe('httpRequest — retry loop', () => {
   });
 
   it('does not retry on 404', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      mockResponse({ ok: false, status: 404, statusText: 'Not Found' }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'Not Found' }));
     globalThis.fetch = fetchMock;
 
     await httpRequest('raiderio', 'https://x.test/').catch(() => {});
@@ -257,7 +249,9 @@ describe('httpRequest — Retry-After', () => {
       .fn()
       .mockResolvedValueOnce(
         mockResponse({
-          ok: false, status: 429, statusText: 'x',
+          ok: false,
+          status: 429,
+          statusText: 'x',
           headers: { 'Retry-After': '5' },
         }),
       )
@@ -282,7 +276,9 @@ describe('httpRequest — Retry-After', () => {
       .fn()
       .mockResolvedValueOnce(
         mockResponse({
-          ok: false, status: 503, statusText: 'x',
+          ok: false,
+          status: 503,
+          statusText: 'x',
           headers: { 'Retry-After': futureDate },
         }),
       )
@@ -301,7 +297,9 @@ describe('httpRequest — Retry-After', () => {
   it('treats Retry-After > 30s as final failure without waiting', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       mockResponse({
-        ok: false, status: 429, statusText: 'x',
+        ok: false,
+        status: 429,
+        statusText: 'x',
         headers: { 'Retry-After': '120' },
       }),
     );
@@ -318,9 +316,9 @@ describe('httpRequest — Retry-After', () => {
 
 describe('httpRequest — circuit breaker integration', () => {
   it('opens the breaker after 5 consecutive failed calls', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ ok: false, status: 404, statusText: 'x' }),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'x' }));
 
     for (let i = 0; i < 5; i++) {
       await httpRequest('raiderio', 'https://x.test/').catch(() => {});
@@ -329,26 +327,26 @@ describe('httpRequest — circuit breaker integration', () => {
   });
 
   it('fast-fails with CircuitOpenError while open, without calling fetch', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ ok: false, status: 404, statusText: 'x' }),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'x' }));
     for (let i = 0; i < 5; i++) {
       await httpRequest('raiderio', 'https://x.test/').catch(() => {});
     }
 
     const callCountBefore = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
-    await expect(
-      httpRequest('raiderio', 'https://x.test/'),
-    ).rejects.toBeInstanceOf(CircuitOpenError);
+    await expect(httpRequest('raiderio', 'https://x.test/')).rejects.toBeInstanceOf(
+      CircuitOpenError,
+    );
 
     expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callCountBefore);
     expect(getSummary('raiderio').totals.circuitRejected).toBe(1);
   });
 
   it('half_open -> closed on a successful trial call', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ ok: false, status: 500, statusText: 'x' }),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 500, statusText: 'x' }));
     const kick = async () => {
       const p = httpRequest('raiderio', 'https://x.test/').catch(() => {});
       await vi.advanceTimersByTimeAsync(5_000);

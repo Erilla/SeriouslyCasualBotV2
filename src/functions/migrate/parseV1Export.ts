@@ -4,10 +4,26 @@ export const CURRENT_TIER_BOSS_IDS: readonly number[] = [
   197132, 197133, 197134, 197135, 197136, 197137, 197138, 197139, 197140,
 ];
 
-export interface V1IdentityEntry { characterName: string; discordUserId: string }
-export interface V1Overlord { name: string; userId: string }
-export interface V1Votes { major: string[]; minor: string[]; wantIn: string[]; wantOut: string[] }
-export interface V1LootPost { bossId: number; bossName: string; bossUrl: string | null; votes: V1Votes }
+export interface V1IdentityEntry {
+  characterName: string;
+  discordUserId: string;
+}
+export interface V1Overlord {
+  name: string;
+  userId: string;
+}
+export interface V1Votes {
+  major: string[];
+  minor: string[];
+  wantIn: string[];
+  wantOut: string[];
+}
+export interface V1LootPost {
+  bossId: number;
+  bossName: string;
+  bossUrl: string | null;
+  votes: V1Votes;
+}
 export interface V1Export {
   identityMap: V1IdentityEntry[];
   overlords: V1Overlord[];
@@ -15,7 +31,9 @@ export interface V1Export {
   lootPosts: V1LootPost[];
 }
 
-interface KeyvEnvelope { value?: unknown }
+interface KeyvEnvelope {
+  value?: unknown;
+}
 
 function unwrap(raw: string): unknown {
   try {

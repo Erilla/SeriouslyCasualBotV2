@@ -5,7 +5,11 @@ import { logger } from '../../services/logger.js';
 import { registerAchievementsFonts, ACHIEVEMENTS_FONT } from './fonts.js';
 import { getOrCreateGuildInfoChannel } from './clearGuildInfo.js';
 import { getRaidStaticData, getRaidRankings } from '../../services/raiderio.js';
-import type { AchievementsManualRow, GuildInfoContentRow, GuildInfoMessageRow } from '../../types/index.js';
+import type {
+  AchievementsManualRow,
+  GuildInfoContentRow,
+  GuildInfoMessageRow,
+} from '../../types/index.js';
 
 // ─── Expansion Names ───────────────────────────────────────────
 
@@ -168,11 +172,16 @@ function buildManualSections(rows: AchievementsManualRow[]): AchievementSection[
   for (const [expansion, expRows] of grouped) {
     sections.push({
       expansionLabel: getExpansionName(expansion),
-      rows: expRows.map((r) => {
-        const isCE = r.result.includes('CE');
-        const result = r.result.replace(/\*\*/g, '').replace(/^CE\s*/, '').trim();
-        return { raid: r.raid, progress: r.progress, result, isCE };
-      }).reverse(), // DB rows are in sort_order (oldest first); display is newest-first within each expansion
+      rows: expRows
+        .map((r) => {
+          const isCE = r.result.includes('CE');
+          const result = r.result
+            .replace(/\*\*/g, '')
+            .replace(/^CE\s*/, '')
+            .trim();
+          return { raid: r.raid, progress: r.progress, result, isCE };
+        })
+        .reverse(), // DB rows are in sort_order (oldest first); display is newest-first within each expansion
     });
   }
 
@@ -222,7 +231,7 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
       }
 
       try {
-        const rankings = await getRaidRankings(raid.slug) as unknown as RaidRankingEntry[];
+        const rankings = (await getRaidRankings(raid.slug)) as unknown as RaidRankingEntry[];
 
         if (!rankings || rankings.length === 0) {
           logger.debug('Achievements', `No rankings for ${raid.name}`);
@@ -238,13 +247,14 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
           return 0;
         };
 
-        const best = rankings.reduce((a, b) =>
-          (getDefeatedCount(b) > getDefeatedCount(a) ? b : a), rankings[0]);
+        const best = rankings.reduce(
+          (a, b) => (getDefeatedCount(b) > getDefeatedCount(a) ? b : a),
+          rankings[0],
+        );
 
         const killedBosses = getDefeatedCount(best);
-        const totalBosses = typeof best.encountersTotal === 'number'
-          ? best.encountersTotal
-          : raid.encounters.length;
+        const totalBosses =
+          typeof best.encountersTotal === 'number' ? best.encountersTotal : raid.encounters.length;
 
         if (killedBosses === 0) continue;
 
@@ -264,7 +274,10 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
           isCE,
         });
       } catch (error) {
-        logger.warn('Achievements', `Failed to fetch rankings for ${raid.name} (${raid.slug}): ${error}`);
+        logger.warn(
+          'Achievements',
+          `Failed to fetch rankings for ${raid.name} (${raid.slug}): ${error}`,
+        );
       }
     }
 
@@ -278,19 +291,23 @@ async function fetchApiAchievements(): Promise<AchievementSection[]> {
     expansionId++;
   }
 
-  logger.info('Achievements', `Fetched ${sections.length} expansion sections with ${sections.reduce((sum, s) => sum + s.rows.length, 0)} total raids`);
+  logger.info(
+    'Achievements',
+    `Fetched ${sections.length} expansion sections with ${sections.reduce((sum, s) => sum + s.rows.length, 0)} total raids`,
+  );
   return sections;
 }
 
 function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
-  const totalBosses = typeof ranking.encountersTotal === 'number'
-    ? ranking.encountersTotal
-    : raid.encounters.length;
+  const totalBosses =
+    typeof ranking.encountersTotal === 'number' ? ranking.encountersTotal : raid.encounters.length;
 
   // Not all bosses killed = no CE
   const defeated = Array.isArray(ranking.encountersDefeated)
     ? (ranking.encountersDefeated as unknown[]).length
-    : (typeof ranking.encountersDefeated === 'number' ? ranking.encountersDefeated : 0);
+    : typeof ranking.encountersDefeated === 'number'
+      ? ranking.encountersDefeated
+      : 0;
   if (defeated < totalBosses) return false;
 
   // Get the tier end date
@@ -302,9 +319,7 @@ function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
   // Check if the last boss was defeated before the tier end date
   if (ranking.encounter_defeated && ranking.encounter_defeated.length > 0) {
     const lastEncounterSlug = raid.encounters[raid.encounters.length - 1]?.slug;
-    const lastBossEntry = ranking.encounter_defeated.find(
-      (e) => e.slug === lastEncounterSlug,
-    );
+    const lastBossEntry = ranking.encounter_defeated.find((e) => e.slug === lastEncounterSlug);
     if (lastBossEntry) {
       return new Date(lastBossEntry.firstDefeated) < new Date(endDate);
     }
@@ -343,7 +358,8 @@ function renderAchievementsImage(sections: AchievementSection[], _title: string)
     if (section.expansionLabel) totalRows++; // separator row
   }
 
-  const height = PADDING + HEADER_HEIGHT + totalRows * ROW_HEIGHT + sections.length * SECTION_GAP + PADDING;
+  const height =
+    PADDING + HEADER_HEIGHT + totalRows * ROW_HEIGHT + sections.length * SECTION_GAP + PADDING;
 
   // Register the bundled font before drawing — the container has no system
   // fonts, so `sans-serif` would otherwise render as blank .notdef glyphs.

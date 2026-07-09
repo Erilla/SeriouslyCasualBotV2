@@ -3,7 +3,12 @@ import { getDatabase } from '../database/db.js';
 import { logger } from '../services/logger.js';
 import type { ApplicationRow, TrialRow } from '../types/index.js';
 
-async function tryUnarchive(thread: ThreadChannel, domain: string, name: string, id: number): Promise<void> {
+async function tryUnarchive(
+  thread: ThreadChannel,
+  domain: string,
+  name: string,
+  id: number,
+): Promise<void> {
   try {
     await thread.setArchived(false);
     logger.info(domain, `Unarchived thread for "${name}" (#${id})`);
@@ -48,7 +53,12 @@ export default {
       .get(newThread.id, newThread.id) as ApplicationRow | undefined;
 
     if (application) {
-      await tryUnarchive(newThread, 'Applications', application.character_name ?? 'unknown', application.id);
+      await tryUnarchive(
+        newThread,
+        'Applications',
+        application.character_name ?? 'unknown',
+        application.id,
+      );
     }
   },
 };

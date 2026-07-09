@@ -44,12 +44,7 @@ describe('buildApplicationChannelOverwrites', () => {
   });
 
   it('denies ViewChannel for @everyone and allows applicant to view/send', () => {
-    const overwrites = buildApplicationChannelOverwrites(
-      guildId,
-      applicantId,
-      overlordIds,
-      null,
-    );
+    const overwrites = buildApplicationChannelOverwrites(guildId, applicantId, overlordIds, null);
     const byId = new Map(overwrites.map((o) => [o.id, o]));
 
     expect(byId.get(guildId)?.deny).toContain(PermissionFlagsBits.ViewChannel);
@@ -59,12 +54,7 @@ describe('buildApplicationChannelOverwrites', () => {
   });
 
   it('omits the officer role overwrite when no officer role is configured', () => {
-    const overwrites = buildApplicationChannelOverwrites(
-      guildId,
-      applicantId,
-      overlordIds,
-      null,
-    );
+    const overwrites = buildApplicationChannelOverwrites(guildId, applicantId, overlordIds, null);
     expect(overwrites.some((o) => o.id === '')).toBe(false);
     // one @everyone + one applicant + two overlords = 4
     expect(overwrites).toHaveLength(4);

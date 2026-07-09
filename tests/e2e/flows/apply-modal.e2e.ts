@@ -33,7 +33,10 @@ import { resetAndSeed } from '../setup/baseline.js';
 import { queryOne, queryAll } from '../setup/assertions.js';
 import { getDatabase } from '../../../src/database/db.js';
 import applyCmd from '../../../src/commands/apply.js';
-import { handleDmMessage, activeSessions } from '../../../src/functions/applications/dmQuestionnaire.js';
+import {
+  handleDmMessage,
+  activeSessions,
+} from '../../../src/functions/applications/dmQuestionnaire.js';
 import { getQuestions } from '../../../src/functions/applications/applicationQuestions.js';
 
 // ---------------------------------------------------------------------------
@@ -198,7 +201,9 @@ describe('apply — DM Q&A flow', () => {
     expect(questions.length).toBeGreaterThan(0);
 
     // Provide one answer per question via handleDmMessage.
-    const answers: string[] = questions.map((q, i) => `Test Answer ${i + 1} for: ${q.question.substring(0, 20)}`);
+    const answers: string[] = questions.map(
+      (q, i) => `Test Answer ${i + 1} for: ${q.question.substring(0, 20)}`,
+    );
 
     for (const answer of answers) {
       const msg = buildFakeMessage(user, answer);
@@ -313,12 +318,16 @@ describe('apply — DM Q&A flow', () => {
 
     // Should not throw, should not create any DB rows.
     const db = getDatabase();
-    const beforeCount = (db.prepare('SELECT COUNT(*) as n FROM application_answers').get() as { n: number }).n;
+    const beforeCount = (
+      db.prepare('SELECT COUNT(*) as n FROM application_answers').get() as { n: number }
+    ).n;
 
     const msg = buildFakeMessage(user, 'some random message');
     await handleDmMessage(msg);
 
-    const afterCount = (db.prepare('SELECT COUNT(*) as n FROM application_answers').get() as { n: number }).n;
+    const afterCount = (
+      db.prepare('SELECT COUNT(*) as n FROM application_answers').get() as { n: number }
+    ).n;
     expect(afterCount).toBe(beforeCount);
   });
 

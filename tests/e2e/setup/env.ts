@@ -38,8 +38,8 @@ export function loadE2EEnv(options?: { skipDotenv?: boolean }): E2EEnv {
   if (missing.length > 0) {
     throw new Error(
       `missing required e2e env vars: ${missing.join(', ')}.\n` +
-      `Copy .env.test.example → .env.test and fill in values.\n` +
-      `See docs/superpowers/runbook/e2e-scaffold-setup.md`,
+        `Copy .env.test.example → .env.test and fill in values.\n` +
+        `See docs/superpowers/runbook/e2e-scaffold-setup.md`,
     );
   }
 

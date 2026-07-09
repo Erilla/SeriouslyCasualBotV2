@@ -41,9 +41,9 @@ describe('linkCharacterIdentity', () => {
     expect(linkCharacterIdentity('Testcharacter', 'discord-1')).toBe(true);
     expect(linkCharacterIdentity('Testcharacter', 'discord-1')).toBe(false);
 
-    const rows = getDatabase()
-      .prepare('SELECT COUNT(*) AS c FROM raider_identity_map')
-      .get() as { c: number };
+    const rows = getDatabase().prepare('SELECT COUNT(*) AS c FROM raider_identity_map').get() as {
+      c: number;
+    };
     expect(rows.c).toBe(1);
   });
 
@@ -62,9 +62,9 @@ describe('linkCharacterIdentity', () => {
     const created = linkCharacterIdentity('testcharacter', 'discord-2');
 
     expect(created).toBe(false);
-    const rows = getDatabase()
-      .prepare('SELECT COUNT(*) AS c FROM raider_identity_map')
-      .get() as { c: number };
+    const rows = getDatabase().prepare('SELECT COUNT(*) AS c FROM raider_identity_map').get() as {
+      c: number;
+    };
     expect(rows.c).toBe(1);
   });
 });

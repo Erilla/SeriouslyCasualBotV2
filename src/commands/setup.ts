@@ -50,10 +50,14 @@ const DISCORD_MESSAGE_LIMIT = 2000;
 
 function channelTypeLabel(type: ChannelType): string {
   switch (type) {
-    case ChannelType.GuildText: return 'text channel';
-    case ChannelType.GuildForum: return 'forum channel';
-    case ChannelType.GuildCategory: return 'category';
-    default: return 'different channel type';
+    case ChannelType.GuildText:
+      return 'text channel';
+    case ChannelType.GuildForum:
+      return 'forum channel';
+    case ChannelType.GuildCategory:
+      return 'category';
+    default:
+      return 'different channel type';
   }
 }
 
@@ -62,9 +66,7 @@ const CHANNEL_CHOICES = Object.entries(CHANNEL_CONFIG).map(([value, { label }]) 
   value,
 }));
 
-const ALLOWED_CHANNEL_TYPES = [
-  ...new Set(Object.values(CHANNEL_CONFIG).map((c) => c.type)),
-];
+const ALLOWED_CHANNEL_TYPES = [...new Set(Object.values(CHANNEL_CONFIG).map((c) => c.type))];
 
 // Discord caps slash-command choices at 25 per option. Fail fast at module load
 // rather than at command registration if CHANNEL_CONFIG grows past that.
@@ -113,7 +115,9 @@ export default {
         )
         .addRoleOption((opt) => opt.setName('role').setDescription('The role').setRequired(true)),
     )
-    .addSubcommand((sub) => sub.setName('get_config').setDescription('View all configured channels and roles')),
+    .addSubcommand((sub) =>
+      sub.setName('get_config').setDescription('View all configured channels and roles'),
+    ),
   async execute(interaction: ChatInputCommandInteraction) {
     if (!(await requireOfficer(interaction))) return;
 
@@ -146,7 +150,10 @@ export default {
 
       db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(key, channel.id);
       await audit(interaction.user, 'configured channel', `${key} = #${channel.name}`);
-      await interaction.reply({ content: `Set **${key}** to ${channel}`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: `Set **${key}** to ${channel}`,
+        flags: MessageFlags.Ephemeral,
+      });
     }
 
     if (subcommand === 'set_role') {
@@ -155,16 +162,20 @@ export default {
 
       db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(key, role.id);
       await audit(interaction.user, 'configured role', `${key} = @${role.name}`);
-      await interaction.reply({ content: `Set **${key}** to ${role}`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: `Set **${key}** to ${role}`,
+        flags: MessageFlags.Ephemeral,
+      });
     }
 
     if (subcommand === 'get_config') {
       // ORDER BY key keeps the "Other (unknown keys)" section deterministic
       // when we iterate `rows` below. Known keys are rendered in CHANNEL_CONFIG
       // / ROLE_CONFIG insertion order, independent of this ordering.
-      const rows = db
-        .prepare('SELECT key, value FROM config ORDER BY key')
-        .all() as { key: string; value: string }[];
+      const rows = db.prepare('SELECT key, value FROM config ORDER BY key').all() as {
+        key: string;
+        value: string;
+      }[];
       const byKey = new Map(rows.map((r) => [r.key, r.value]));
 
       const renderEntry = (key: string, label: string, mentionPrefix: '#' | '@&'): string => {
@@ -174,8 +185,12 @@ export default {
           : `- **${label}** (${key}): *(not set)*`;
       };
 
-      const channelLines = Object.entries(CHANNEL_CONFIG).map(([k, { label }]) => renderEntry(k, label, '#'));
-      const roleLines = Object.entries(ROLE_CONFIG).map(([k, { label }]) => renderEntry(k, label, '@&'));
+      const channelLines = Object.entries(CHANNEL_CONFIG).map(([k, { label }]) =>
+        renderEntry(k, label, '#'),
+      );
+      const roleLines = Object.entries(ROLE_CONFIG).map(([k, { label }]) =>
+        renderEntry(k, label, '@&'),
+      );
       const unknownLines = rows
         .filter((r) => !KNOWN_CONFIG_KEYS.has(r.key))
         .map((r) => `- **${r.key}**: \`${r.value}\``);
@@ -194,7 +209,8 @@ export default {
         // character budget could cut through a `<#id>` or `<@&id>` mention
         // and leave broken markdown in the reply. Walk lines and stop
         // when adding the next one would overflow.
-        const notice = '\n\n_…output truncated; query the `config` table directly for the full dump._';
+        const notice =
+          '\n\n_…output truncated; query the `config` table directly for the full dump._';
         const budget = DISCORD_MESSAGE_LIMIT - notice.length;
         const lines = content.split('\n');
         let truncated = '';

@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  extractMatchingCodes,
-  type AttendanceReport,
-} from '../../src/services/warcraftlogs.js';
+import { extractMatchingCodes, type AttendanceReport } from '../../src/services/warcraftlogs.js';
 
 describe('extractMatchingCodes', () => {
   const report = (code: string, players: Array<[string, number]>): AttendanceReport => ({

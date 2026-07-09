@@ -40,7 +40,9 @@ function insertFreshRaider(characterName: string): void {
 // ---------------------------------------------------------------------------
 function insertIgnoredCharacter(characterName: string): void {
   const db = getDatabase();
-  db.prepare('INSERT OR IGNORE INTO ignored_characters (character_name) VALUES (?)').run(characterName);
+  db.prepare('INSERT OR IGNORE INTO ignored_characters (character_name) VALUES (?)').run(
+    characterName,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +199,10 @@ describe('/raiders', () => {
     expect(raiderRow).toBeUndefined();
 
     // DB: character added to ignored_characters.
-    const ignoredRow = queryOne('SELECT character_name FROM ignored_characters WHERE character_name = ?', ['Freshraider']);
+    const ignoredRow = queryOne(
+      'SELECT character_name FROM ignored_characters WHERE character_name = ?',
+      ['Freshraider'],
+    );
     expect(ignoredRow).toBeDefined();
   });
 
@@ -233,7 +238,9 @@ describe('/raiders', () => {
     expect(content).toContain('Removed');
 
     // DB: row should be gone.
-    const row = queryOne('SELECT character_name FROM ignored_characters WHERE character_name = ?', ['Ignoredbefore']);
+    const row = queryOne('SELECT character_name FROM ignored_characters WHERE character_name = ?', [
+      'Ignoredbefore',
+    ]);
     expect(row).toBeUndefined();
   });
 

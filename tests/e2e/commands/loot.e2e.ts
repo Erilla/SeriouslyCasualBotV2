@@ -246,7 +246,8 @@ describe('/loot', () => {
     // "Failed to create loot posts: ..." on error — both are valid outcomes.
     const editContent = replyContent(iact.__editedReply!);
     expect(
-      editContent === 'Loot posts created.' || editContent.startsWith('Failed to create loot posts:'),
+      editContent === 'Loot posts created.' ||
+        editContent.startsWith('Failed to create loot posts:'),
     ).toBe(true);
   });
 });

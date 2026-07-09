@@ -9,7 +9,9 @@ import { deleteLootPost } from './deleteLootPost.js';
  */
 export async function deleteAllLootPosts(client: Client): Promise<number> {
   const db = getDatabase();
-  const rows = db.prepare('SELECT boss_id FROM loot_posts ORDER BY boss_id').all() as { boss_id: number }[];
+  const rows = db.prepare('SELECT boss_id FROM loot_posts ORDER BY boss_id').all() as {
+    boss_id: number;
+  }[];
 
   let deleted = 0;
   for (const { boss_id } of rows) {

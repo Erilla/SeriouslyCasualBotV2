@@ -69,9 +69,7 @@ function todayFile(): string {
 
 function cleanBackupDir(): void {
   if (!existsSync(BACKUP_DIR)) return;
-  const files = readdirSync(BACKUP_DIR).filter(
-    (f) => f.startsWith('db-') && f.endsWith('.sqlite'),
-  );
+  const files = readdirSync(BACKUP_DIR).filter((f) => f.startsWith('db-') && f.endsWith('.sqlite'));
   for (const f of files) {
     unlinkSync(join(BACKUP_DIR, f));
   }

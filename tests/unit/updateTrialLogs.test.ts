@@ -44,9 +44,13 @@ function makeForeignGuild(id: string) {
   return {
     id,
     channels: {
-      fetch: vi.fn().mockRejectedValue(
-        new Error('GuildChannelUnowned: The fetched channel does not belong to this manager\'s guild.'),
-      ),
+      fetch: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            "GuildChannelUnowned: The fetched channel does not belong to this manager's guild.",
+          ),
+        ),
     },
   } as unknown as Guild;
 }

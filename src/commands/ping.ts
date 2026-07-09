@@ -1,9 +1,7 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
 
 export default {
-  data: new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Check bot latency'),
+  data: new SlashCommandBuilder().setName('ping').setDescription('Check bot latency'),
   async execute(interaction: ChatInputCommandInteraction) {
     const response = await interaction.reply({ content: 'Pinging...', withResponse: true });
     const created = response.resource?.message?.createdTimestamp;

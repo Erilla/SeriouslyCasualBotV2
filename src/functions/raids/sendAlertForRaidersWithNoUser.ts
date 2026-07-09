@@ -34,9 +34,7 @@ export async function sendAlertForRaidersWithNoUser(
   }
 
   const db = getDatabase();
-  const autoMatchMap = new Map(
-    autoMatches.map((m) => [m.raider.character_name.toLowerCase(), m]),
-  );
+  const autoMatchMap = new Map(autoMatches.map((m) => [m.raider.character_name.toLowerCase(), m]));
 
   // Send messages for auto-matched raiders
   for (const match of autoMatches) {
@@ -136,10 +134,7 @@ export async function sendAlertForRaidersWithNoUser(
  * sweep. Best-effort — a NULL id is skipped and an already-deleted message is
  * swallowed, so this never blocks the fresh post.
  */
-async function deletePreviousPost(
-  channel: TextChannel,
-  messageId: string | null,
-): Promise<void> {
+async function deletePreviousPost(channel: TextChannel, messageId: string | null): Promise<void> {
   if (!messageId) return;
   try {
     await channel.messages.delete(messageId);

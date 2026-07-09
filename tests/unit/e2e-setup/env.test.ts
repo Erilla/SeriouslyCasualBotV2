@@ -5,10 +5,15 @@ describe('loadE2EEnv', () => {
   beforeEach(() => {
     resetE2EEnvCache();
     for (const k of [
-      'DISCORD_TOKEN', 'GUILD_ID',
-      'TESTER_PRIMARY_ID', 'VOTER_A_ID', 'VOTER_B_ID', 'OFFICER_ID',
+      'DISCORD_TOKEN',
+      'GUILD_ID',
+      'TESTER_PRIMARY_ID',
+      'VOTER_A_ID',
+      'VOTER_B_ID',
+      'OFFICER_ID',
       'TEST_DB_PATH',
-    ]) delete process.env[k];
+    ])
+      delete process.env[k];
   });
 
   it('throws a clear error when required keys are missing', () => {

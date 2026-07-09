@@ -6,9 +6,9 @@ import type { LootPostRow } from '../../types/index.js';
 export async function deleteLootPost(client: Client, bossId: number): Promise<void> {
   const db = getDatabase();
 
-  const lootPost = db
-    .prepare('SELECT * FROM loot_posts WHERE boss_id = ?')
-    .get(bossId) as LootPostRow | undefined;
+  const lootPost = db.prepare('SELECT * FROM loot_posts WHERE boss_id = ?').get(bossId) as
+    | LootPostRow
+    | undefined;
 
   if (!lootPost) {
     logger.warn('Loot', `No loot post found for boss_id ${bossId}`);

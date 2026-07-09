@@ -12,7 +12,7 @@ export async function verifyScaffold(): Promise<void> {
   if (missing.length > 0) {
     throw new Error(
       `Sandbox guild scaffold missing: ${missing.join(', ')}. ` +
-      `See docs/superpowers/runbook/e2e-scaffold-setup.md`,
+        `See docs/superpowers/runbook/e2e-scaffold-setup.md`,
     );
   }
 }

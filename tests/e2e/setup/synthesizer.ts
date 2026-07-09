@@ -1,7 +1,16 @@
 import type {
-  Client, Guild, GuildMember, TextBasedChannel, User, Role, Attachment,
-  InteractionReplyOptions, InteractionEditReplyOptions,
-  ModalBuilder, Message, MessageEditOptions,
+  Client,
+  Guild,
+  GuildMember,
+  TextBasedChannel,
+  User,
+  Role,
+  Attachment,
+  InteractionReplyOptions,
+  InteractionEditReplyOptions,
+  ModalBuilder,
+  Message,
+  MessageEditOptions,
 } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 
@@ -354,4 +363,3 @@ export function fakeModalSubmit(init: FakeModalSubmitInit): FakeModalSubmit {
   };
   return fake;
 }
-

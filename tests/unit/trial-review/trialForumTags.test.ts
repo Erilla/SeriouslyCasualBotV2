@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ForumChannel, AnyThreadChannel } from 'discord.js';
-import { ensureTrialForumTags, applyTrialTag } from '../../../src/functions/trial-review/trialForumTags.js';
+import {
+  ensureTrialForumTags,
+  applyTrialTag,
+} from '../../../src/functions/trial-review/trialForumTags.js';
 
 describe('ensureTrialForumTags', () => {
   it('adds the four tags additively, preserving existing tags, and returns the refetched forum', async () => {
     const setAvailableTags = vi.fn(async () => {});
-    const refetched = { availableTags: [{ id: 'r', name: 'refetched' }] } as unknown as ForumChannel;
+    const refetched = {
+      availableTags: [{ id: 'r', name: 'refetched' }],
+    } as unknown as ForumChannel;
     const forum = {
       availableTags: [{ id: 'x', name: 'Existing' }],
       setAvailableTags,
@@ -47,7 +52,9 @@ describe('ensureTrialForumTags', () => {
   it('returns the original forum without throwing when setAvailableTags fails', async () => {
     const forum = {
       availableTags: [{ id: 'x', name: 'Existing' }],
-      setAvailableTags: vi.fn(async () => { throw new Error('rate limited'); }),
+      setAvailableTags: vi.fn(async () => {
+        throw new Error('rate limited');
+      }),
       fetch: vi.fn(),
     } as unknown as ForumChannel;
 
@@ -63,7 +70,12 @@ describe('applyTrialTag', () => {
     const setAppliedTags = vi.fn(async () => {});
     const thread = {
       id: 't1',
-      parent: { availableTags: [{ id: 'a', name: 'Active' }, { id: 'p', name: 'Promoted' }] },
+      parent: {
+        availableTags: [
+          { id: 'a', name: 'Active' },
+          { id: 'p', name: 'Promoted' },
+        ],
+      },
       setAppliedTags,
     } as unknown as AnyThreadChannel;
 

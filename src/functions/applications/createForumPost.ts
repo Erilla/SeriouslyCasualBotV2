@@ -36,21 +36,19 @@ export async function createForumPost(
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`, { cause: err });
+    throw new Error(
+      `Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`,
+      { cause: err },
+    );
   }
 
   try {
     const existingTags = forum.availableTags;
     const requiredTags = ['Active', 'Accepted', 'Rejected'];
-    const missingTags = requiredTags.filter(
-      (tag) => !existingTags.some((t) => t.name === tag),
-    );
+    const missingTags = requiredTags.filter((tag) => !existingTags.some((t) => t.name === tag));
 
     if (missingTags.length > 0) {
-      const newTags = [
-        ...existingTags,
-        ...missingTags.map((name) => ({ name })),
-      ];
+      const newTags = [...existingTags, ...missingTags.map((name) => ({ name }))];
       await forum.setAvailableTags(newTags);
       const updatedForum = (await forum.fetch()) as ForumChannel;
       forum = updatedForum;
@@ -77,7 +75,9 @@ export async function createForumPost(
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create forum thread for "${threadName}": ${error.message}`, { cause: err });
+    throw new Error(`Failed to create forum thread for "${threadName}": ${error.message}`, {
+      cause: err,
+    });
   }
 
   for (let i = 1; i < messages.length; i++) {
@@ -93,7 +93,10 @@ export async function createForumPost(
     await thread.send(votingData);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    logger.warn('Applications', `Failed to send voting embed for application #${applicationId}: ${error.message}`);
+    logger.warn(
+      'Applications',
+      `Failed to send voting embed for application #${applicationId}: ${error.message}`,
+    );
   }
 
   try {
@@ -110,7 +113,10 @@ export async function createForumPost(
     await thread.send({ components: [decisionRow] });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    logger.warn('Applications', `Failed to send decision buttons for application #${applicationId}: ${error.message}`);
+    logger.warn(
+      'Applications',
+      `Failed to send decision buttons for application #${applicationId}: ${error.message}`,
+    );
   }
 
   return { forumPost: { id: forum.id }, threadId: thread.id };

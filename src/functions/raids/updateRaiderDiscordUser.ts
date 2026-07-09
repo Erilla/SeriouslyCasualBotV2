@@ -22,10 +22,9 @@ export async function updateRaiderDiscordUser(
 
     db.transaction(() => {
       // Update the raider's discord_user_id
-      db.prepare('UPDATE raiders SET discord_user_id = ?, message_id = NULL WHERE character_name = ?').run(
-        userId,
-        characterName,
-      );
+      db.prepare(
+        'UPDATE raiders SET discord_user_id = ?, message_id = NULL WHERE character_name = ?',
+      ).run(userId, characterName);
 
       // Upsert into raider_identity_map
       db.prepare(

@@ -26,7 +26,7 @@ async function apply(interaction: ButtonInteraction, _params: string[]): Promise
 
   if (success) {
     await interaction.reply({
-      content: 'Check your DMs! I\'ve sent you the application questions.',
+      content: "Check your DMs! I've sent you the application questions.",
       flags: MessageFlags.Ephemeral,
     });
   } else {
@@ -73,7 +73,11 @@ async function confirm(interaction: ButtonInteraction, params: string[]): Promis
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    logger.error('Applications', `Failed to submit application #${applicationId}: ${error.message}`, error);
+    logger.error(
+      'Applications',
+      `Failed to submit application #${applicationId}: ${error.message}`,
+      error,
+    );
 
     // Officers would otherwise only see this in stdout. Ping the audit
     // channel so they have an action item. Don't await-block the user
@@ -102,7 +106,9 @@ async function cancel(interaction: ButtonInteraction, params: string[]): Promise
   activeSessions.delete(interaction.user.id);
 
   try {
-    await interaction.user.send('Your application has been cancelled. You can apply again anytime with /apply.');
+    await interaction.user.send(
+      'Your application has been cancelled. You can apply again anytime with /apply.',
+    );
   } catch {
     // DMs may be disabled
   }
@@ -129,21 +135,31 @@ async function reject(interaction: ButtonInteraction, _params: string[]): Promis
   await rejectApplication(interaction);
 }
 
-async function modalAcceptMessage(interaction: ModalSubmitInteraction, _params: string[]): Promise<void> {
+async function modalAcceptMessage(
+  interaction: ModalSubmitInteraction,
+  _params: string[],
+): Promise<void> {
   const message = interaction.fields.getTextInputValue('message');
   const db = getDatabase();
-  db.prepare('INSERT OR REPLACE INTO default_messages (key, message) VALUES (?, ?)')
-    .run('application_accept', message);
+  db.prepare('INSERT OR REPLACE INTO default_messages (key, message) VALUES (?, ?)').run(
+    'application_accept',
+    message,
+  );
 
   await audit(interaction.user, 'updated accept message', message.substring(0, 100));
   await interaction.reply({ content: 'Accept message updated.', flags: MessageFlags.Ephemeral });
 }
 
-async function modalRejectMessage(interaction: ModalSubmitInteraction, _params: string[]): Promise<void> {
+async function modalRejectMessage(
+  interaction: ModalSubmitInteraction,
+  _params: string[],
+): Promise<void> {
   const message = interaction.fields.getTextInputValue('message');
   const db = getDatabase();
-  db.prepare('INSERT OR REPLACE INTO default_messages (key, message) VALUES (?, ?)')
-    .run('application_reject', message);
+  db.prepare('INSERT OR REPLACE INTO default_messages (key, message) VALUES (?, ?)').run(
+    'application_reject',
+    message,
+  );
 
   await audit(interaction.user, 'updated reject message', message.substring(0, 100));
   await interaction.reply({ content: 'Reject message updated.', flags: MessageFlags.Ephemeral });

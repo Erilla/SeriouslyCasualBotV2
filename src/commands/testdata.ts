@@ -29,40 +29,59 @@ export default {
       sub
         .setName('seed_raiders')
         .setDescription('Insert 15 mock raiders into the database')
-        .addBooleanOption((o) => o.setName('discord').setDescription('Also post linking messages in raider-setup')),
+        .addBooleanOption((o) =>
+          o.setName('discord').setDescription('Also post linking messages in raider-setup'),
+        ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('seed_application')
         .setDescription('Insert a mock application with answers and votes')
-        .addBooleanOption((o) => o.setName('discord').setDescription('Also create a forum post with voting buttons')),
+        .addBooleanOption((o) =>
+          o.setName('discord').setDescription('Also create a forum post with voting buttons'),
+        ),
     )
     .addSubcommand((sub) =>
-      sub.setName('seed_application_variety').setDescription('Insert 5 applications covering all statuses'),
+      sub
+        .setName('seed_application_variety')
+        .setDescription('Insert 5 applications covering all statuses'),
     )
     .addSubcommand((sub) =>
       sub
         .setName('seed_trial')
         .setDescription('Insert a mock trial with 3 scheduled alerts')
-        .addBooleanOption((o) => o.setName('discord').setDescription('Also create a trial-review forum thread')),
+        .addBooleanOption((o) =>
+          o.setName('discord').setDescription('Also create a trial-review forum thread'),
+        ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('seed_loot')
         .setDescription('Insert 3 mock loot posts')
-        .addBooleanOption((o) => o.setName('discord').setDescription('Also post real messages in the configured loot channel')),
+        .addBooleanOption((o) =>
+          o
+            .setName('discord')
+            .setDescription('Also post real messages in the configured loot channel'),
+        ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('seed_all')
         .setDescription('Run all seeds in order')
-        .addBooleanOption((o) => o.setName('discord').setDescription('Also create Discord artifacts for each seed')),
+        .addBooleanOption((o) =>
+          o.setName('discord').setDescription('Also create Discord artifacts for each seed'),
+        ),
     )
     .addSubcommand((sub) =>
       sub
         .setName('reset')
         .setDescription('Wipe all test data and re-seed defaults')
-        .addBooleanOption((o) => o.setName('confirm').setDescription('Must be true to actually wipe data').setRequired(true)),
+        .addBooleanOption((o) =>
+          o
+            .setName('confirm')
+            .setDescription('Must be true to actually wipe data')
+            .setRequired(true),
+        ),
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -110,7 +129,9 @@ async function runSubcommand(
         const r = await seedApplicationDiscord(interaction.client, db);
         return formatLines(
           `Seeded application **#${r.applicationId}**.`,
-          r.forumPostId ? `Forum post created: \`${r.forumPostId}\` (thread \`${r.threadId}\`).` : null,
+          r.forumPostId
+            ? `Forum post created: \`${r.forumPostId}\` (thread \`${r.threadId}\`).`
+            : null,
           r.skippedReason ? `_Discord skipped: ${r.skippedReason}_` : null,
         );
       }
@@ -129,7 +150,9 @@ async function runSubcommand(
       if (discord) {
         const r = await seedTrialDiscord(interaction.client);
         return formatLines(
-          r.trialId ? `Seeded trial **#${r.trialId}** with 3 alerts and forum thread \`${r.threadId}\`.` : 'Trial seeding failed.',
+          r.trialId
+            ? `Seeded trial **#${r.trialId}** with 3 alerts and forum thread \`${r.threadId}\`.`
+            : 'Trial seeding failed.',
           r.skippedReason ? `_Discord skipped: ${r.skippedReason}_` : null,
         );
       }
@@ -155,7 +178,8 @@ async function runSubcommand(
         `• Raiders in DB: **${r.raidersSeeded}**`,
         `• Application: **#${r.applicationId ?? 'n/a'}**`,
         `• Trial: **#${r.trialId ?? 'n/a'}**`,
-        `• Loot posts in DB: **${r.lootPostsInDb}**` + (r.discord ? `, Discord messages: **${r.lootDiscordMessagesPosted}**` : ''),
+        `• Loot posts in DB: **${r.lootPostsInDb}**` +
+          (r.discord ? `, Discord messages: **${r.lootDiscordMessagesPosted}**` : ''),
       ];
       if (r.skipped.length > 0) {
         lines.push('', '_Skipped:_');
@@ -183,7 +207,8 @@ async function runSubcommand(
             .slice(0, 10)
             .map((e) => `• \`${e.kind}\` \`${e.id}\`: ${e.message}`)
             .join('\n');
-          const more = err.result.errors.length > 10 ? `\n_(+${err.result.errors.length - 10} more)_` : '';
+          const more =
+            err.result.errors.length > 10 ? `\n_(+${err.result.errors.length - 10} more)_` : '';
           return [
             `**Reset aborted — database was NOT wiped.**`,
             `Discord cleanup failed for ${err.result.errors.length} artifact(s) ` +

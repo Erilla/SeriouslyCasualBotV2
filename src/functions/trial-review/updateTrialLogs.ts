@@ -11,9 +11,7 @@ import type { TrialRow } from '../../types/index.js';
 export async function updateTrialLogs(client: Client): Promise<void> {
   const db = getDatabase();
 
-  const trials = db
-    .prepare("SELECT * FROM trials WHERE status = 'active'")
-    .all() as TrialRow[];
+  const trials = db.prepare("SELECT * FROM trials WHERE status = 'active'").all() as TrialRow[];
 
   if (trials.length === 0) return;
 
@@ -53,10 +51,7 @@ export async function updateTrialLogs(client: Client): Promise<void> {
 
       // Send new message and store its ID
       const msg = await thread.send(logsContent);
-      db.prepare('UPDATE trials SET logs_message_id = ? WHERE id = ?').run(
-        msg.id,
-        trial.id,
-      );
+      db.prepare('UPDATE trials SET logs_message_id = ? WHERE id = ?').run(msg.id, trial.id);
       updated++;
     } catch (error) {
       failed++;

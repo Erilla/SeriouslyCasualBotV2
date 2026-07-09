@@ -1,7 +1,10 @@
 import type Database from 'better-sqlite3';
 import type { V1IdentityEntry, V1Overlord } from './parseV1Export.js';
 
-export interface ImportCount { inserted: number; skipped: number }
+export interface ImportCount {
+  inserted: number;
+  skipped: number;
+}
 
 export function importIdentityMap(db: Database.Database, entries: V1IdentityEntry[]): ImportCount {
   const stmt = db.prepare(

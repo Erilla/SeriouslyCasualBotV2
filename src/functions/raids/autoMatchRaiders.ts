@@ -36,9 +36,9 @@ export async function autoMatchRaiders(
 
   const raiderRoleId =
     (
-      db
-        .prepare('SELECT value FROM config WHERE key = ?')
-        .get('raider_role_id') as ConfigRow | undefined
+      db.prepare('SELECT value FROM config WHERE key = ?').get('raider_role_id') as
+        | ConfigRow
+        | undefined
     )?.value ?? null;
 
   let members;

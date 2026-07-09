@@ -15,7 +15,9 @@ export default {
     .setDescription('Manage loot priority posts')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) =>
-      sub.setName('create_posts').setDescription('Auto-discover current raid and create loot posts'),
+      sub
+        .setName('create_posts')
+        .setDescription('Auto-discover current raid and create loot posts'),
     )
     .addSubcommand((sub) =>
       sub
@@ -106,7 +108,9 @@ export default {
 
         try {
           const count = await deleteAllLootPosts(interaction.client);
-          await interaction.editReply({ content: `Deleted ${count} loot post${count === 1 ? '' : 's'}.` });
+          await interaction.editReply({
+            content: `Deleted ${count} loot post${count === 1 ? '' : 's'}.`,
+          });
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           await interaction.editReply({ content: `Failed to delete loot posts: ${err.message}` });

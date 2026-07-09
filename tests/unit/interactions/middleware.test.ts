@@ -10,12 +10,14 @@ vi.mock('../../../src/services/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }));
 
-function stubInteraction(opts: {
-  hasRole?: boolean;
-  replied?: boolean;
-  deferred?: boolean;
-  apiMember?: boolean; // when true, member is not a GuildMember instance (simulates APIInteractionGuildMember)
-} = {}) {
+function stubInteraction(
+  opts: {
+    hasRole?: boolean;
+    replied?: boolean;
+    deferred?: boolean;
+    apiMember?: boolean; // when true, member is not a GuildMember instance (simulates APIInteractionGuildMember)
+  } = {},
+) {
   const member = opts.apiMember
     ? { roles: ['OFFICER'] } // APIInteractionGuildMember shape — no .cache, plain array
     : Object.setPrototypeOf(

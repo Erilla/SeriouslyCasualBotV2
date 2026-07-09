@@ -1,10 +1,4 @@
-import {
-  EmbedBuilder,
-  Colors,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-} from 'discord.js';
+import { EmbedBuilder, Colors, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import type { ApplicationVoteRow } from '../../types/index.js';
@@ -53,9 +47,7 @@ export function generateVotingEmbed(applicationId: number): {
 
   // Build fields
   const formatVoters = (voteList: ApplicationVoteRow[]): string =>
-    voteList.length > 0
-      ? voteList.map((v) => `<@${v.user_id}>`).join(', ')
-      : 'None';
+    voteList.length > 0 ? voteList.map((v) => `<@${v.user_id}>`).join(', ') : 'None';
 
   const embed = new EmbedBuilder()
     .setTitle('Application Vote')
@@ -112,7 +104,10 @@ export function generateVotingEmbed(applicationId: number): {
       .setStyle(ButtonStyle.Danger),
   );
 
-  logger.debug('Applications', `Generated voting embed for application #${applicationId} (${votes.length} total votes)`);
+  logger.debug(
+    'Applications',
+    `Generated voting embed for application #${applicationId} (${votes.length} total votes)`,
+  );
 
   return { embeds: [embed], components: [votingRow] };
 }

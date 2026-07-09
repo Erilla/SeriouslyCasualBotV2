@@ -14,9 +14,13 @@ function fakeInteraction(fileName: string, size: number) {
     id: 'interaction-1',
     user: { id: 'admin' },
     options: { getAttachment: () => ({ name: fileName, size, url: 'https://example/db' }) },
-    reply: vi.fn(async (m: unknown) => { replies.push(m); }),
+    reply: vi.fn(async (m: unknown) => {
+      replies.push(m);
+    }),
     deferReply: vi.fn(async () => {}),
-    editReply: vi.fn(async (m: unknown) => { replies.push(m); }),
+    editReply: vi.fn(async (m: unknown) => {
+      replies.push(m);
+    }),
   };
 }
 

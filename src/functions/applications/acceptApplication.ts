@@ -39,9 +39,9 @@ export async function acceptApplication(interaction: ButtonInteraction): Promise
   const applicationId = parseInt(interaction.customId.split(':')[2], 10);
   const db = getDatabase();
 
-  const application = db
-    .prepare('SELECT * FROM applications WHERE id = ?')
-    .get(applicationId) as ApplicationRow | undefined;
+  const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(applicationId) as
+    | ApplicationRow
+    | undefined;
 
   if (!application) {
     await interaction.reply({
@@ -56,7 +56,8 @@ export async function acceptApplication(interaction: ButtonInteraction): Promise
     .prepare('SELECT * FROM default_messages WHERE key = ?')
     .get('application_accept') as DefaultMessageRow | undefined;
 
-  const defaultMessage = defaultMsg?.message ?? 'Congratulations! Your application has been accepted.';
+  const defaultMessage =
+    defaultMsg?.message ?? 'Congratulations! Your application has been accepted.';
   const characterName = application.character_name ?? 'Unknown';
   const today = new Date().toISOString().split('T')[0];
 
@@ -111,9 +112,9 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
   const applicationId = parseInt(interaction.customId.split(':')[3], 10);
   const db = getDatabase();
 
-  const application = db
-    .prepare('SELECT * FROM applications WHERE id = ?')
-    .get(applicationId) as ApplicationRow | undefined;
+  const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(applicationId) as
+    | ApplicationRow
+    | undefined;
 
   if (!application) {
     await interaction.reply({
@@ -149,13 +150,18 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
   let transcriptBuffer: Buffer | null = null;
   if (application.channel_id) {
     try {
-      const appChannel = guild.channels.cache.get(application.channel_id) as TextChannel | undefined;
+      const appChannel = guild.channels.cache.get(application.channel_id) as
+        | TextChannel
+        | undefined;
       if (appChannel) {
         const transcript = await generateTranscript(appChannel);
         transcriptBuffer = transcript.buffer;
       }
     } catch (error) {
-      logger.warn('Applications', `Failed to generate transcript for application #${applicationId}: ${error}`);
+      logger.warn(
+        'Applications',
+        `Failed to generate transcript for application #${applicationId}: ${error}`,
+      );
     }
   }
 
@@ -183,7 +189,10 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
         await closeThread(thread);
       }
     } catch (error) {
-      logger.warn('Applications', `Failed to update forum thread for application #${applicationId}: ${error}`);
+      logger.warn(
+        'Applications',
+        `Failed to update forum thread for application #${applicationId}: ${error}`,
+      );
     }
   }
 
@@ -201,7 +210,10 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
       await applicant.send(dmContent);
     }
   } catch (error) {
-    logger.warn('Applications', `Failed to DM applicant for application #${applicationId}: ${error}`);
+    logger.warn(
+      'Applications',
+      `Failed to DM applicant for application #${applicationId}: ${error}`,
+    );
   }
 
   // Delete the app text channel
@@ -212,7 +224,10 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
         await appChannel.delete();
       }
     } catch (error) {
-      logger.warn('Applications', `Failed to delete app channel for application #${applicationId}: ${error}`);
+      logger.warn(
+        'Applications',
+        `Failed to delete app channel for application #${applicationId}: ${error}`,
+      );
     }
   }
 
@@ -226,7 +241,11 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
   ).run(characterName, applicationId);
 
   // Audit log
-  await audit(interaction.user, 'accepted application', `${characterName} as ${role} starting ${startDate}`);
+  await audit(
+    interaction.user,
+    'accepted application',
+    `${characterName} as ${role} starting ${startDate}`,
+  );
 
   // Give the accepted applicant the Raider role (best-effort; never fails accept)
   await assignRaiderRole(guild, application.applicant_user_id);
@@ -241,10 +260,16 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
     });
     logger.info('Trials', `Created trial review from accepted application #${applicationId}`);
   } catch (error) {
-    logger.warn('Trials', `Failed to create trial review for application #${applicationId}: ${error}`);
+    logger.warn(
+      'Trials',
+      `Failed to create trial review for application #${applicationId}: ${error}`,
+    );
   }
 
-  logger.info('Applications', `Application #${applicationId} accepted: ${characterName} as ${role}`);
+  logger.info(
+    'Applications',
+    `Application #${applicationId} accepted: ${characterName} as ${role}`,
+  );
 
   await interaction.editReply({ content: 'Application accepted.' });
 }

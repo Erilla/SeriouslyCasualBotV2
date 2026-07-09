@@ -322,7 +322,9 @@ describe('/testdata', () => {
     expect(content).toContain('99901');
 
     // DB: 3 loot_posts for the mock boss IDs.
-    const rows = queryAll<{ boss_id: number }>('SELECT boss_id FROM loot_posts WHERE boss_id IN (99901, 99902, 99903)');
+    const rows = queryAll<{ boss_id: number }>(
+      'SELECT boss_id FROM loot_posts WHERE boss_id IN (99901, 99902, 99903)',
+    );
     expect(rows.length).toBe(3);
   });
 

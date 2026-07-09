@@ -35,9 +35,9 @@ export async function submitApplication(
 ): Promise<void> {
   const db = getDatabase();
 
-  const application = db
-    .prepare('SELECT * FROM applications WHERE id = ?')
-    .get(applicationId) as ApplicationRow | undefined;
+  const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(applicationId) as
+    | ApplicationRow
+    | undefined;
 
   if (!application) {
     throw new Error(`Application #${applicationId} not found`);
@@ -67,7 +67,10 @@ export async function submitApplication(
   // back to the name seeded at creation (their Discord display name).
   const parsedCharacterName = deriveCharacterNameFromAnswers(answers);
   const characterName = parsedCharacterName || application.character_name || user.displayName;
-  const channelName = `app-${characterName.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 90)}`;
+  const channelName = `app-${characterName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .substring(0, 90)}`;
 
   // Build the Q&A text
   const qaText = buildQAText(answers, user, characterName);
@@ -78,7 +81,11 @@ export async function submitApplication(
     channel = await createApplicationChannel(guild, channelName, user, qaText);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    logger.error('Applications', `Failed to create application channel for #${applicationId}: ${error.message}`, error);
+    logger.error(
+      'Applications',
+      `Failed to create application channel for #${applicationId}: ${error.message}`,
+      error,
+    );
     throw new Error(`Failed to create application channel: ${error.message}`, { cause: err });
   }
 
@@ -91,7 +98,11 @@ export async function submitApplication(
     threadId = result.threadId;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    logger.error('Applications', `Failed to create forum post for #${applicationId}: ${error.message}`, error);
+    logger.error(
+      'Applications',
+      `Failed to create forum post for #${applicationId}: ${error.message}`,
+      error,
+    );
     // Don't throw here - the text channel was already created, so update the record with what we have
   }
 
@@ -106,16 +117,14 @@ export async function submitApplication(
            thread_id = ?,
            submitted_at = datetime('now')
        WHERE id = ?`,
-    ).run(
-      characterName,
-      channel.id,
-      forumPost?.id ?? null,
-      threadId ?? null,
-      applicationId,
-    );
+    ).run(characterName, channel.id, forumPost?.id ?? null, threadId ?? null, applicationId);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    logger.error('Applications', `Failed to update application #${applicationId} record: ${error.message}`, error);
+    logger.error(
+      'Applications',
+      `Failed to update application #${applicationId} record: ${error.message}`,
+      error,
+    );
     throw new Error(`Failed to update application record: ${error.message}`, { cause: err });
   }
 
@@ -127,7 +136,10 @@ export async function submitApplication(
       linkCharacterIdentity(parsedCharacterName, user.id);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      logger.warn('Applications', `Failed to link character identity for #${applicationId}: ${error.message}`);
+      logger.warn(
+        'Applications',
+        `Failed to link character identity for #${applicationId}: ${error.message}`,
+      );
     }
   }
 
@@ -137,7 +149,10 @@ export async function submitApplication(
       await notifyOverlords(guild, threadId, characterName, user);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      logger.warn('Applications', `Failed to notify overlords for application #${applicationId}: ${error.message}`);
+      logger.warn(
+        'Applications',
+        `Failed to notify overlords for application #${applicationId}: ${error.message}`,
+      );
     }
   }
 
@@ -228,7 +243,10 @@ async function createApplicationChannel(
     categoryId = category.id;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create Applications category (does the bot have Manage Channels permission?): ${error.message}`, { cause: err });
+    throw new Error(
+      `Failed to create Applications category (does the bot have Manage Channels permission?): ${error.message}`,
+      { cause: err },
+    );
   }
 
   // Get overlords for permissions
@@ -243,15 +261,18 @@ async function createApplicationChannel(
 
   let channel: TextChannel;
   try {
-    channel = await guild.channels.create({
+    channel = (await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildText,
       parent: categoryId,
       permissionOverwrites,
-    }) as TextChannel;
+    })) as TextChannel;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create text channel "${channelName}" (does the bot have Manage Channels permission?): ${error.message}`, { cause: err });
+    throw new Error(
+      `Failed to create text channel "${channelName}" (does the bot have Manage Channels permission?): ${error.message}`,
+      { cause: err },
+    );
   }
 
   // Post Q&A (split if > 2000 chars)
@@ -296,4 +317,3 @@ async function notifyOverlords(
     `${mentions}\nNew application from **${characterName}** (${applicant.tag}). Please review!`,
   );
 }
-

@@ -38,9 +38,7 @@ import { getE2EContext } from '../setup/bootstrap.js';
 import { resetAndSeed } from '../setup/baseline.js';
 import { getDatabase } from '../../../src/database/db.js';
 import { resumeSessions } from '../../../src/functions/applications/resumeSessions.js';
-import {
-  activeSessions,
-} from '../../../src/functions/applications/dmQuestionnaire.js';
+import { activeSessions } from '../../../src/functions/applications/dmQuestionnaire.js';
 import { getQuestions } from '../../../src/functions/applications/applicationQuestions.js';
 import type { ApplicationQuestionRow } from '../../../src/types/index.js';
 

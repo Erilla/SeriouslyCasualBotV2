@@ -6,9 +6,9 @@ import {
 
 describe('parseRaiderIoCharacterName', () => {
   it('extracts and capitalises the name from a full https URL', () => {
-    expect(
-      parseRaiderIoCharacterName('https://raider.io/characters/eu/silvermoon/ryanw'),
-    ).toBe('Ryanw');
+    expect(parseRaiderIoCharacterName('https://raider.io/characters/eu/silvermoon/ryanw')).toBe(
+      'Ryanw',
+    );
   });
 
   it('works without a scheme and with surrounding text', () => {
@@ -19,7 +19,9 @@ describe('parseRaiderIoCharacterName', () => {
 
   it('ignores trailing path segments, query strings, and fragments', () => {
     expect(
-      parseRaiderIoCharacterName('https://raider.io/characters/eu/draenor/thrall/raids?season=tww-2#m'),
+      parseRaiderIoCharacterName(
+        'https://raider.io/characters/eu/draenor/thrall/raids?season=tww-2#m',
+      ),
     ).toBe('Thrall');
   });
 

@@ -44,13 +44,22 @@ describe('/help', () => {
 
     // Assert that at least 3 known command names appear in the description.
     const knownCommands = [
-      'ping', 'trials', 'applications', 'apply',
-      'loot', 'raiders', 'status', 'guildinfo', 'settings',
-      'setup', 'updateachievements', 'loglevel', 'testdata', 'help',
+      'ping',
+      'trials',
+      'applications',
+      'apply',
+      'loot',
+      'raiders',
+      'status',
+      'guildinfo',
+      'settings',
+      'setup',
+      'updateachievements',
+      'loglevel',
+      'testdata',
+      'help',
     ];
-    const matchedCommands = knownCommands.filter((name) =>
-      description.includes(`/${name}`),
-    );
+    const matchedCommands = knownCommands.filter((name) => description.includes(`/${name}`));
     expect(matchedCommands.length).toBeGreaterThanOrEqual(3);
   });
 });

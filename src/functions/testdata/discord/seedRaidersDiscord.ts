@@ -28,7 +28,11 @@ export async function seedRaidersDiscord(
   const raidersSeeded = (db.prepare('SELECT COUNT(*) as c FROM raiders').get() as { c: number }).c;
 
   if (unlinked.length === 0) {
-    return { raidersSeeded, linkingMessagesRequested: 0, skippedReason: 'all raiders already linked or have messages' };
+    return {
+      raidersSeeded,
+      linkingMessagesRequested: 0,
+      skippedReason: 'all raiders already linked or have messages',
+    };
   }
 
   try {

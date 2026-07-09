@@ -7,7 +7,12 @@ import {
 } from 'discord.js';
 import { getDatabase } from '../database/db.js';
 import { requireOfficer, audit } from '../utils.js';
-import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';
+import {
+  paginateLines,
+  buildPageEmbed,
+  buildPageButtons,
+  cachePaginatedData,
+} from '../functions/pagination.js';
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
 import { autoMatchRaiders } from '../functions/raids/autoMatchRaiders.js';
 import { sendAlertForRaidersWithNoUser } from '../functions/raids/sendAlertForRaidersWithNoUser.js';
@@ -27,9 +32,7 @@ export default {
     .setName('raiders')
     .setDescription('Manage raiders')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((sub) =>
-      sub.setName('get_raiders').setDescription('List all raiders'),
-    )
+    .addSubcommand((sub) => sub.setName('get_raiders').setDescription('List all raiders'))
     .addSubcommand((sub) =>
       sub.setName('get_ignored_characters').setDescription('List all ignored characters'),
     )
@@ -53,7 +56,9 @@ export default {
       sub.setName('sync_raiders').setDescription('Manually trigger a raider sync'),
     )
     .addSubcommand((sub) =>
-      sub.setName('check_missing_users').setDescription('Check for raiders without linked Discord users'),
+      sub
+        .setName('check_missing_users')
+        .setDescription('Check for raiders without linked Discord users'),
     )
     .addSubcommand((sub) =>
       sub
@@ -70,7 +75,9 @@ export default {
       sub.setName('previous_highest_mythicplus').setDescription('Generate previous week M+ report'),
     )
     .addSubcommand((sub) =>
-      sub.setName('previous_great_vault').setDescription('Generate previous week Great Vault report'),
+      sub
+        .setName('previous_great_vault')
+        .setDescription('Generate previous week Great Vault report'),
     )
     .addSubcommand((sub) =>
       sub
@@ -83,9 +90,7 @@ export default {
           opt.setName('user').setDescription('Discord user').setRequired(true),
         ),
     )
-    .addSubcommand((sub) =>
-      sub.setName('get_overlords').setDescription('List all overlords'),
-    )
+    .addSubcommand((sub) => sub.setName('get_overlords').setDescription('List all overlords'))
     .addSubcommand((sub) =>
       sub
         .setName('remove_overlord')
@@ -266,11 +271,7 @@ export default {
         const characterName = interaction.options.getString('character_name', true);
         const user = interaction.options.getUser('user', true);
 
-        const success = await updateRaiderDiscordUser(
-          interaction.client,
-          characterName,
-          user.id,
-        );
+        const success = await updateRaiderDiscordUser(interaction.client, characterName, user.id);
 
         if (success) {
           await audit(interaction.user, 'linked raider', `${characterName} -> ${user.tag}`);

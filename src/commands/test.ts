@@ -21,7 +21,10 @@ import { updateAboutUs } from '../functions/guild-info/updateAboutUs.js';
 import { updateSchedule } from '../functions/guild-info/updateSchedule.js';
 import { updateRecruitment } from '../functions/guild-info/updateRecruitment.js';
 import { updateTrialLogs } from '../functions/trial-review/updateTrialLogs.js';
-import { rescheduleAllAlerts, fireTrialAlertsNow } from '../functions/trial-review/scheduleTrialAlerts.js';
+import {
+  rescheduleAllAlerts,
+  fireTrialAlertsNow,
+} from '../functions/trial-review/scheduleTrialAlerts.js';
 import { resumeSessions } from '../functions/applications/resumeSessions.js';
 import { dailyBackup } from '../functions/backups/dailyBackup.js';
 import { deployCommands } from '../deploy-commands.js';
@@ -48,39 +51,53 @@ const TRIGGERS: Record<string, TriggerDef> = {
   syncRaiders: {
     label: 'Interval: syncRaiders (10 min)',
     description: 'Full roster sync from wowaudit into the raiders table.',
-    handler: async (client) => { await syncRaiders(client); },
+    handler: async (client) => {
+      await syncRaiders(client);
+    },
   },
   refreshLinkingMessages: {
     label: 'Interval: refreshLinkingMessages (10 min)',
     description: 'Re-post stale linking messages in #raider-setup.',
-    handler: async (client) => { await refreshLinkingMessages(client); },
+    handler: async (client) => {
+      await refreshLinkingMessages(client);
+    },
   },
   updateAchievements: {
     label: 'Interval: updateAchievements (30 min)',
     description: 'Recompute and re-post the achievements embed.',
-    handler: async (client) => { await updateAchievements(client); },
+    handler: async (client) => {
+      await updateAchievements(client);
+    },
   },
   updateTrialLogs: {
     label: 'Interval: updateTrialLogs (1 hour)',
     description: 'Regenerate logs for each active trial thread.',
-    handler: async (client) => { await updateTrialLogs(client); },
+    handler: async (client) => {
+      await updateTrialLogs(client);
+    },
   },
 
   // ─── Scheduled crons ───────────────────────────────────────
   alertSignups: {
     label: 'Cron: alertSignups (Mon/Tue/Fri/Sat 19:00)',
-    description: 'Ping raiders who haven\'t signed up yet for the next raid.',
-    handler: async (client) => { await alertSignups(client); },
+    description: "Ping raiders who haven't signed up yet for the next raid.",
+    handler: async (client) => {
+      await alertSignups(client);
+    },
   },
   weeklyReports: {
     label: 'Cron: weeklyReports (Wed 12:00)',
     description: 'Post the weekly M+ / Great Vault report.',
-    handler: async (client) => { await alertHighestMythicPlusDone(client); },
+    handler: async (client) => {
+      await alertHighestMythicPlusDone(client);
+    },
   },
   dailyBackup: {
     label: 'Cron: dailyBackup (daily 04:00)',
     description: 'Snapshot the SQLite DB to the backups folder.',
-    handler: async () => { await dailyBackup(); },
+    handler: async () => {
+      await dailyBackup();
+    },
   },
 
   // ─── Dynamic / startup work ────────────────────────────────
@@ -89,7 +106,8 @@ const TRIGGERS: Record<string, TriggerDef> = {
     // rescheduleAllAlerts is synchronous but kicks off past-due alert fires
     // in the background via void fireAlert(...). Flag that in the reply so
     // the reported duration isn't mistaken for actual work done.
-    description: 'Rebuild in-memory timers for pending trial alerts. Past-due alerts fire asynchronously — the reported duration covers scheduling only.',
+    description:
+      'Rebuild in-memory timers for pending trial alerts. Past-due alerts fire asynchronously — the reported duration covers scheduling only.',
     handler: async (client) => {
       rescheduleAllAlerts(client);
       return 'timers rebuilt; any past-due alerts are firing in the background';
@@ -98,36 +116,48 @@ const TRIGGERS: Record<string, TriggerDef> = {
   resumeSessions: {
     label: 'Startup: resumeSessions',
     description: 'Re-enter DM questionnaire state for in-progress applications.',
-    handler: async (client) => { await resumeSessions(client); },
+    handler: async (client) => {
+      await resumeSessions(client);
+    },
   },
   deployCommands: {
     label: 'Startup: deployCommands',
     description: 'Re-register all slash commands with Discord.',
-    handler: async () => { await deployCommands(); },
+    handler: async () => {
+      await deployCommands();
+    },
   },
 
   // ─── Guild info (individual updaters, complement /guildinfo) ──
   updateAboutUs: {
     label: 'Guild info: updateAboutUs',
     description: 'Post / refresh the About Us embed only.',
-    handler: async (client) => { await updateAboutUs(client); },
+    handler: async (client) => {
+      await updateAboutUs(client);
+    },
   },
   updateSchedule: {
     label: 'Guild info: updateSchedule',
     description: 'Post / refresh the Schedule embed only.',
-    handler: async (client) => { await updateSchedule(client); },
+    handler: async (client) => {
+      await updateSchedule(client);
+    },
   },
   updateRecruitment: {
     label: 'Guild info: updateRecruitment',
     description: 'Post / refresh the Recruitment embed only.',
-    handler: async (client) => { await updateRecruitment(client); },
+    handler: async (client) => {
+      await updateRecruitment(client);
+    },
   },
 
   // ─── Loot maintenance ──────────────────────────────────────
   checkRaidExpansions: {
     label: 'Loot: checkRaidExpansions',
     description: 'Ensure a loot post exists for every boss of the current tier.',
-    handler: async (client) => { await checkRaidExpansions(client); },
+    handler: async (client) => {
+      await checkRaidExpansions(client);
+    },
   },
 
   // ─── External service probes ───────────────────────────────
@@ -149,12 +179,13 @@ const TRIGGERS: Record<string, TriggerDef> = {
   },
   warcraftlogsPing: {
     label: 'Probe: warcraftlogs',
-    description: 'Fetch logs for an existing raider to verify credentials/endpoint. Requires at least one raider in the DB.',
+    description:
+      'Fetch logs for an existing raider to verify credentials/endpoint. Requires at least one raider in the DB.',
     handler: async () => {
       const db = getDatabase();
-      const row = db
-        .prepare(`SELECT character_name FROM raiders LIMIT 1`)
-        .get() as { character_name: string } | undefined;
+      const row = db.prepare(`SELECT character_name FROM raiders LIMIT 1`).get() as
+        | { character_name: string }
+        | undefined;
       if (!row) {
         // Probing with a fabricated name exercises auth but floods logs with
         // "character not found" noise. Surface the empty state instead.
@@ -271,7 +302,8 @@ export default {
         // The `action` option uses a static choice list (capped at 25), so a
         // trigger missing from this description is also missing from the
         // dropdown — point the user at the source for the full set.
-        const notice = '\n\n_…list truncated; see TRIGGERS in `src/commands/test.ts` for the full set._';
+        const notice =
+          '\n\n_…list truncated; see TRIGGERS in `src/commands/test.ts` for the full set._';
         const budget = EMBED_DESC_LIMIT - notice.length;
         let truncated = '';
         for (const line of lines) {
@@ -321,7 +353,9 @@ export default {
     if (sub === 'clear_channel') {
       const channel = interaction.channel;
       if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-        await interaction.editReply({ content: 'This command must be run in a server text channel.' });
+        await interaction.editReply({
+          content: 'This command must be run in a server text channel.',
+        });
         return;
       }
 
@@ -332,7 +366,8 @@ export default {
         const channelName = `#${channel.name}`;
         let message = `✓ Deleted **${deleted}** message(s) from ${channelName} in ${elapsed}.`;
         if (skippedOld) {
-          message += '\n_Messages older than 14 days were skipped — Discord can\'t bulk-delete those._';
+          message +=
+            "\n_Messages older than 14 days were skipped — Discord can't bulk-delete those._";
         }
         logger.info('TestTrigger', `cleared ${channelName} (${deleted} messages)`);
         await audit(interaction.user, 'cleared channel', `${channelName} (${deleted} messages)`);
@@ -340,7 +375,11 @@ export default {
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         const elapsed = formatDuration(Date.now() - started);
-        logger.error('TestTrigger', `clear_channel failed after ${elapsed}: ${error.message}`, error);
+        logger.error(
+          'TestTrigger',
+          `clear_channel failed after ${elapsed}: ${error.message}`,
+          error,
+        );
         await interaction.editReply({
           content: `✗ clear_channel failed after ${elapsed}.\n\`\`\`\n${sanitizeForCodeBlock(error.message).slice(0, 1500)}\n\`\`\``,
         });
@@ -363,23 +402,35 @@ export default {
       try {
         const result = await fireTrialAlertsNow(interaction.client, trialId);
         const elapsed = formatDuration(Date.now() - started);
-        await audit(interaction.user, 'fired trial alerts', `#${trialId} (${trial.character_name})`);
+        await audit(
+          interaction.user,
+          'fired trial alerts',
+          `#${trialId} (${trial.character_name})`,
+        );
         const total = result.reviewAlertsFired + result.promoteAlertsFired;
         const parts = [
           `✓ Fired **${total}** pending alert(s) for trial #${trialId} (${trial.character_name}) in ${elapsed}. ` +
             `(${result.reviewAlertsFired} review, ${result.promoteAlertsFired} promote)`,
         ];
         if (result.alreadyFired > 0) {
-          parts.push(`_${result.alreadyFired} review alert(s) had already fired previously and were not re-sent._`);
+          parts.push(
+            `_${result.alreadyFired} review alert(s) had already fired previously and were not re-sent._`,
+          );
         }
         if (trial.status !== 'active') {
-          parts.push(`_Note: trial status is \`${trial.status}\`; fireAlert short-circuits for non-active trials, so most alerts were likely no-ops._`);
+          parts.push(
+            `_Note: trial status is \`${trial.status}\`; fireAlert short-circuits for non-active trials, so most alerts were likely no-ops._`,
+          );
         }
         await interaction.editReply({ content: parts.join('\n') });
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         const elapsed = formatDuration(Date.now() - started);
-        logger.error('TestTrigger', `fire_trial_alert ${trialId} failed after ${elapsed}: ${error.message}`, error);
+        logger.error(
+          'TestTrigger',
+          `fire_trial_alert ${trialId} failed after ${elapsed}: ${error.message}`,
+          error,
+        );
         await interaction.editReply({
           content: `✗ fire_trial_alert #${trialId} failed after ${elapsed}.\n\`\`\`\n${sanitizeForCodeBlock(error.message).slice(0, 1500)}\n\`\`\``,
         });

@@ -37,7 +37,7 @@ describe('/guildinfo', () => {
     const content =
       typeof reply.options === 'string'
         ? reply.options
-        : (reply.options as { content?: string }).content ?? '';
+        : ((reply.options as { content?: string }).content ?? '');
     expect(content).toMatch(/Updating Guild Info/i);
 
     // After the functions run, editReply must have been called with the success message.
@@ -45,7 +45,7 @@ describe('/guildinfo', () => {
     const editedContent =
       typeof iact.__editedReply!.options === 'string'
         ? iact.__editedReply!.options
-        : (iact.__editedReply!.options as { content?: string }).content ?? '';
+        : ((iact.__editedReply!.options as { content?: string }).content ?? '');
     expect(editedContent).toMatch(/Guild Info updated/i);
   });
 
@@ -73,14 +73,14 @@ describe('/guildinfo', () => {
     const content =
       typeof reply.options === 'string'
         ? reply.options
-        : (reply.options as { content?: string }).content ?? '';
+        : ((reply.options as { content?: string }).content ?? '');
     expect(content).toMatch(/Updating Guild Info/i);
 
     expect(iact.__editedReply).not.toBeNull();
     const editedContent =
       typeof iact.__editedReply!.options === 'string'
         ? iact.__editedReply!.options
-        : (iact.__editedReply!.options as { content?: string }).content ?? '';
+        : ((iact.__editedReply!.options as { content?: string }).content ?? '');
     expect(editedContent).toMatch(/Guild Info updated/i);
   });
 });

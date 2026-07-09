@@ -102,7 +102,9 @@ export async function alertSignups(client: Client): Promise<void> {
   }
 
   // Resolve Discord user IDs for unsigned raiders
-  const raiders = db.prepare('SELECT * FROM raiders WHERE inactive_since IS NULL').all() as RaiderRow[];
+  const raiders = db
+    .prepare('SELECT * FROM raiders WHERE inactive_since IS NULL')
+    .all() as RaiderRow[];
   const raiderMap = new Map(raiders.map((r) => [r.character_name.toLowerCase(), r]));
 
   const mentions: string[] = [];
@@ -143,7 +145,10 @@ export async function alertSignups(client: Client): Promise<void> {
 
   try {
     await channel.send(content);
-    logger.info('AlertSignups', `Sent signup alert for ${dayConfig.raidDay} (${unsignedCharacters.length} unsigned)`);
+    logger.info(
+      'AlertSignups',
+      `Sent signup alert for ${dayConfig.raidDay} (${unsignedCharacters.length} unsigned)`,
+    );
   } catch (error) {
     logger.error('AlertSignups', 'Failed to send signup alert', error as Error);
   }

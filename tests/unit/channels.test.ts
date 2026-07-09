@@ -13,7 +13,9 @@ type MockChannel = {
   parentId: string | null;
 };
 
-function mkChannel(partial: Partial<MockChannel> & { id: string; name: string; type: ChannelType }): MockChannel {
+function mkChannel(
+  partial: Partial<MockChannel> & { id: string; name: string; type: ChannelType },
+): MockChannel {
   return { parentId: null, ...partial };
 }
 
@@ -159,7 +161,12 @@ describe('getOrCreateChannel — name lookup', () => {
   it('reuses an existing channel found by name when config is empty', async () => {
     const guild = mkGuild([
       mkChannel({ id: 'cat-1', name: 'Overlords', type: ChannelType.GuildCategory }),
-      mkChannel({ id: 'ch-by-name', name: 'trial-reviews', type: ChannelType.GuildForum, parentId: 'cat-1' }),
+      mkChannel({
+        id: 'ch-by-name',
+        name: 'trial-reviews',
+        type: ChannelType.GuildForum,
+        parentId: 'cat-1',
+      }),
     ]);
 
     const result = await getOrCreateChannel(guild, {
@@ -311,10 +318,7 @@ describe('getOrCreateChannel — name lookup', () => {
     });
 
     expect(result.id).toBe('ch-welcome');
-    expect(warnSpy).toHaveBeenCalledWith(
-      'channels',
-      expect.stringContaining('wrong type'),
-    );
+    expect(warnSpy).toHaveBeenCalledWith('channels', expect.stringContaining('wrong type'));
     warnSpy.mockRestore();
   });
 });
@@ -430,7 +434,9 @@ describe('getOrCreateChannel — cold cache refresh', () => {
       type: ChannelType.GuildForum,
     });
 
-    const cacheRef = guild.channels.cache as unknown as { set: (k: string, v: MockChannel) => void };
+    const cacheRef = guild.channels.cache as unknown as {
+      set: (k: string, v: MockChannel) => void;
+    };
     (guild.channels.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (id?: string) => {
       if (id === undefined) {
         cacheRef.set('ch-cold', coldChannel);

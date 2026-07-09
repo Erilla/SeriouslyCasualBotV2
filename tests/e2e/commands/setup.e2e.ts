@@ -56,7 +56,9 @@ describe('/setup', () => {
     expect(content).toContain('bot_logs_channel_id');
 
     // DB must have the key persisted.
-    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', ['bot_logs_channel_id']);
+    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', [
+      'bot_logs_channel_id',
+    ]);
     expect(row?.value).toBe(targetChannel.id);
 
     // No new channels were created — symmetric difference should be empty.
@@ -99,14 +101,15 @@ describe('/setup', () => {
     expect(second.__replies[0]!.ephemeral).toBe(true);
 
     // Only one row in DB for this key (INSERT OR REPLACE semantics).
-    const rows = queryOne<{ cnt: number }>(
-      'SELECT COUNT(*) AS cnt FROM config WHERE key = ?',
-      ['guild_info_channel_id'],
-    );
+    const rows = queryOne<{ cnt: number }>('SELECT COUNT(*) AS cnt FROM config WHERE key = ?', [
+      'guild_info_channel_id',
+    ]);
     expect(rows?.cnt).toBe(1);
 
     // Value still correct.
-    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', ['guild_info_channel_id']);
+    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', [
+      'guild_info_channel_id',
+    ]);
     expect(row?.value).toBe(targetChannel.id);
   });
 
@@ -118,7 +121,8 @@ describe('/setup', () => {
     // Use the officer member's first role (other than @everyone) as the target role.
     const officerRoles = ctx.officer.roles.cache.filter((r) => r.name !== '@everyone');
     const targetRole = officerRoles.first();
-    if (!targetRole) throw new Error('officer has no non-everyone roles; sandbox guild misconfigured');
+    if (!targetRole)
+      throw new Error('officer has no non-everyone roles; sandbox guild misconfigured');
 
     const iact = fakeChatInput({
       client: ctx.client,
@@ -145,7 +149,9 @@ describe('/setup', () => {
     const content = replyContent(reply);
     expect(content).toContain('raider_role_id');
 
-    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', ['raider_role_id']);
+    const row = queryOne<{ value: string }>('SELECT value FROM config WHERE key = ?', [
+      'raider_role_id',
+    ]);
     expect(row?.value).toBe(targetRole.id);
   });
 

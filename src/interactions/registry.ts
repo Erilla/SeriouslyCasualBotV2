@@ -31,10 +31,13 @@ export type UserSelectHandler = {
 
 type AnyInteraction = ButtonInteraction | ModalSubmitInteraction | UserSelectMenuInteraction;
 
-type HandlerFor<I> =
-  I extends ButtonInteraction ? ButtonHandler :
-  I extends ModalSubmitInteraction ? ModalHandler :
-  I extends UserSelectMenuInteraction ? UserSelectHandler : never;
+type HandlerFor<I> = I extends ButtonInteraction
+  ? ButtonHandler
+  : I extends ModalSubmitInteraction
+    ? ModalHandler
+    : I extends UserSelectMenuInteraction
+      ? UserSelectHandler
+      : never;
 
 export async function dispatch<I extends AnyInteraction>(
   handlers: HandlerFor<I>[],
@@ -43,7 +46,7 @@ export async function dispatch<I extends AnyInteraction>(
   customId: string,
 ): Promise<boolean> {
   const handler = handlers.find(
-    h => customId === h.prefix || customId.startsWith(h.prefix + ':'),
+    (h) => customId === h.prefix || customId.startsWith(h.prefix + ':'),
   );
 
   if (!handler) {
@@ -71,10 +74,5 @@ export const buttonHandlers: ButtonHandler[] = [
   ...trial.buttons,
   ...application.buttons,
 ];
-export const modalHandlers: ModalHandler[] = [
-  ...trial.modals,
-  ...application.modals,
-];
-export const userSelectHandlers: UserSelectHandler[] = [
-  ...raider.userSelects,
-];
+export const modalHandlers: ModalHandler[] = [...trial.modals, ...application.modals];
+export const userSelectHandlers: UserSelectHandler[] = [...raider.userSelects];

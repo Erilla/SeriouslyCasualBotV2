@@ -32,7 +32,9 @@ const MISSING_CODES = new Set<number>([
 ]);
 
 function isMissing(err: unknown): boolean {
-  return err instanceof DiscordAPIError && typeof err.code === 'number' && MISSING_CODES.has(err.code);
+  return (
+    err instanceof DiscordAPIError && typeof err.code === 'number' && MISSING_CODES.has(err.code)
+  );
 }
 
 interface ArtifactRow {
@@ -79,9 +81,9 @@ function collectArtifactIds(db: Database.Database): ArtifactRow[] {
 
   // Trial review threads + promotion-decision threads (both live in the
   // trial_reviews_forum, so each is a deletable channel).
-  for (const r of db
-    .prepare(`SELECT thread_id FROM trials WHERE thread_id IS NOT NULL`)
-    .all() as { thread_id: string }[]) {
+  for (const r of db.prepare(`SELECT thread_id FROM trials WHERE thread_id IS NOT NULL`).all() as {
+    thread_id: string;
+  }[]) {
     rows.push({ kind: 'trial:thread', id: r.thread_id });
   }
   for (const r of db
@@ -115,9 +117,9 @@ function collectArtifactIds(db: Database.Database): ArtifactRow[] {
     .prepare(`SELECT value FROM config WHERE key = 'guild_info_channel_id'`)
     .get() as { value: string } | undefined;
   if (guildInfo) {
-    for (const r of db
-      .prepare(`SELECT message_id FROM guild_info_messages`)
-      .all() as { message_id: string }[]) {
+    for (const r of db.prepare(`SELECT message_id FROM guild_info_messages`).all() as {
+      message_id: string;
+    }[]) {
       rows.push({ kind: 'guild_info:message', id: r.message_id, parentId: guildInfo.value });
     }
   }
@@ -125,10 +127,7 @@ function collectArtifactIds(db: Database.Database): ArtifactRow[] {
   return rows;
 }
 
-async function deleteChannelOrThread(
-  guild: Guild,
-  id: string,
-): Promise<'deleted' | 'missing'> {
+async function deleteChannelOrThread(guild: Guild, id: string): Promise<'deleted' | 'missing'> {
   // guild.channels.delete(id) hits Discord's DELETE endpoint directly — no
   // need to fetch-then-delete. Missing channels just come back as 10003.
   try {

@@ -32,7 +32,13 @@ import { logger } from '../../src/services/logger.js';
 const mockClient = {} as Client;
 const mockedGetGuildRoster = vi.mocked(getGuildRoster);
 
-function makeMember(name: string, rank = 3, realm = 'silvermoon', region = 'eu', charClass = 'Warrior'): RaiderIoMember {
+function makeMember(
+  name: string,
+  rank = 3,
+  realm = 'silvermoon',
+  region = 'eu',
+  charClass = 'Warrior',
+): RaiderIoMember {
   return {
     rank,
     character: { name, realm, region, class: charClass },
@@ -51,9 +57,7 @@ afterEach(() => {
 
 describe('syncRaiders', () => {
   it('should add new raiders when they appear in API but not in DB', async () => {
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('Newchar', 3, 'silvermoon', 'eu', 'Mage'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('Newchar', 3, 'silvermoon', 'eu', 'Mage')]);
 
     await syncRaiders(mockClient);
 
@@ -78,16 +82,20 @@ describe('syncRaiders', () => {
 
   it('should set missing_since when a raider disappears from API', async () => {
     const db = getDatabase();
-    db.prepare(
-      'INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)',
-    ).run('OldRaider', 'silvermoon', 'eu');
+    db.prepare('INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)').run(
+      'OldRaider',
+      'silvermoon',
+      'eu',
+    );
 
     // API returns empty (OldRaider not in API anymore)
     mockedGetGuildRoster.mockResolvedValue([]);
 
     await syncRaiders(mockClient);
 
-    const raider = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('OldRaider') as {
+    const raider = db
+      .prepare('SELECT * FROM raiders WHERE character_name = ?')
+      .get('OldRaider') as {
       missing_since: string | null;
     };
 
@@ -100,13 +108,13 @@ describe('syncRaiders', () => {
       'INSERT INTO raiders (character_name, realm, region, missing_since) VALUES (?, ?, ?, ?)',
     ).run('ReturnedRaider', 'silvermoon', 'eu', new Date().toISOString());
 
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('ReturnedRaider'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('ReturnedRaider')]);
 
     await syncRaiders(mockClient);
 
-    const raider = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('ReturnedRaider') as {
+    const raider = db
+      .prepare('SELECT * FROM raiders WHERE character_name = ?')
+      .get('ReturnedRaider') as {
       missing_since: string | null;
     };
 
@@ -117,10 +125,7 @@ describe('syncRaiders', () => {
     const db = getDatabase();
     db.prepare('INSERT INTO ignored_characters (character_name) VALUES (?)').run('IgnoredAlt');
 
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('IgnoredAlt'),
-      makeMember('ValidRaider'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('IgnoredAlt'), makeMember('ValidRaider')]);
 
     await syncRaiders(mockClient);
 
@@ -136,13 +141,13 @@ describe('syncRaiders', () => {
       'INSERT INTO raider_identity_map (character_name, discord_user_id) VALUES (?, ?)',
     ).run('MappedChar', '123456789');
 
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('MappedChar'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('MappedChar')]);
 
     await syncRaiders(mockClient);
 
-    const raider = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('MappedChar') as {
+    const raider = db
+      .prepare('SELECT * FROM raiders WHERE character_name = ?')
+      .get('MappedChar') as {
       discord_user_id: string | null;
     };
 
@@ -168,13 +173,13 @@ describe('syncRaiders', () => {
 
   it('should not duplicate existing raiders', async () => {
     const db = getDatabase();
-    db.prepare(
-      'INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)',
-    ).run('ExistingRaider', 'silvermoon', 'eu');
+    db.prepare('INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)').run(
+      'ExistingRaider',
+      'silvermoon',
+      'eu',
+    );
 
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('ExistingRaider'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('ExistingRaider')]);
 
     await syncRaiders(mockClient);
 
@@ -266,16 +271,11 @@ describe('syncRaiders', () => {
 
     expect(raider.missing_since).toBeNull();
     expect(raider.inactive_since).toBeNull();
-    expect(logger.info).toHaveBeenCalledWith(
-      'SyncRaiders',
-      expect.stringContaining('reactivated'),
-    );
+    expect(logger.info).toHaveBeenCalledWith('SyncRaiders', expect.stringContaining('reactivated'));
   });
 
   it('should log sync summary', async () => {
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('NewRaider'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('NewRaider')]);
 
     await syncRaiders(mockClient);
 
@@ -298,9 +298,7 @@ describe('syncRaiders', () => {
   });
 
   it('should return newly-added unlinked raiders so callers can alert', async () => {
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('FreshChar'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('FreshChar')]);
 
     const newUnlinked = await syncRaiders(mockClient);
 
@@ -315,10 +313,7 @@ describe('syncRaiders', () => {
       'INSERT INTO raider_identity_map (character_name, discord_user_id) VALUES (?, ?)',
     ).run('MappedChar', '123456789');
 
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('MappedChar'),
-      makeMember('UnmappedChar'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('MappedChar'), makeMember('UnmappedChar')]);
 
     const newUnlinked = await syncRaiders(mockClient);
 
@@ -327,13 +322,13 @@ describe('syncRaiders', () => {
 
   it('should not return already-existing raiders', async () => {
     const db = getDatabase();
-    db.prepare(
-      'INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)',
-    ).run('ExistingRaider', 'silvermoon', 'eu');
+    db.prepare('INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)').run(
+      'ExistingRaider',
+      'silvermoon',
+      'eu',
+    );
 
-    mockedGetGuildRoster.mockResolvedValue([
-      makeMember('ExistingRaider'),
-    ]);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('ExistingRaider')]);
 
     const newUnlinked = await syncRaiders(mockClient);
 
@@ -360,7 +355,9 @@ describe('syncRaiders', () => {
 
     await syncRaiders(mockClient);
 
-    const raider = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('MappedChar') as {
+    const raider = db
+      .prepare('SELECT * FROM raiders WHERE character_name = ?')
+      .get('MappedChar') as {
       discord_user_id: string | null;
     };
 

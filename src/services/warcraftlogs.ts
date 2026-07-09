@@ -31,9 +31,9 @@ async function getAccessToken(): Promise<string> {
         'Content-Type': 'application/x-www-form-urlencoded',
         Authorization:
           'Basic ' +
-          Buffer.from(
-            `${config.warcraftLogsClientId}:${config.warcraftLogsClientSecret}`,
-          ).toString('base64'),
+          Buffer.from(`${config.warcraftLogsClientId}:${config.warcraftLogsClientSecret}`).toString(
+            'base64',
+          ),
       },
       body: body.toString(),
     },
@@ -102,16 +102,12 @@ const ATTENDANCE_QUERY = `
  * contractually documented, and .reverse() has been in place since V1 —
  * flipping it would silently change what reviewers see.
  */
-export function extractMatchingCodes(
-  reports: AttendanceReport[],
-  characterName: string,
-): string[] {
+export function extractMatchingCodes(reports: AttendanceReport[], characterName: string): string[] {
   const target = normalizeName(characterName);
   return reports
     .filter((report) =>
       report.players.some(
-        (player) =>
-          player.presence === 1 && normalizeName(player.name) === target,
+        (player) => player.presence === 1 && normalizeName(player.name) === target,
       ),
     )
     .map((report) => report.code)

@@ -3,10 +3,7 @@ import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
-import {
-  buildReviewMessage,
-  buildTrialButtons,
-} from './createTrialReviewThread.js';
+import { buildReviewMessage, buildTrialButtons } from './createTrialReviewThread.js';
 import type { TrialRow, TrialAlertRow } from '../../types/index.js';
 
 /**
@@ -16,9 +13,9 @@ import type { TrialRow, TrialAlertRow } from '../../types/index.js';
 export async function extendTrial(client: Client, trialId: number): Promise<void> {
   const db = getDatabase();
 
-  const trial = db
-    .prepare('SELECT * FROM trials WHERE id = ?')
-    .get(trialId) as TrialRow | undefined;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
 
   if (!trial) throw new Error(`Trial #${trialId} not found`);
   if (trial.status !== 'active') throw new Error(`Trial #${trialId} is not active`);
@@ -33,10 +30,7 @@ export async function extendTrial(client: Client, trialId: number): Promise<void
     oldDate.setUTCDate(oldDate.getUTCDate() + 7);
     const newDate = oldDate.toISOString().split('T')[0];
 
-    db.prepare('UPDATE trial_alerts SET alert_date = ? WHERE id = ?').run(
-      newDate,
-      alert.id,
-    );
+    db.prepare('UPDATE trial_alerts SET alert_date = ? WHERE id = ?').run(newDate, alert.id);
   }
 
   // Re-schedule alerts with new dates
@@ -88,15 +82,9 @@ export async function extendTrial(client: Client, trialId: number): Promise<void
         });
       }
     } catch (error) {
-      logger.warn(
-        'Trials',
-        `Failed to update review message for trial #${trialId}: ${error}`,
-      );
+      logger.warn('Trials', `Failed to update review message for trial #${trialId}: ${error}`);
     }
   }
 
-  logger.info(
-    'Trials',
-    `Extended trial #${trialId} (${trial.character_name}) by 7 days`,
-  );
+  logger.info('Trials', `Extended trial #${trialId} (${trial.character_name}) by 7 days`);
 }

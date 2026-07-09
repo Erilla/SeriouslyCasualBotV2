@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createTables } from '../../../src/database/schema.js';
 
-vi.mock('../../../src/functions/loot/deleteLootPost.js', () => ({ deleteLootPost: vi.fn(async () => {}) }));
+vi.mock('../../../src/functions/loot/deleteLootPost.js', () => ({
+  deleteLootPost: vi.fn(async () => {}),
+}));
 
 import { getDatabase, closeDatabase } from '../../../src/database/db.js';
 import { deleteLootPost } from '../../../src/functions/loot/deleteLootPost.js';
@@ -16,7 +18,9 @@ beforeEach(() => {
 describe('deleteAllLootPosts', () => {
   it('calls deleteLootPost for every loot post and returns the count', async () => {
     const db = getDatabase();
-    const insert = db.prepare('INSERT INTO loot_posts (boss_id, boss_name, boss_url, channel_id, message_id) VALUES (?, ?, ?, ?, ?)');
+    const insert = db.prepare(
+      'INSERT INTO loot_posts (boss_id, boss_name, boss_url, channel_id, message_id) VALUES (?, ?, ?, ?, ?)',
+    );
     insert.run(101, 'A', null, 'c', 'm1');
     insert.run(202, 'B', null, 'c', 'm2');
 
@@ -25,7 +29,10 @@ describe('deleteAllLootPosts', () => {
 
     expect(count).toBe(2);
     expect(vi.mocked(deleteLootPost)).toHaveBeenCalledTimes(2);
-    const calledBossIds = vi.mocked(deleteLootPost).mock.calls.map((c) => c[1]).sort();
+    const calledBossIds = vi
+      .mocked(deleteLootPost)
+      .mock.calls.map((c) => c[1])
+      .sort();
     expect(calledBossIds).toEqual([101, 202]);
   });
 
@@ -37,7 +44,9 @@ describe('deleteAllLootPosts', () => {
 
   it('isolates a per-item failure and counts only successful deletes', async () => {
     const db = getDatabase();
-    const insert = db.prepare('INSERT INTO loot_posts (boss_id, boss_name, boss_url, channel_id, message_id) VALUES (?, ?, ?, ?, ?)');
+    const insert = db.prepare(
+      'INSERT INTO loot_posts (boss_id, boss_name, boss_url, channel_id, message_id) VALUES (?, ?, ?, ?, ?)',
+    );
     insert.run(101, 'A', null, 'c', 'm1');
     insert.run(202, 'B', null, 'c', 'm2');
 

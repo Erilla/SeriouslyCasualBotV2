@@ -25,9 +25,7 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   const ignoredSet = new Set(ignoredCharacters.map((ic) => ic.character_name.toLowerCase()));
 
   // Filter API roster: exclude ignored characters
-  const filteredMembers = apiMembers.filter(
-    (m) => !ignoredSet.has(m.character.name.toLowerCase()),
-  );
+  const filteredMembers = apiMembers.filter((m) => !ignoredSet.has(m.character.name.toLowerCase()));
 
   const apiNameSet = new Set(filteredMembers.map((m) => m.character.name.toLowerCase()));
   const dbRaiderMap = new Map(dbRaiders.map((r) => [r.character_name.toLowerCase(), r]));
@@ -84,9 +82,9 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
       if (!apiNameSet.has(raider.character_name.toLowerCase())) continue;
       if (raider.missing_since === null && raider.inactive_since === null) continue;
 
-      db.prepare(
-        'UPDATE raiders SET missing_since = NULL, inactive_since = NULL WHERE id = ?',
-      ).run(raider.id);
+      db.prepare('UPDATE raiders SET missing_since = NULL, inactive_since = NULL WHERE id = ?').run(
+        raider.id,
+      );
 
       if (raider.inactive_since !== null) {
         reactivated++;

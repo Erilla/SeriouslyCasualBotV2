@@ -138,9 +138,7 @@ describe('applications flow (integration)', () => {
 
     db.prepare("UPDATE applications SET status = 'abandoned' WHERE id = ?").run(appId);
 
-    const app = db
-      .prepare('SELECT * FROM applications WHERE id = ?')
-      .get(appId) as ApplicationRow;
+    const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(appId) as ApplicationRow;
     expect(app.status).toBe('abandoned');
   });
 

@@ -13,7 +13,12 @@ const MOCK_ANSWERS = [
   "Thanks for considering my application — I'm keen to contribute and learn from the team.",
 ];
 
-export type SeededApplicationStatus = 'in_progress' | 'submitted' | 'accepted' | 'rejected' | 'abandoned';
+export type SeededApplicationStatus =
+  | 'in_progress'
+  | 'submitted'
+  | 'accepted'
+  | 'rejected'
+  | 'abandoned';
 
 export interface SeedApplicationOptions {
   characterName?: string;
@@ -49,21 +54,29 @@ export function seedApplication(
   const tx = db.transaction((): SeedApplicationResult => {
     seedApplicationQuestions(db);
 
-    const questions = db.prepare('SELECT id, question, sort_order FROM application_questions ORDER BY sort_order').all() as Array<{ id: number; question: string; sort_order: number }>;
+    const questions = db
+      .prepare('SELECT id, question, sort_order FROM application_questions ORDER BY sort_order')
+      .all() as Array<{ id: number; question: string; sort_order: number }>;
 
     const answerCount = Math.min(options.answerCount ?? questions.length, questions.length);
 
     const submittedAtClause = status === 'in_progress' ? 'NULL' : "datetime('now')";
     const startedAtClause = "datetime('now', '-10 minutes')";
 
-    const appResult = db.prepare(`
+    const appResult = db
+      .prepare(
+        `
       INSERT INTO applications (character_name, applicant_user_id, status, submitted_at, started_at)
       VALUES (?, ?, ?, ${submittedAtClause}, ${startedAtClause})
-    `).run(characterName, userId, status);
+    `,
+      )
+      .run(characterName, userId, status);
 
     const applicationId = appResult.lastInsertRowid as number;
 
-    const insertAnswer = db.prepare('INSERT INTO application_answers (application_id, question_id, answer) VALUES (?, ?, ?)');
+    const insertAnswer = db.prepare(
+      'INSERT INTO application_answers (application_id, question_id, answer) VALUES (?, ?, ?)',
+    );
     for (let i = 0; i < answerCount; i++) {
       const answer = MOCK_ANSWERS[i % MOCK_ANSWERS.length];
       insertAnswer.run(applicationId, questions[i].id, answer);
@@ -71,8 +84,12 @@ export function seedApplication(
 
     let votesInserted = 0;
     if (includeVotes) {
-      db.prepare('INSERT INTO application_votes (application_id, user_id, vote_type) VALUES (?, ?, ?)').run(applicationId, 'mock-officer-id-001', 'for');
-      db.prepare('INSERT INTO application_votes (application_id, user_id, vote_type) VALUES (?, ?, ?)').run(applicationId, 'mock-officer-id-002', 'neutral');
+      db.prepare(
+        'INSERT INTO application_votes (application_id, user_id, vote_type) VALUES (?, ?, ?)',
+      ).run(applicationId, 'mock-officer-id-001', 'for');
+      db.prepare(
+        'INSERT INTO application_votes (application_id, user_id, vote_type) VALUES (?, ?, ?)',
+      ).run(applicationId, 'mock-officer-id-002', 'neutral');
       votesInserted = 2;
     }
 

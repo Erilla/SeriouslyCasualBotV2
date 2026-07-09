@@ -46,7 +46,7 @@ describe('/loglevel', () => {
     const content =
       typeof reply.options === 'string'
         ? reply.options
-        : (reply.options as { content?: string }).content ?? '';
+        : ((reply.options as { content?: string }).content ?? '');
     expect(content).toMatch(/Current log level/i);
     expect(content).toContain('INFO');
   });
@@ -81,7 +81,7 @@ describe('/loglevel', () => {
     const content =
       typeof reply.options === 'string'
         ? reply.options
-        : (reply.options as { content?: string }).content ?? '';
+        : ((reply.options as { content?: string }).content ?? '');
     expect(content).toContain('INFO');
     expect(content).toContain('DEBUG');
   });

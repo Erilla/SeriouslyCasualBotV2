@@ -56,9 +56,9 @@ export function clearAllTimers(): void {
 async function fireAlert(client: Client, alert: TrialAlertRow): Promise<void> {
   const db = getDatabase();
 
-  const trial = db
-    .prepare('SELECT * FROM trials WHERE id = ?')
-    .get(alert.trial_id) as TrialRow | undefined;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(alert.trial_id) as
+    | TrialRow
+    | undefined;
 
   if (!trial || trial.status !== 'active') {
     logger.debug('Trials', `Skipping alert #${alert.id} - trial inactive or missing`);
@@ -76,7 +76,7 @@ async function fireAlert(client: Client, alert: TrialAlertRow): Promise<void> {
     const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
 
-    const thread = await guild.channels.fetch(trial.thread_id) as TextChannel | null;
+    const thread = (await guild.channels.fetch(trial.thread_id)) as TextChannel | null;
     if (!thread) {
       logger.warn('Trials', `Thread ${trial.thread_id} not found for trial #${trial.id}`);
       return;
@@ -84,17 +84,16 @@ async function fireAlert(client: Client, alert: TrialAlertRow): Promise<void> {
 
     await thread.send(
       `**${alertLabel} Review Alert**\n` +
-      `It's time for the ${alertLabel} review of **${trial.character_name}**.\n` +
-      `Please discuss their progress and decide on next steps.`,
+        `It's time for the ${alertLabel} review of **${trial.character_name}**.\n` +
+        `Please discuss their progress and decide on next steps.`,
     );
 
-    logger.info('Trials', `Fired ${alert.alert_name} alert for trial #${trial.id} (${trial.character_name})`);
-  } catch (error) {
-    logger.error(
+    logger.info(
       'Trials',
-      `Failed to send alert for trial #${trial.id}: ${error}`,
-      error as Error,
+      `Fired ${alert.alert_name} alert for trial #${trial.id} (${trial.character_name})`,
     );
+  } catch (error) {
+    logger.error('Trials', `Failed to send alert for trial #${trial.id}: ${error}`, error as Error);
   }
 
   // Mark as alerted
@@ -102,15 +101,12 @@ async function fireAlert(client: Client, alert: TrialAlertRow): Promise<void> {
   alertTimers.delete(alert.id);
 }
 
-async function firePromoteAlert(
-  client: Client,
-  promoteAlert: PromoteAlertRow,
-): Promise<void> {
+async function firePromoteAlert(client: Client, promoteAlert: PromoteAlertRow): Promise<void> {
   const db = getDatabase();
 
-  const trial = db
-    .prepare('SELECT * FROM trials WHERE id = ?')
-    .get(promoteAlert.trial_id) as TrialRow | undefined;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(promoteAlert.trial_id) as
+    | TrialRow
+    | undefined;
 
   if (!trial) {
     logger.debug('Trials', `Skipping promote alert #${promoteAlert.id} - trial missing`);
@@ -122,7 +118,7 @@ async function firePromoteAlert(
     const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
 
-    const thread = await guild.channels.fetch(promoteAlert.thread_id) as TextChannel | null;
+    const thread = (await guild.channels.fetch(promoteAlert.thread_id)) as TextChannel | null;
     if (!thread) {
       logger.warn('Trials', `Thread ${promoteAlert.thread_id} not found for promote alert`);
       db.prepare('DELETE FROM promote_alerts WHERE id = ?').run(promoteAlert.id);
@@ -131,8 +127,8 @@ async function firePromoteAlert(
 
     await thread.send(
       `**Promotion Reminder**\n` +
-      `**${trial.character_name}** was marked for promotion and is due for promotion today.\n` +
-      `Please promote them in-game and close this trial.`,
+        `**${trial.character_name}** was marked for promotion and is due for promotion today.\n` +
+        `Please promote them in-game and close this trial.`,
     );
 
     logger.info('Trials', `Fired promote alert for trial #${trial.id} (${trial.character_name})`);
@@ -278,9 +274,7 @@ export function rescheduleAllAlerts(client: Client): void {
   }
 
   // Reschedule promote alerts
-  const promoteAlerts = db
-    .prepare('SELECT * FROM promote_alerts')
-    .all() as PromoteAlertRow[];
+  const promoteAlerts = db.prepare('SELECT * FROM promote_alerts').all() as PromoteAlertRow[];
 
   let promotePastDue = 0;
   let promoteScheduled = 0;
@@ -304,7 +298,7 @@ export function rescheduleAllAlerts(client: Client): void {
   logger.info(
     'Trials',
     `Rescheduled alerts: ${pastDue} past-due, ${scheduled} scheduled, ` +
-    `${promotePastDue} promote past-due, ${promoteScheduled} promote scheduled`,
+      `${promotePastDue} promote past-due, ${promoteScheduled} promote scheduled`,
   );
 }
 
@@ -322,9 +316,7 @@ export function schedulePromoteAlert(
   const db = getDatabase();
 
   const result = db
-    .prepare(
-      'INSERT INTO promote_alerts (trial_id, thread_id, promote_date) VALUES (?, ?, ?)',
-    )
+    .prepare('INSERT INTO promote_alerts (trial_id, thread_id, promote_date) VALUES (?, ?, ?)')
     .run(trialId, threadId, promoteDate);
 
   const promoteAlertId = result.lastInsertRowid as number;
@@ -345,8 +337,5 @@ export function schedulePromoteAlert(
     promoteTimers.set(promoteAlertId, timer);
   }
 
-  logger.info(
-    'Trials',
-    `Scheduled promote alert for trial #${trialId} on ${promoteDate}`,
-  );
+  logger.info('Trials', `Scheduled promote alert for trial #${trialId} on ${promoteDate}`);
 }

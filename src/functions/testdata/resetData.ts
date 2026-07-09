@@ -33,10 +33,7 @@ export interface ResetDataResult {
  * this preserves the "consistent state" invariant from #30: we never leave
  * the DB wiped with Discord artifacts still dangling.
  */
-export async function resetData(
-  db: Database.Database,
-  client?: Client,
-): Promise<ResetDataResult> {
+export async function resetData(db: Database.Database, client?: Client): Promise<ResetDataResult> {
   let discord: ResetArtifactsResult | null = null;
   if (client) {
     discord = await resetDiscordArtifacts(client, db);

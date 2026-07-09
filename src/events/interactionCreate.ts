@@ -28,7 +28,11 @@ export default {
         await command.execute(interaction);
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
-        logger.error('interaction', `Command ${interaction.commandName} failed: ${err.message}`, err);
+        logger.error(
+          'interaction',
+          `Command ${interaction.commandName} failed: ${err.message}`,
+          err,
+        );
 
         const message =
           err instanceof CircuitOpenError

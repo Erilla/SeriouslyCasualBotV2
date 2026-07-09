@@ -163,38 +163,24 @@ export async function createTrialReviewThread(
     const logsContent = await generateTrialLogsContent(characterName);
     if (logsContent) {
       const logsMsg = await thread.send(logsContent);
-      db.prepare('UPDATE trials SET logs_message_id = ? WHERE id = ?').run(
-        logsMsg.id,
-        trialId,
-      );
+      db.prepare('UPDATE trials SET logs_message_id = ? WHERE id = ?').run(logsMsg.id, trialId);
     }
   } catch (error) {
-    logger.warn(
-      'Trials',
-      `Failed to fetch WarcraftLogs for trial #${trialId}: ${error}`,
-    );
+    logger.warn('Trials', `Failed to fetch WarcraftLogs for trial #${trialId}: ${error}`);
   }
 
   // Add overlords to thread
   await addOverlordsToThread(thread);
 
   // Store thread_id
-  db.prepare('UPDATE trials SET thread_id = ? WHERE id = ?').run(
-    thread.id,
-    trialId,
-  );
+  db.prepare('UPDATE trials SET thread_id = ? WHERE id = ?').run(thread.id, trialId);
 
   // Schedule alerts
   scheduleTrialAlerts(client, trialId);
 
-  const trial = db
-    .prepare('SELECT * FROM trials WHERE id = ?')
-    .get(trialId) as TrialRow;
+  const trial = db.prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as TrialRow;
 
-  logger.info(
-    'Trials',
-    `Created trial review thread for "${characterName}" (trial #${trialId})`,
-  );
+  logger.info('Trials', `Created trial review thread for "${characterName}" (trial #${trialId})`);
 
   return trial;
 }

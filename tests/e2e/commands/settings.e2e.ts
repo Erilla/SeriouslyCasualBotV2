@@ -52,10 +52,9 @@ describe('/settings', () => {
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
     // Pre-condition: seeded value is 1 (enabled).
-    const before = queryOne<{ value: number }>(
-      'SELECT value FROM settings WHERE key = ?',
-      ['alertSignup_Sunday'],
-    );
+    const before = queryOne<{ value: number }>('SELECT value FROM settings WHERE key = ?', [
+      'alertSignup_Sunday',
+    ]);
     expect(before?.value).toBe(1);
 
     const iact = fakeChatInput({
@@ -80,10 +79,9 @@ describe('/settings', () => {
     expect(content).toContain('disabled');
 
     // DB persistence: value must now be 0.
-    const after = queryOne<{ value: number }>(
-      'SELECT value FROM settings WHERE key = ?',
-      ['alertSignup_Sunday'],
-    );
+    const after = queryOne<{ value: number }>('SELECT value FROM settings WHERE key = ?', [
+      'alertSignup_Sunday',
+    ]);
     expect(after?.value).toBe(0);
   });
 
@@ -105,10 +103,9 @@ describe('/settings', () => {
     });
     await settingsCmd.execute(firstToggle as unknown as ChatInputCommandInteraction);
 
-    const mid = queryOne<{ value: number }>(
-      'SELECT value FROM settings WHERE key = ?',
-      ['alertSignup_Wednesday_48'],
-    );
+    const mid = queryOne<{ value: number }>('SELECT value FROM settings WHERE key = ?', [
+      'alertSignup_Wednesday_48',
+    ]);
     expect(mid?.value).toBe(0);
 
     // Second toggle: disabled → enabled.
@@ -128,10 +125,9 @@ describe('/settings', () => {
     expect(content).toContain('alertSignup_Wednesday_48');
     expect(content).toContain('enabled');
 
-    const after = queryOne<{ value: number }>(
-      'SELECT value FROM settings WHERE key = ?',
-      ['alertSignup_Wednesday_48'],
-    );
+    const after = queryOne<{ value: number }>('SELECT value FROM settings WHERE key = ?', [
+      'alertSignup_Wednesday_48',
+    ]);
     expect(after?.value).toBe(1);
   });
 
@@ -165,7 +161,9 @@ describe('/settings', () => {
     expect(content).toContain('alertSignup_Sunday_48');
 
     // Verify DB has all four rows.
-    const rows = queryAll<{ key: string; value: number }>('SELECT key, value FROM settings ORDER BY key');
+    const rows = queryAll<{ key: string; value: number }>(
+      'SELECT key, value FROM settings ORDER BY key',
+    );
     expect(rows.length).toBe(4);
   });
 

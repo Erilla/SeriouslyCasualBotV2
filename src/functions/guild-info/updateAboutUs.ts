@@ -24,14 +24,18 @@ export async function updateAboutUs(client: Client): Promise<void> {
   const db = getDatabase();
 
   // Get about us content
-  const aboutUs = db.prepare('SELECT * FROM guild_info_content WHERE key = ?').get('aboutus') as GuildInfoContentRow | undefined;
+  const aboutUs = db.prepare('SELECT * FROM guild_info_content WHERE key = ?').get('aboutus') as
+    | GuildInfoContentRow
+    | undefined;
   if (!aboutUs) {
     logger.warn('guild-info', 'No aboutus content found in guild_info_content');
     return;
   }
 
   // Get link buttons
-  const links = db.prepare('SELECT * FROM guild_info_links ORDER BY id').all() as GuildInfoLinkRow[];
+  const links = db
+    .prepare('SELECT * FROM guild_info_links ORDER BY id')
+    .all() as GuildInfoLinkRow[];
 
   // Build embed
   const embed = new EmbedBuilder()
@@ -40,9 +44,10 @@ export async function updateAboutUs(client: Client): Promise<void> {
     .setDescription(aboutUs.content);
 
   // Build action row with link buttons
-  const messagePayload: { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[] } = {
-    embeds: [embed],
-  };
+  const messagePayload: { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[] } =
+    {
+      embeds: [embed],
+    };
 
   if (links.length > 0) {
     const row = new ActionRowBuilder<ButtonBuilder>();

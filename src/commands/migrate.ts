@@ -98,9 +98,17 @@ export default {
       await interaction.editReply({ content: `Migration failed: ${err.message}` });
     } finally {
       if (v1Db) {
-        try { v1Db.close(); } catch { /* already closed */ }
+        try {
+          v1Db.close();
+        } catch {
+          /* already closed */
+        }
       }
-      try { unlinkSync(tempPath); } catch { /* no temp file to remove */ }
+      try {
+        unlinkSync(tempPath);
+      } catch {
+        /* no temp file to remove */
+      }
     }
   },
 };

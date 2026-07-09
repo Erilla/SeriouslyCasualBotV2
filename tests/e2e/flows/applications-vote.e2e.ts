@@ -53,10 +53,9 @@ function getSeededApplication(): ApplicationRow | undefined {
 
 /** Return all votes for a given application. */
 function getVotesForApplication(applicationId: number): VoteRow[] {
-  return queryAll<VoteRow>(
-    'SELECT * FROM application_votes WHERE application_id = ?',
-    [applicationId],
-  );
+  return queryAll<VoteRow>('SELECT * FROM application_votes WHERE application_id = ?', [
+    applicationId,
+  ]);
 }
 
 /**
@@ -210,10 +209,9 @@ describe('applications — vote flow', () => {
     await castVote(anchorMessage, ctx.voterB, applicationId, 'for');
 
     // Status must remain "submitted" — only accept/reject modals change it.
-    const updated = queryOne<{ status: string }>(
-      'SELECT status FROM applications WHERE id = ?',
-      [applicationId],
-    );
+    const updated = queryOne<{ status: string }>('SELECT status FROM applications WHERE id = ?', [
+      applicationId,
+    ]);
     expect(updated?.status).toBe('submitted');
   });
 });

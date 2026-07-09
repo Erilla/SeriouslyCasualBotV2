@@ -1,12 +1,6 @@
 export type ServiceName = 'raiderio' | 'warcraftlogs' | 'wowaudit';
 
-export type Outcome =
-  | 'ok'
-  | 'retried'
-  | 'rate_limited'
-  | 'timeout'
-  | 'failed'
-  | 'circuit_rejected';
+export type Outcome = 'ok' | 'retried' | 'rate_limited' | 'timeout' | 'failed' | 'circuit_rejected';
 
 export type BreakerState = 'closed' | 'half_open' | 'open';
 
@@ -151,9 +145,10 @@ export function getSummary(service: ServiceName): ServiceSummary {
 }
 
 export function getAllSummaries(): Record<ServiceName, ServiceSummary> {
-  return Object.fromEntries(
-    SERVICES.map((s) => [s, getSummary(s)]),
-  ) as Record<ServiceName, ServiceSummary>;
+  return Object.fromEntries(SERVICES.map((s) => [s, getSummary(s)])) as Record<
+    ServiceName,
+    ServiceSummary
+  >;
 }
 
 // Test-only: reset all in-memory state.
@@ -166,10 +161,7 @@ export function noteFailure(service: ServiceName): void {
   const svc = state.get(service);
   if (!svc) return;
   svc.breaker.consecutiveFailures += 1;
-  if (
-    svc.breaker.state === 'closed' &&
-    svc.breaker.consecutiveFailures >= BREAKER_OPEN_THRESHOLD
-  ) {
+  if (svc.breaker.state === 'closed' && svc.breaker.consecutiveFailures >= BREAKER_OPEN_THRESHOLD) {
     svc.breaker.state = 'open';
     svc.breaker.openedAt = new Date();
   }
