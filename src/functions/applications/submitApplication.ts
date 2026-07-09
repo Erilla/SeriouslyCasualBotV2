@@ -17,6 +17,7 @@ import { buildQAText } from './buildQAText.js';
 import { deriveCharacterNameFromAnswers } from './raiderIoName.js';
 import { linkCharacterIdentity } from '../raids/linkCharacterIdentity.js';
 import { getOverlords } from '../raids/overlords.js';
+import { buildOverlordNotification } from './overlordNotification.js';
 import type { ApplicationRow } from '../../types/index.js';
 
 interface AnswerWithQuestion {
@@ -295,6 +296,9 @@ async function notifyOverlords(
   const overlords = getOverlords();
   if (overlords.length === 0) return;
 
+  const overlordIds = overlords.map((o) => o.user_id);
+  const notification = buildOverlordNotification(overlordIds, characterName, applicant.tag);
+
   const thread = guild.channels.cache.get(threadId);
   if (!thread || !thread.isThread()) {
     // Try to fetch it
@@ -302,18 +306,12 @@ async function notifyOverlords(
       const fetchedThread = await guild.channels.fetch(threadId);
       if (!fetchedThread || !fetchedThread.isThread()) return;
 
-      const mentions = overlords.map((o) => `<@${o.user_id}>`).join(' ');
-      await fetchedThread.send(
-        `${mentions}\nNew application from **${characterName}** (${applicant.tag}). Please review!`,
-      );
+      await fetchedThread.send(notification);
     } catch {
       logger.warn('Applications', `Failed to notify overlords in thread ${threadId}`);
     }
     return;
   }
 
-  const mentions = overlords.map((o) => `<@${o.user_id}>`).join(' ');
-  await (thread as unknown as TextChannel).send(
-    `${mentions}\nNew application from **${characterName}** (${applicant.tag}). Please review!`,
-  );
+  await (thread as unknown as TextChannel).send(notification);
 }
