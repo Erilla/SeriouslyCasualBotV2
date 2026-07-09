@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ChatInputCommandInteraction, TextBasedChannel } from 'discord.js';
-import { MessageFlags } from 'discord.js';
 import { getE2EContext } from '../setup/bootstrap.js';
 import { fakeChatInput } from '../setup/synthesizer.js';
 import { resetAndSeed } from '../setup/baseline.js';

@@ -3,7 +3,7 @@ import type { ChatInputCommandInteraction, TextBasedChannel } from 'discord.js';
 import { getE2EContext } from '../setup/bootstrap.js';
 import { fakeChatInput } from '../setup/synthesizer.js';
 import { resetAndSeed } from '../setup/baseline.js';
-import { queryOne, queryAll } from '../setup/assertions.js';
+import { queryOne } from '../setup/assertions.js';
 import { getDatabase } from '../../../src/database/db.js';
 import raidersCmd from '../../../src/commands/raiders.js';
 

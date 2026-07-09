@@ -334,7 +334,7 @@ export function fakeModalSubmit(init: FakeModalSubmitInit): FakeModalSubmit {
       fake.replied = true;
       return { resource: { message: { createdTimestamp: Date.now() } } };
     },
-    async deferReply(opts) {
+    async deferReply(_opts) {
       fake.deferred = true;
       return undefined;
     },

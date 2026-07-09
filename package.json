@@ -14,7 +14,7 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "vitest run --project e2e",
     "test:e2e:watch": "vitest --project e2e",
-    "lint": "eslint src/",
+    "lint": "eslint src tests eslint.config.js vitest.config.ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{ts,js}\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{ts,js}\"",
     "typecheck": "tsc --noEmit"

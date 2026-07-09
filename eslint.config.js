@@ -30,4 +30,13 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Tests routinely cast mocks and partial fakes through `any`; that's a
+    // pragmatic, contained pattern, so allow it here while keeping the rule on
+    // for production code in src/.
+    files: ['tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
 );
