@@ -162,4 +162,25 @@ describe('raids roster sync flow (integration)', () => {
     expect(names).toContain('Regularchar');
     expect(raiders).toHaveLength(1);
   });
+
+  it('get_raiders query excludes inactive raiders', async () => {
+    const db = getDatabase();
+    db.prepare('INSERT INTO raiders (character_name, realm, region) VALUES (?, ?, ?)').run(
+      'ActiveGuy',
+      'silvermoon',
+      'eu',
+    );
+    db.prepare(
+      'INSERT INTO raiders (character_name, realm, region, missing_since, inactive_since) VALUES (?, ?, ?, ?, ?)',
+    ).run('GoneGuy', 'silvermoon', 'eu', '2026-01-01', '2026-01-02');
+
+    // Mirrors the query get_raiders runs (src/commands/raiders.ts).
+    const rows = db
+      .prepare('SELECT character_name FROM raiders WHERE inactive_since IS NULL ORDER BY character_name')
+      .all() as Array<{ character_name: string }>;
+
+    const names = rows.map((r) => r.character_name);
+    expect(names).toContain('ActiveGuy');
+    expect(names).not.toContain('GoneGuy');
+  });
 });

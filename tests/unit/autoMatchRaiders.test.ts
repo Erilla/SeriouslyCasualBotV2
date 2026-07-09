@@ -293,4 +293,22 @@ describe('autoMatchRaiders', () => {
     expect(result).toHaveLength(1);
     expect(result[0].suggestedUser.id).toBe('333');
   });
+
+  it('does not exclude a Discord user linked only to an inactive raider', async () => {
+    const member = createMockMember('Thrall', 'g', 'u', '999');
+    const guild = createMockGuild([member]);
+    // User 999 is linked, but only to an inactive raider — they should still be
+    // suggestable for an active character.
+    getDatabase()
+      .prepare(
+        'INSERT INTO raiders (character_name, discord_user_id, missing_since, inactive_since) VALUES (?, ?, ?, ?)',
+      )
+      .run('Grommash', '999', '2026-01-01', '2026-01-02');
+    const raider = createRaider('Thrall');
+
+    const result = await autoMatchRaiders(guild, [raider]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].suggestedUser.id).toBe('999');
+  });
 });

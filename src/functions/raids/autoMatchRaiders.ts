@@ -17,9 +17,12 @@ export async function autoMatchRaiders(
 
   const db = getDatabase();
 
-  // Discord users already linked to some raider — never suggest them again.
+  // Discord users already linked to some ACTIVE raider — never suggest them
+  // again. Users linked only to an inactive raider stay suggestable.
   const linkedRows = db
-    .prepare('SELECT discord_user_id FROM raiders WHERE discord_user_id IS NOT NULL')
+    .prepare(
+      'SELECT discord_user_id FROM raiders WHERE discord_user_id IS NOT NULL AND inactive_since IS NULL',
+    )
     .all() as { discord_user_id: string }[];
   const linkedUserIds = new Set(linkedRows.map((r) => r.discord_user_id));
 

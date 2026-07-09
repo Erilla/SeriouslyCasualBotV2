@@ -102,7 +102,7 @@ export async function alertSignups(client: Client): Promise<void> {
   }
 
   // Resolve Discord user IDs for unsigned raiders
-  const raiders = db.prepare('SELECT * FROM raiders').all() as RaiderRow[];
+  const raiders = db.prepare('SELECT * FROM raiders WHERE inactive_since IS NULL').all() as RaiderRow[];
   const raiderMap = new Map(raiders.map((r) => [r.character_name.toLowerCase(), r]));
 
   const mentions: string[] = [];

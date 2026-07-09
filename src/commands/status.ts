@@ -79,7 +79,7 @@ export default {
     const minutes = Math.floor((uptime % 3600) / 60);
     const seconds = uptime % 60;
 
-    const raiders = db.prepare('SELECT COUNT(*) as total, COUNT(discord_user_id) as linked FROM raiders').get() as { total: number; linked: number };
+    const raiders = db.prepare('SELECT COUNT(*) as total, COUNT(discord_user_id) as linked FROM raiders WHERE inactive_since IS NULL').get() as { total: number; linked: number };
     const activeApps = db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('in_progress', 'submitted', 'active')").get() as { count: number };
     const activeTrials = db.prepare("SELECT COUNT(*) as count FROM trials WHERE status = 'active'").get() as { count: number };
 

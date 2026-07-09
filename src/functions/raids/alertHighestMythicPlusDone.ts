@@ -128,7 +128,7 @@ export async function generateGreatVaultReport(
 export async function alertHighestMythicPlusDone(client: Client): Promise<void> {
   const db = getDatabase();
   const raiders = db
-    .prepare('SELECT * FROM raiders ORDER BY character_name')
+    .prepare('SELECT * FROM raiders WHERE inactive_since IS NULL ORDER BY character_name')
     .all() as RaiderRow[];
 
   if (raiders.length === 0) {
