@@ -4,7 +4,7 @@ import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { closeThread } from '../threads.js';
 import { applyTrialTag } from './trialForumTags.js';
-import type { TrialRow, TrialAlertRow } from '../../types/index.js';
+import type { TrialRow } from '../../types/index.js';
 
 /**
  * Close a trial: set status to 'closed', archive the thread, clear pending alerts.

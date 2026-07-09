@@ -36,7 +36,7 @@ export async function createForumPost(
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`);
+    throw new Error(`Failed to create application-log forum channel (does the bot have Manage Channels permission?): ${error.message}`, { cause: err });
   }
 
   try {
@@ -77,7 +77,7 @@ export async function createForumPost(
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create forum thread for "${threadName}": ${error.message}`);
+    throw new Error(`Failed to create forum thread for "${threadName}": ${error.message}`, { cause: err });
   }
 
   for (let i = 1; i < messages.length; i++) {

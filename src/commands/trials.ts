@@ -9,7 +9,7 @@ import {
   ActionRowBuilder,
 } from 'discord.js';
 import { getDatabase } from '../database/db.js';
-import { requireOfficer, createEmbed } from '../utils.js';
+import { requireOfficer } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
 import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';

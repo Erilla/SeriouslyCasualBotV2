@@ -5,7 +5,6 @@ import { config } from '../../config.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
 import {
   buildReviewMessage,
-  calculateReviewDates,
   buildTrialButtons,
 } from './createTrialReviewThread.js';
 import type { TrialRow, TrialAlertRow } from '../../types/index.js';

@@ -75,7 +75,7 @@ npm test              # unit + integration in the default project (no network)
 npm run test:e2e      # e2e — needs .env.test with real Discord ids; excluded from CI
 ```
 
-CI (GitHub Actions) runs typecheck, the unit test suite, and a build on every push to `main` and `develop`.
+CI (GitHub Actions) runs typecheck, lint, the unit test suite, and a build on every push to `main` and `develop`.
 
 ## Deployment
 

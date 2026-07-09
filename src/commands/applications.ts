@@ -13,7 +13,7 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import { getDatabase } from '../database/db.js';
-import { requireOfficer, createEmbed, asSendable } from '../utils.js';
+import { requireOfficer, asSendable } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 import {
   getQuestions,

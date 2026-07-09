@@ -48,7 +48,7 @@ export async function clearGuildInfo(client: Client): Promise<void> {
     for (const message of old) {
       try {
         await message.delete();
-      } catch (error) {
+      } catch {
         logger.warn('guild-info', `Failed to delete old message ${message.id}`);
       }
     }

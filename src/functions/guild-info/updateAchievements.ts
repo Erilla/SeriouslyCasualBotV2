@@ -316,7 +316,7 @@ function determineCE(raid: RaidStaticRaid, ranking: RaidRankingEntry): boolean {
 
 // ─── Image Rendering ────────────────────────────────────────────
 
-function renderAchievementsImage(sections: AchievementSection[], title: string): Buffer {
+function renderAchievementsImage(sections: AchievementSection[], _title: string): Buffer {
   const PADDING = 32;
   const ROW_HEIGHT = 38;
   const HEADER_HEIGHT = 56;

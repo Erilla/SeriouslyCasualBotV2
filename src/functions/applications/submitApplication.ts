@@ -79,7 +79,7 @@ export async function submitApplication(
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error('Applications', `Failed to create application channel for #${applicationId}: ${error.message}`, error);
-    throw new Error(`Failed to create application channel: ${error.message}`);
+    throw new Error(`Failed to create application channel: ${error.message}`, { cause: err });
   }
 
   // Step 2: Create forum post
@@ -116,7 +116,7 @@ export async function submitApplication(
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error('Applications', `Failed to update application #${applicationId} record: ${error.message}`, error);
-    throw new Error(`Failed to update application record: ${error.message}`);
+    throw new Error(`Failed to update application record: ${error.message}`, { cause: err });
   }
 
   // Step 3b: Record the character -> Discord identity link so a future roster
@@ -215,8 +215,6 @@ async function createApplicationChannel(
   applicant: User,
   qaText: string,
 ): Promise<TextChannel> {
-  const db = getDatabase();
-
   // Get or create applications category (the only category the bot will auto-create,
   // by convention; not enforced in the helper)
   let categoryId: string;
@@ -230,7 +228,7 @@ async function createApplicationChannel(
     categoryId = category.id;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create Applications category (does the bot have Manage Channels permission?): ${error.message}`);
+    throw new Error(`Failed to create Applications category (does the bot have Manage Channels permission?): ${error.message}`, { cause: err });
   }
 
   // Get overlords for permissions
@@ -253,7 +251,7 @@ async function createApplicationChannel(
     }) as TextChannel;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    throw new Error(`Failed to create text channel "${channelName}" (does the bot have Manage Channels permission?): ${error.message}`);
+    throw new Error(`Failed to create text channel "${channelName}" (does the bot have Manage Channels permission?): ${error.message}`, { cause: err });
   }
 
   // Post Q&A (split if > 2000 chars)

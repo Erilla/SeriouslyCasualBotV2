@@ -8,7 +8,6 @@ import {
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getQuestions } from './applicationQuestions.js';
-import type { ApplicationQuestionRow, ApplicationAnswerRow } from '../../types/index.js';
 
 // ─── Session Tracking ─────────────────────────────────────────
 

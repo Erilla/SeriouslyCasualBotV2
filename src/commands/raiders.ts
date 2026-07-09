@@ -6,7 +6,7 @@ import {
   AttachmentBuilder,
 } from 'discord.js';
 import { getDatabase } from '../database/db.js';
-import { requireOfficer, createEmbed, audit } from '../utils.js';
+import { requireOfficer, audit } from '../utils.js';
 import { paginateLines, buildPageEmbed, buildPageButtons, cachePaginatedData } from '../functions/pagination.js';
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
 import { autoMatchRaiders } from '../functions/raids/autoMatchRaiders.js';
