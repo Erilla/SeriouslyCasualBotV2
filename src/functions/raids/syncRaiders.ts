@@ -34,8 +34,9 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
 
   let added = 0;
   let markedMissing = 0;
+  let markedInactive = 0;
   let returned = 0;
-  let alreadyMissing = 0;
+  let reactivated = 0;
 
   // Raiders inserted by this sync with no Discord user. Returned to the caller
   // so it can post auto-link suggestions / missing-user alerts (the automatic
@@ -47,33 +48,53 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   const transaction = db.transaction(() => {
     const now = new Date().toISOString();
 
-    // 1. Handle raiders no longer in API
+    // 1. Handle raiders no longer in the API roster.
     for (const raider of dbRaiders) {
-      if (!apiNameSet.has(raider.character_name.toLowerCase())) {
-        if (raider.missing_since === null) {
-          // First time missing: set missing_since
-          db.prepare('UPDATE raiders SET missing_since = ? WHERE id = ?').run(now, raider.id);
-          markedMissing++;
-        } else {
-          const missingSinceDate = new Date(raider.missing_since).getTime();
-          const elapsed = Date.now() - missingSinceDate;
+      if (apiNameSet.has(raider.character_name.toLowerCase())) continue;
 
-          if (elapsed >= GRACE_PERIOD_MS) {
-            logger.warn(
-              'SyncRaiders',
-              `Raider "${raider.character_name}" has been missing for over 24 hours (since ${raider.missing_since})`,
-            );
-            alreadyMissing++;
-          }
-          // If < 24 hours, do nothing (grace period)
-        }
+      if (raider.missing_since === null) {
+        // First sync they're absent: start the grace-period clock.
+        db.prepare('UPDATE raiders SET missing_since = ? WHERE id = ?').run(now, raider.id);
+        markedMissing++;
+        continue;
       }
+
+      if (raider.inactive_since !== null) {
+        // Already retired to inactive — nothing to do. Crucially, no repeated
+        // warning on every sync.
+        continue;
+      }
+
+      const elapsed = Date.now() - new Date(raider.missing_since).getTime();
+      if (elapsed >= GRACE_PERIOD_MS) {
+        // Grace period expired: retire to inactive. The row is kept (so we can
+        // auto-reactivate on return) but hidden from get_raiders. Logged once.
+        db.prepare('UPDATE raiders SET inactive_since = ? WHERE id = ?').run(now, raider.id);
+        markedInactive++;
+        logger.info(
+          'SyncRaiders',
+          `Raider "${raider.character_name}" marked inactive after >24h missing (since ${raider.missing_since})`,
+        );
+      }
+      // else: still within the 24h grace period — leave as missing.
     }
 
-    // 2. Handle raiders back in API: clear missing_since
+    // 2. Handle raiders back in the API roster: clear missing/inactive state.
     for (const raider of dbRaiders) {
-      if (apiNameSet.has(raider.character_name.toLowerCase()) && raider.missing_since !== null) {
-        db.prepare('UPDATE raiders SET missing_since = NULL WHERE id = ?').run(raider.id);
+      if (!apiNameSet.has(raider.character_name.toLowerCase())) continue;
+      if (raider.missing_since === null && raider.inactive_since === null) continue;
+
+      db.prepare(
+        'UPDATE raiders SET missing_since = NULL, inactive_since = NULL WHERE id = ?',
+      ).run(raider.id);
+
+      if (raider.inactive_since !== null) {
+        reactivated++;
+        logger.info(
+          'SyncRaiders',
+          `Raider "${raider.character_name}" reactivated (returned to roster)`,
+        );
+      } else {
         returned++;
       }
     }
@@ -120,7 +141,8 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
 
   logger.info(
     'SyncRaiders',
-    `Sync complete: ${added} added, ${returned} returned, ${markedMissing} newly missing, ${alreadyMissing} still missing (>24h)`,
+    `Sync complete: ${added} added, ${returned} returned, ${reactivated} reactivated, ` +
+      `${markedMissing} newly missing, ${markedInactive} newly inactive`,
   );
 
   return newUnlinkedRaiders;

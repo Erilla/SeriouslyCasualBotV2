@@ -183,7 +183,7 @@ describe('syncRaiders', () => {
     expect(raiders).toHaveLength(1);
   });
 
-  it('should warn when a raider has been missing for over 24 hours', async () => {
+  it('should mark a raider inactive when missing for over 24 hours', async () => {
     const db = getDatabase();
     const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(); // 25 hours ago
     db.prepare(
@@ -194,13 +194,18 @@ describe('syncRaiders', () => {
 
     await syncRaiders(mockClient);
 
-    expect(logger.warn).toHaveBeenCalledWith(
+    const raider = db
+      .prepare('SELECT inactive_since FROM raiders WHERE character_name = ?')
+      .get('LongGoneRaider') as { inactive_since: string | null };
+
+    expect(raider.inactive_since).not.toBeNull();
+    expect(logger.info).toHaveBeenCalledWith(
       'SyncRaiders',
       expect.stringContaining('LongGoneRaider'),
     );
   });
 
-  it('should not warn when a raider is missing for less than 24 hours', async () => {
+  it('should not mark a raider inactive when missing for less than 24 hours', async () => {
     const db = getDatabase();
     const recentDate = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2 hours ago
     db.prepare(
@@ -211,9 +216,58 @@ describe('syncRaiders', () => {
 
     await syncRaiders(mockClient);
 
-    expect(logger.warn).not.toHaveBeenCalledWith(
+    const raider = db
+      .prepare('SELECT inactive_since FROM raiders WHERE character_name = ?')
+      .get('RecentlyGoneRaider') as { inactive_since: string | null };
+
+    expect(raider.inactive_since).toBeNull();
+  });
+
+  it('should not change state or re-log for an already-inactive raider', async () => {
+    const db = getDatabase();
+    const missingSince = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const inactiveSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    db.prepare(
+      'INSERT INTO raiders (character_name, realm, region, missing_since, inactive_since) VALUES (?, ?, ?, ?, ?)',
+    ).run('StillGoneRaider', 'silvermoon', 'eu', missingSince, inactiveSince);
+
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    await syncRaiders(mockClient);
+
+    const raider = db
+      .prepare('SELECT inactive_since FROM raiders WHERE character_name = ?')
+      .get('StillGoneRaider') as { inactive_since: string | null };
+
+    // Unchanged, and no "marked inactive" log this run.
+    expect(raider.inactive_since).toBe(inactiveSince);
+    expect(logger.info).not.toHaveBeenCalledWith(
       'SyncRaiders',
-      expect.stringContaining('RecentlyGoneRaider'),
+      expect.stringContaining('marked inactive'),
+    );
+  });
+
+  it('should reactivate an inactive raider that returns to the roster', async () => {
+    const db = getDatabase();
+    const missingSince = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const inactiveSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    db.prepare(
+      'INSERT INTO raiders (character_name, realm, region, missing_since, inactive_since) VALUES (?, ?, ?, ?, ?)',
+    ).run('BackAgainRaider', 'silvermoon', 'eu', missingSince, inactiveSince);
+
+    mockedGetGuildRoster.mockResolvedValue([makeMember('BackAgainRaider')]);
+
+    await syncRaiders(mockClient);
+
+    const raider = db
+      .prepare('SELECT missing_since, inactive_since FROM raiders WHERE character_name = ?')
+      .get('BackAgainRaider') as { missing_since: string | null; inactive_since: string | null };
+
+    expect(raider.missing_since).toBeNull();
+    expect(raider.inactive_since).toBeNull();
+    expect(logger.info).toHaveBeenCalledWith(
+      'SyncRaiders',
+      expect.stringContaining('reactivated'),
     );
   });
 
