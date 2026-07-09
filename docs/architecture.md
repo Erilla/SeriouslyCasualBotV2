@@ -17,8 +17,7 @@ src/
 ├── database/
 │   ├── db.ts             # Singleton, WAL mode, inline forward-only migrations runner
 │   ├── schema.ts         # CREATE TABLE statements (23 tables)
-│   ├── seed.ts           # Default data seeding
-│   └── migrations/       # Vestigial — migrations live inline in db.ts, not here
+│   └── seed.ts           # Default data seeding
 ├── services/
 │   ├── logger.ts         # Multi-level logger (console + Discord channel)
 │   └── auditLog.ts       # Officer action audit trail to Discord channel

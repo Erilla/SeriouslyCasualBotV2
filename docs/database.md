@@ -62,4 +62,4 @@ The current head is **version 6**. Applied migrations:
 
 Migrations must stay idempotent against fresh DBs, where `createTables()` has already produced the final schema — guard `ALTER`/`DROP` accordingly (e.g. v5 checks `table_info` before adding the column, drops use `IF EXISTS`).
 
-To add a migration, append a new `if (currentVersion < 7) { ... }` block that ends by inserting the version row. (The `src/database/migrations/` directory is a vestige of an earlier plan and is not loaded at runtime.)
+To add a migration, append a new `if (currentVersion < 7) { ... }` block that ends by inserting the version row.
