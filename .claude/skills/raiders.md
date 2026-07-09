@@ -3,8 +3,8 @@
 ## /raiders command (12 subcommands, admin-only)
 
 ### Roster management
-- `get_raiders` - Shows all raiders with realm and Discord user
-- `sync_raiders` - Syncs with Raider.io guild roster (adds new, removes departed)
+- `get_raiders` - Shows all active raiders with realm and Discord user (inactive raiders — missing >24h — are hidden)
+- `sync_raiders` - Syncs with Raider.io guild roster (adds new, flags missing for eventual retirement to inactive)
 - `check_missing_users` - Alerts in bot_setup channel for raiders without Discord user
 - `update_raider_user` - Links a raider character to a Discord user
 
@@ -37,18 +37,23 @@
 ## Sync logic (syncRaiders)
 1. Fetch stored raiders + ignored characters from DB
 2. Fetch guild roster from Raider.io (filtered by rank: 0,1,3,4,5,7)
-3. Remove stored raiders not in roster (or newly ignored)
-4. Add new roster members not in DB
-5. Update realm/region for existing raiders
-6. Alert for new raiders missing Discord users
-7. Post add/remove summary to bot_setup channel
+3. Flag stored raiders no longer in the roster: set `missing_since` on first
+   absence; after a 24h grace period, retire them to inactive (`inactive_since`
+   set) — the row is kept but hidden from `get_raiders`. Sync does **not** delete
+   missing raiders (only `ignore_character` deletes a raider row).
+4. Auto-reactivate: a raider who reappears in the roster has `missing_since` and
+   `inactive_since` cleared.
+5. Add new roster members not in DB
+6. Update realm/region for existing raiders
+7. Alert for new raiders missing Discord users
+8. Post add/remove summary to bot_setup channel
 
 ## Scheduled jobs
 - `syncRaiders` - every 10 minutes
 - `weeklyReports` - noon Wednesday (sends both M+ and Great Vault reports to weekly_check channel)
 
 ## Database tables used
-- `raiders` - character_name, discord_user_id, realm, region
+- `raiders` - character_name, discord_user_id, realm, region, missing_since, inactive_since
 - `overlords` - name, discord_user_id (UNIQUE)
 - `ignored_characters` - character_name (UNIQUE)
 
