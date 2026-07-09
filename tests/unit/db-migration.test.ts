@@ -139,6 +139,43 @@ describe('runMigrations — v3 drops signup_messages', () => {
   });
 });
 
+describe('runMigrations — v6 drops the orphaned officer_role_id config key', () => {
+  it('deletes an officer_role_id row left over from the old /setup flow', () => {
+    const db = getDatabase();
+
+    // Represent a pre-v6 install that had set the officer role via /setup.
+    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('officer_role_id', 'role-123');
+    db.exec('DELETE FROM schema_version;');
+
+    runMigrations(db);
+
+    expect(db.prepare('SELECT value FROM config WHERE key = ?').get('officer_role_id')).toBeUndefined();
+
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number };
+    expect(version.v).toBeGreaterThanOrEqual(6);
+  });
+
+  it('leaves other role config (raider_role_id) untouched', () => {
+    const db = getDatabase();
+
+    db.prepare('INSERT INTO config (key, value) VALUES (?, ?)').run('raider_role_id', 'role-456');
+    db.exec('DELETE FROM schema_version;');
+
+    runMigrations(db);
+
+    expect(db.prepare('SELECT value FROM config WHERE key = ?').get('raider_role_id')).toEqual({
+      value: 'role-456',
+    });
+  });
+
+  it('is a no-op when officer_role_id was never set', () => {
+    const db = getDatabase();
+
+    expect(() => runMigrations(db)).not.toThrow();
+    expect(() => runMigrations(db)).not.toThrow();
+  });
+});
+
 describe('initDatabase — seeds default application questions', () => {
   it('seeds the 9 default application questions on a fresh database', () => {
     const db = initDatabase(':memory:');
