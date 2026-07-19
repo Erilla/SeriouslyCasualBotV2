@@ -16,7 +16,7 @@ async function confirmLink(interaction: ButtonInteraction, params: string[]): Pr
   const success = await updateRaiderDiscordUser(interaction.client, characterName, userId);
 
   if (success) {
-    await audit(interaction.user, 'confirmed raider link', `${characterName} -> <@${userId}>`);
+    await audit(interaction.user, 'confirmed raider link', `${characterName} → <@${userId}>`);
 
     // updateRaiderDiscordUser already deletes the linking message; delete here
     // too as a no-op safety net. The confirmation itself is ephemeral so the
@@ -97,7 +97,7 @@ async function selectUser(interaction: UserSelectMenuInteraction, params: string
     await audit(
       interaction.user,
       'linked raider via select',
-      `${characterName} -> <@${selectedUserId}>`,
+      `${characterName} → <@${selectedUserId}>`,
     );
 
     try {
