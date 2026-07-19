@@ -274,7 +274,7 @@ export default {
         const success = await updateRaiderDiscordUser(interaction.client, characterName, user.id);
 
         if (success) {
-          await audit(interaction.user, 'linked raider', `${characterName} -> ${user.tag}`);
+          await audit(interaction.user, 'linked raider', `${characterName} → <@${user.id}>`);
           await interaction.reply({
             content: `Linked **${characterName}** to ${user}.`,
             flags: MessageFlags.Ephemeral,
@@ -349,7 +349,7 @@ export default {
 
         try {
           addOverlord(name, user.id);
-          await audit(interaction.user, 'added overlord', `${name} (${user.tag})`);
+          await audit(interaction.user, 'added overlord', `${name} (<@${user.id}>)`);
           await interaction.reply({
             content: `Added overlord **${name}** (${user}).`,
             flags: MessageFlags.Ephemeral,
@@ -381,8 +381,13 @@ export default {
         const name = interaction.options.getString('name', true);
 
         try {
+          const overlord = getOverlords().find((o) => o.name === name);
           removeOverlord(name);
-          await audit(interaction.user, 'removed overlord', name);
+          await audit(
+            interaction.user,
+            'removed overlord',
+            overlord ? `${name} (<@${overlord.user_id}>)` : name,
+          );
           await interaction.reply({
             content: `Removed overlord **${name}**.`,
             flags: MessageFlags.Ephemeral,
