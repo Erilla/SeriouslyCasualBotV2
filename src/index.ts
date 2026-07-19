@@ -4,6 +4,7 @@ import { initDatabase, closeDatabase } from './database/db.js';
 import { initLogger, logger } from './services/logger.js';
 import { scheduler } from './events/ready.js';
 import { loadCommands } from './loadCommands.js';
+import { registerProcessErrorHandlers } from './processErrorHandlers.js';
 import { readdirSync } from 'fs';
 import { pathToFileURL } from 'url';
 import { join, dirname } from 'path';
@@ -15,6 +16,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ─── Initialize ──────────────────────────────────────────────
 
 initLogger(config.logLevel);
+registerProcessErrorHandlers();
 logger.info('bot', 'Starting SeriouslyCasualBot...');
 
 initDatabase();
@@ -76,4 +78,10 @@ process.on('SIGINT', shutdown);
 
 // ─── Login ───────────────────────────────────────────────────
 
-await client.login(config.discordToken);
+try {
+  await client.login(config.discordToken);
+} catch (error) {
+  const err = error instanceof Error ? error : new Error(String(error));
+  logger.error('bot', `Failed to log in to Discord: ${err.message}`, err);
+  process.exit(1);
+}

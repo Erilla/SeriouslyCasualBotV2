@@ -12,6 +12,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'integration',
+          include: ['tests/integration/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'e2e',
           include: ['tests/e2e/**/*.e2e.ts'],
           environment: 'node',

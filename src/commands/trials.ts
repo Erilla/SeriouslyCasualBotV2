@@ -11,6 +11,7 @@ import {
 import { getDatabase } from '../database/db.js';
 import { requireOfficer } from '../utils.js';
 import { audit } from '../services/auditLog.js';
+import { trialRef, dateRef } from '../services/auditRefs.js';
 import { logger } from '../services/logger.js';
 import {
   paginateLines,
@@ -179,7 +180,7 @@ export default {
 
         try {
           await closeTrial(interaction.client, trial.id);
-          await audit(interaction.user, 'closed trial', `${trial.character_name} (#${trial.id})`);
+          await audit(interaction.user, 'closed trial', trialRef(trial));
           await interaction.editReply({
             content: `Closed trial for **${trial.character_name}**.`,
           });
@@ -237,13 +238,13 @@ export default {
 
           const changes = [];
           if (characterName) changes.push(`name=${characterName}`);
-          if (role) changes.push(`role=${role}`);
-          if (startDate) changes.push(`start_date=${startDate}`);
+          if (role) changes.push(`role=\`${role}\``);
+          if (startDate) changes.push(`start_date=${dateRef(startDate)}`);
 
           await audit(
             interaction.user,
             'updated trial info',
-            `${trial.character_name} (#${trial.id}): ${changes.join(', ')}`,
+            `${trialRef(trial)}: ${changes.join(', ')}`,
           );
 
           await interaction.editReply({ content: 'Trial info updated.' });

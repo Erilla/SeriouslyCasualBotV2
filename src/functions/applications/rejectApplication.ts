@@ -16,6 +16,7 @@ import { getDatabase } from '../../database/db.js';
 import { config } from '../../config.js';
 import { logger } from '../../services/logger.js';
 import { audit } from '../../services/auditLog.js';
+import { applicationRef } from '../../services/auditRefs.js';
 import { generateTranscript } from './generateTranscript.js';
 import { closeThread } from '../threads.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
@@ -198,7 +199,7 @@ export async function processRejectModal(interaction: ModalSubmitInteraction): P
   ).run(applicationId);
 
   // Audit log
-  await audit(interaction.user, 'rejected application', characterName);
+  await audit(interaction.user, 'rejected application', applicationRef(application));
 
   logger.info('Applications', `Application #${applicationId} rejected: ${characterName}`);
 

@@ -16,6 +16,7 @@ import { getDatabase } from '../../database/db.js';
 import { config } from '../../config.js';
 import { logger } from '../../services/logger.js';
 import { audit } from '../../services/auditLog.js';
+import { applicationRef, dateRef } from '../../services/auditRefs.js';
 import { generateTranscript } from './generateTranscript.js';
 import { closeThread } from '../threads.js';
 import { createTrialReviewThread } from '../trial-review/createTrialReviewThread.js';
@@ -241,10 +242,16 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
   ).run(characterName, applicationId);
 
   // Audit log
+  const acceptRef = applicationRef({
+    character_name: characterName,
+    applicant_user_id: application.applicant_user_id,
+    thread_id: application.thread_id,
+    forum_post_id: application.forum_post_id,
+  });
   await audit(
     interaction.user,
     'accepted application',
-    `${characterName} as ${role} starting ${startDate}`,
+    `${acceptRef} as \`${role}\` starting ${dateRef(startDate)}`,
   );
 
   // Give the accepted applicant the Raider role (best-effort; never fails accept)

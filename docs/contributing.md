@@ -47,7 +47,7 @@ Each worktree shares the same git history but has an independent working directo
 4. CI must pass (typecheck + tests + build).
 5. Claude Code Review runs automatically and posts inline comments.
 6. Address review feedback, then merge to `develop` (auto-deploys to test).
-7. Once validated on test, promote by opening a PR from `develop` → `main` (squash-merge).
+7. Once validated on test, promote by opening a PR from `develop` → `main` (merge commit — the only merge method the repo enables).
 
 ## Testing Strategy
 

@@ -9,6 +9,7 @@ import type { ButtonInteraction, ModalSubmitInteraction } from 'discord.js';
 import type { ButtonHandler, ModalHandler } from './registry.js';
 import { getDatabase } from '../database/db.js';
 import { audit } from '../services/auditLog.js';
+import { trialRef } from '../services/auditRefs.js';
 import { logger } from '../services/logger.js';
 import { extendTrial } from '../functions/trial-review/extendTrial.js';
 import { markForPromotion } from '../functions/trial-review/markForPromotion.js';
@@ -67,9 +68,13 @@ async function extend(interaction: ButtonInteraction, params: string[]): Promise
   const trialId = parseInt(params[0], 10);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+  const trial = getDatabase().prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
+
   try {
     await extendTrial(interaction.client, trialId);
-    await audit(interaction.user, 'extended trial', `#${trialId}`);
+    await audit(interaction.user, 'extended trial', trial ? trialRef(trial) : `#${trialId}`);
     await interaction.editReply({ content: 'Trial extended by 1 week.' });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -81,9 +86,17 @@ async function markPromote(interaction: ButtonInteraction, params: string[]): Pr
   const trialId = parseInt(params[0], 10);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+  const trial = getDatabase().prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
+
   try {
     await markForPromotion(interaction.client, trialId);
-    await audit(interaction.user, 'marked trial for promotion', `#${trialId}`);
+    await audit(
+      interaction.user,
+      'marked trial for promotion',
+      trial ? trialRef(trial) : `#${trialId}`,
+    );
     await interaction.editReply({ content: 'Trial marked for promotion.' });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -95,9 +108,13 @@ async function close(interaction: ButtonInteraction, params: string[]): Promise<
   const trialId = parseInt(params[0], 10);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+  const trial = getDatabase().prepare('SELECT * FROM trials WHERE id = ?').get(trialId) as
+    | TrialRow
+    | undefined;
+
   try {
     await closeTrial(interaction.client, trialId);
-    await audit(interaction.user, 'closed trial', `#${trialId}`);
+    await audit(interaction.user, 'closed trial', trial ? trialRef(trial) : `#${trialId}`);
     await interaction.editReply({ content: 'Trial closed.' });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -126,7 +143,10 @@ async function modalCreate(interaction: ModalSubmitInteraction, _params: string[
       role,
       startDate,
     });
-    await audit(interaction.user, 'created trial', `${characterName} as ${role} (#${trial.id})`);
+    const createdDetail = `**${characterName}** (#${trial.id}) as \`${role}\`${
+      trial.thread_id ? ` — <#${trial.thread_id}>` : ''
+    }`;
+    await audit(interaction.user, 'created trial', createdDetail);
     await interaction.editReply({
       content: `Trial created for **${characterName}**. Thread: <#${trial.thread_id}>`,
     });
@@ -175,11 +195,7 @@ async function modalUpdate(interaction: ModalSubmitInteraction, params: string[]
     }
 
     await changeTrialInfo(interaction.client, trialId, updates);
-    await audit(
-      interaction.user,
-      'updated trial info via modal',
-      `${trial.character_name} (#${trialId})`,
-    );
+    await audit(interaction.user, 'updated trial info via modal', trialRef(trial));
     await interaction.editReply({ content: 'Trial info updated.' });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
