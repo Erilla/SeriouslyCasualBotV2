@@ -15,7 +15,7 @@ export async function audit(officer: User, action: string, detail: string): Prom
   if (!auditChannel) return;
 
   try {
-    await auditChannel.send({ content: message });
+    await auditChannel.send({ content: message, allowedMentions: { parse: [] } });
   } catch {
     logger.error('audit', 'Failed to send audit log to Discord');
   }
