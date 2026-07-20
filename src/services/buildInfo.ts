@@ -1,0 +1,70 @@
+import { execFileSync } from 'child_process';
+import { getDatabase } from '../database/db.js';
+
+export interface BuildInfo {
+  build: number | null;
+  sha: string | null;
+}
+
+const FETCH_TIMEOUT_MS = 3000;
+
+/**
+ * Resolve the running build's identity. The build number is the commit count
+ * of the deployed SHA (git rev-list --count semantics), so it increments by
+ * exactly 1 per commit on main and matches between test and prod for the
+ * same commit (prod is a fast-forward of main).
+ *
+ * On Railway: RAILWAY_GIT_COMMIT_SHA is set, but the Docker build context has
+ * no .git, so the count comes from one unauthenticated GitHub API call,
+ * cached in SQLite by SHA (at most one call per build, across restarts).
+ * Failures return build: null (logged as "build ?") and are NOT cached, so
+ * the next restart retries.
+ */
+export async function getBuildInfo(): Promise<BuildInfo> {
+  const sha = process.env.RAILWAY_GIT_COMMIT_SHA;
+  if (!sha) return localGitInfo();
+
+  const db = getDatabase();
+  const cached = db.prepare('SELECT build FROM build_info WHERE sha = ?').get(sha) as
+    | { build: number }
+    | undefined;
+  if (cached) return { build: cached.build, sha };
+
+  const build = await fetchCommitCount(sha);
+  if (build !== null) {
+    db.prepare('INSERT OR REPLACE INTO build_info (sha, build) VALUES (?, ?)').run(sha, build);
+  }
+  return { build, sha };
+}
+
+async function fetchCommitCount(sha: string): Promise<number | null> {
+  const owner = process.env.RAILWAY_GIT_REPO_OWNER || 'Erilla';
+  const repo = process.env.RAILWAY_GIT_REPO_NAME || 'SeriouslyCasualBotV2';
+  const url = `https://api.github.com/repos/${owner}/${repo}/commits?sha=${sha}&per_page=1`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!res.ok) return null;
+
+    // With per_page=1 the total commit count is the page number of the
+    // rel="last" link, e.g. <https://...&page=171>; rel="last".
+    const match = res.headers.get('link')?.match(/[?&]page=(\d+)>;\s*rel="last"/);
+    return match ? Number(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function localGitInfo(): BuildInfo {
+  try {
+    const build = Number(
+      execFileSync('git', ['rev-list', '--count', 'HEAD'], { encoding: 'utf8' }).trim(),
+    );
+    const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+    return { build: Number.isFinite(build) && build > 0 ? build : null, sha };
+  } catch {
+    return { build: null, sha: null };
+  }
+}
