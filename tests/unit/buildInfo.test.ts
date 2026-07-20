@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getDatabase, closeDatabase } from '../../src/database/db.js';
 import { createTables } from '../../src/database/schema.js';
+
+vi.mock('../../src/services/logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 import { getBuildInfo } from '../../src/services/buildInfo.js';
+import { logger } from '../../src/services/logger.js';
 
 const SHA = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
 
@@ -22,6 +28,7 @@ beforeEach(() => {
   closeDatabase();
   const db = getDatabase(':memory:');
   createTables(db);
+  vi.clearAllMocks();
 });
 
 afterEach(() => {
@@ -70,6 +77,7 @@ describe('getBuildInfo — Railway path', () => {
     expect(
       getDatabase().prepare('SELECT build FROM build_info WHERE sha = ?').get(SHA),
     ).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalled();
   });
 
   it('returns build null on a non-2xx response', async () => {
@@ -79,6 +87,7 @@ describe('getBuildInfo — Railway path', () => {
     const info = await getBuildInfo();
 
     expect(info).toEqual({ build: null, sha: SHA });
+    expect(logger.warn).toHaveBeenCalled();
   });
 
   it('returns build null when the Link header is missing', async () => {
@@ -91,6 +100,7 @@ describe('getBuildInfo — Railway path', () => {
     expect(
       getDatabase().prepare('SELECT build FROM build_info WHERE sha = ?').get(SHA),
     ).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalled();
   });
 });
 

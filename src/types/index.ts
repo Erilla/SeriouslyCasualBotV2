@@ -189,6 +189,11 @@ export interface SchemaVersionRow {
   applied_at: string;
 }
 
+export interface BuildInfoRow {
+  sha: string;
+  build: number;
+}
+
 // ─── Scheduler Types ─────────────────────────────────────────
 
 export interface ScheduledTask {

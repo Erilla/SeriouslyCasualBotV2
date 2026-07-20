@@ -1,5 +1,7 @@
 import { execFileSync } from 'child_process';
 import { getDatabase } from '../database/db.js';
+import { logger } from './logger.js';
+import type { BuildInfoRow } from '../types/index.js';
 
 export interface BuildInfo {
   build: number | null;
@@ -26,7 +28,7 @@ export async function getBuildInfo(): Promise<BuildInfo> {
 
   const db = getDatabase();
   const cached = db.prepare('SELECT build FROM build_info WHERE sha = ?').get(sha) as
-    | { build: number }
+    | BuildInfoRow
     | undefined;
   if (cached) return { build: cached.build, sha };
 
@@ -40,17 +42,26 @@ export async function getBuildInfo(): Promise<BuildInfo> {
 async function fetchCommitCount(sha: string): Promise<number | null> {
   const owner = process.env.RAILWAY_GIT_REPO_OWNER || 'Erilla';
   const repo = process.env.RAILWAY_GIT_REPO_NAME || 'SeriouslyCasualBotV2';
-  const url = `https://api.github.com/repos/${owner}/${repo}/commits?sha=${sha}&per_page=1`;
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?sha=${encodeURIComponent(sha)}&per_page=1`;
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logger.warn('bot', `buildInfo: GitHub commit lookup failed with status ${res.status}`);
+      return null;
+    }
 
     // With per_page=1 the total commit count is the page number of the
     // rel="last" link, e.g. <https://...&page=171>; rel="last".
     const match = res.headers.get('link')?.match(/[?&]page=(\d+)>;\s*rel="last"/);
-    return match ? Number(match[1]) : null;
-  } catch {
+    if (!match) {
+      logger.warn('bot', 'buildInfo: GitHub response missing a parseable Link header');
+      return null;
+    }
+    return Number(match[1]);
+  } catch (error) {
+    const err = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    logger.warn('bot', `buildInfo: GitHub commit lookup threw — ${err}`);
     return null;
   }
 }

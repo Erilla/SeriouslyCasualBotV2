@@ -37,14 +37,14 @@ db.prepare('INSERT INTO table (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPD
 ### Adding a migration
 Migrations are inline, forward-only version blocks in `runMigrations()` in `db.ts` — **not** separate files. Append a new block after the last one:
 ```ts
-if (currentVersion < 8) {
+if (currentVersion < 9) {
   database.transaction(() => {
     database.exec('ALTER TABLE trials ADD COLUMN some_column TEXT');
-    database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(8);
+    database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(9);
   })();
 }
 ```
-Current head is version 7 (`quip_history`). Rules:
+Current head is version 8 (`build_info` — build-number cache, keyed by deployed commit SHA). Rules:
 - Stay idempotent against fresh DBs where `createTables()` already produced the final schema (guard `ALTER` with a `table_info` check; use `IF EXISTS`/`IF NOT EXISTS`)
 - Never modify or remove existing migration blocks
 - Bump the hardcoded latest-version assertion in `tests/integration/database-schema.test.ts` (CI runs it)

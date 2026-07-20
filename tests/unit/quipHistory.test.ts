@@ -66,7 +66,7 @@ describe('quip history', () => {
       const max = oldDb.prepare('SELECT MAX(version) AS v FROM schema_version').get() as {
         v: number;
       };
-      expect(max.v).toBe(8);
+      expect(max.v).toBeGreaterThanOrEqual(8);
     } finally {
       oldDb.close();
     }
