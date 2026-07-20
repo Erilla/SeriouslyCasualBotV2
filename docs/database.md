@@ -38,6 +38,7 @@ The database file defaults to `db.sqlite` in the working directory. Override wit
 | `schedule_config` | Schedule display configuration |
 | `achievements_manual` | Manually entered raid achievement records |
 | `default_messages` | Default text templates for various bot messages |
+| `quip_history` | Recent LLM-generated signup quips, fed back into the prompt as anti-repetition context (trimmed to newest 50) |
 
 ## Migration System
 
@@ -49,7 +50,7 @@ Migrations are inline, forward-only version blocks in `runMigrations()` (in `db.
 2. Reads the highest applied version number (`0` on a fresh DB)
 3. Runs each `if (currentVersion < N)` block in order, recording version `N` in `schema_version` inside the same transaction
 
-The current head is **version 6**. Applied migrations:
+The current head is **version 7**. Applied migrations:
 
 | Version | Change |
 |---|---|
@@ -59,7 +60,12 @@ The current head is **version 6**. Applied migrations:
 | 4 | Drop the EPGP feature (five `epgp_*` tables + orphaned config keys) |
 | 5 | Add `raiders.inactive_since` and retire long-missing raiders to inactive |
 | 6 | Drop the orphaned `officer_role_id` config key (officer role now env-only) |
+| 7 | Add the `quip_history` table (anti-repetition memory for signup quips) |
+
+When adding a migration, also bump the hardcoded latest-version assertion in
+`tests/integration/database-schema.test.ts` — CI runs the integration suite
+and fails otherwise.
 
 Migrations must stay idempotent against fresh DBs, where `createTables()` has already produced the final schema — guard `ALTER`/`DROP` accordingly (e.g. v5 checks `table_info` before adding the column, drops use `IF EXISTS`).
 
-To add a migration, append a new `if (currentVersion < 7) { ... }` block that ends by inserting the version row.
+To add a migration, append a new `if (currentVersion < 8) { ... }` block that ends by inserting the version row.
