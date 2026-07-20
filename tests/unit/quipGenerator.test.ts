@@ -17,7 +17,76 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const GEMINI_FIRST = new Date('2026-01-03T12:00:00Z');
+const OPENAI_FIRST = new Date('2026-01-04T12:00:00Z');
+const CLAUDE_FIRST = new Date('2026-01-05T12:00:00Z');
+
+function mockAllProvidersOk(): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn(async (url: string) => ({
+    ok: true,
+    json: async () => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return { candidates: [{ content: { parts: [{ text: 'gemini quip' }] } }] };
+      }
+      if (url.includes('api.openai.com')) {
+        return { choices: [{ message: { content: 'openai quip' } }] };
+      }
+      return { content: [{ type: 'text', text: 'claude quip' }] };
+    },
+    text: async () => '',
+  }));
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+  return fetchMock;
+}
+
+function setAllKeys(): void {
+  process.env.GEMINI_API_KEY = 'g-key';
+  process.env.OPENAI_API_KEY = 'o-key';
+  process.env.ANTHROPIC_API_KEY = 'a-key';
+}
+
 describe('generateSignupQuip', () => {
+  it('rotates the starting provider by day of year', async () => {
+    setAllKeys();
+    mockAllProvidersOk();
+    expect(
+      (await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: GEMINI_FIRST }))
+        .quip,
+    ).toBe('gemini quip');
+    expect(
+      (await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: OPENAI_FIRST }))
+        .quip,
+    ).toBe('openai quip');
+    expect(
+      (await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: CLAUDE_FIRST }))
+        .quip,
+    ).toBe('claude quip');
+  });
+
+  it('falls through in rotated order when the first provider fails', async () => {
+    setAllKeys();
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('api.anthropic.com')) {
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      return {
+        ok: true,
+        json: async () => ({ candidates: [{ content: { parts: [{ text: 'gemini quip' }] } }] }),
+        text: async () => '',
+      };
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    // Claude-first day: Claude fails, Gemini (next in rotation) wins.
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      now: CLAUDE_FIRST,
+    });
+    expect(result.quip).toBe('gemini quip');
+    expect(fetchMock.mock.calls[0][0] as string).toContain('api.anthropic.com');
+  });
+
   it('marks static-corpus fallback with generated: false', async () => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.OPENAI_API_KEY;
@@ -67,7 +136,11 @@ describe('generateSignupQuip', () => {
       } as unknown as Response;
     }) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: true });
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: true,
+      now: GEMINI_FIRST,
+    });
     expect(result.quip).toBe('Stop standing in fire — sign up!');
   });
 
@@ -83,7 +156,7 @@ describe('generateSignupQuip', () => {
     })) as unknown as typeof fetch;
     globalThis.fetch = fetchMock;
 
-    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false });
+    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: GEMINI_FIRST });
 
     const url = (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(url).toContain('/models/gemini-flash-lite-latest:generateContent');
@@ -102,7 +175,11 @@ describe('generateSignupQuip', () => {
       text: async () => '',
     })) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    const result = await generateSignupQuip({
+      raidDay: 'Wednesday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
     expect(result.quip).toBe('Sign up or face the wrath of Warzania!');
   });
 
@@ -123,7 +200,11 @@ describe('generateSignupQuip', () => {
       text: async () => '',
     })) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    const result = await generateSignupQuip({
+      raidDay: 'Wednesday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
     expect(result.quip).toBe('Raid sign-ups: late doesn\u2019t count.');
   });
 
@@ -144,7 +225,11 @@ describe('generateSignupQuip', () => {
       text: async () => '',
     })) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false });
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
     expect(result.quip).toBe('Sign up, you slackers!');
   });
 
@@ -187,7 +272,11 @@ describe('generateSignupQuip', () => {
       text: async () => '',
     })) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    const result = await generateSignupQuip({
+      raidDay: 'Wednesday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
     expect(result.quip.length).toBeLessThanOrEqual(280);
   });
 
@@ -291,7 +380,11 @@ describe('generateSignupQuip', () => {
       throw new Error(`unexpected url ${url}`);
     }) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    const result = await generateSignupQuip({
+      raidDay: 'Wednesday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
     expect(result.quip).toBe('OpenAI says sign up!');
   });
 
@@ -310,7 +403,11 @@ describe('generateSignupQuip', () => {
       } as unknown as Response;
     }) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
+    const result = await generateSignupQuip({
+      raidDay: 'Wednesday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
     expect(typeof result.quip).toBe('string');
     expect(result.quip.length).toBeGreaterThan(0);
   });
@@ -337,7 +434,11 @@ describe('generateSignupQuip', () => {
       } as unknown as Response;
     }) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: true });
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: true,
+      now: GEMINI_FIRST,
+    });
     expect(result.quip).toBe('Claude says sign up!');
   });
 

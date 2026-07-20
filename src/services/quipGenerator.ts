@@ -40,6 +40,8 @@ export interface GenerateQuipOptions {
   twoDayReminder: boolean;
   /** Names of the guild's Overlords to optionally reference. Empty = no name reference. */
   overlordNames?: string[];
+  /** Clock override so tests can pin the provider rotation. */
+  now?: Date;
 }
 
 export interface QuipResult {
@@ -59,17 +61,32 @@ const PROVIDERS: QuipProvider[] = [
   { name: 'Claude', getKey: () => config.anthropicApiKey, call: callClaude },
 ];
 
+// Rotate the starting provider daily so the guild hears all three model
+// voices. Derived from the date (not a counter) because every deploy
+// restarts the bot, which would reset a counter back to Gemini.
+function dayOfYear(date: Date): number {
+  const startOfYear = Date.UTC(date.getUTCFullYear(), 0, 0);
+  return Math.floor((date.getTime() - startOfYear) / 86_400_000);
+}
+
+function rotatedProviders(date: Date): QuipProvider[] {
+  const offset = dayOfYear(date) % PROVIDERS.length;
+  return [...PROVIDERS.slice(offset), ...PROVIDERS.slice(0, offset)];
+}
+
 /**
- * Generate a one-line signup quip. Tries each provider in `PROVIDERS` in
- * order (Gemini, then OpenAI, then Claude), skipping any whose API key isn't
- * set, and falls back to a randomly-chosen quip from the V1 corpus when
- * every provider is skipped or fails. Never throws — the caller is an alert
- * handler and should always get something postable.
+ * Generate a one-line signup quip. Tries each provider starting from a
+ * daily-rotated offset into `PROVIDERS` (so Gemini, OpenAI, and Claude each
+ * take turns going first), wrapping around and skipping any whose API key
+ * isn't set, and falls back to a randomly-chosen quip from the V1 corpus
+ * when every provider is skipped or fails. Never throws — the caller is an
+ * alert handler and should always get something postable.
  */
 export async function generateSignupQuip(options: GenerateQuipOptions): Promise<QuipResult> {
   const prompt = buildPrompt(options);
+  const providers = rotatedProviders(options.now ?? new Date());
 
-  for (const provider of PROVIDERS) {
+  for (const provider of providers) {
     const apiKey = provider.getKey();
     if (!apiKey) continue;
 
