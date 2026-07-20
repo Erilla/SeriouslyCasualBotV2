@@ -56,9 +56,7 @@ async function capturePrompt(options: Parameters<typeof generateSignupQuip>[0]):
   globalThis.fetch = fetchMock;
 
   await generateSignupQuip({ ...options, now: GEMINI_FIRST });
-  const body = JSON.parse(
-    (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string,
-  );
+  const body = JSON.parse((fetchMock as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string);
   return body.contents[0].parts[0].text as string;
 }
 
@@ -489,7 +487,10 @@ describe('generateSignupQuip', () => {
     })) as unknown as typeof fetch;
 
     await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: GEMINI_FIRST });
-    expect(infoSpy).toHaveBeenCalledWith('QuipGen', 'Quip generated via Gemini (gemini-3.1-flash-lite)');
+    expect(infoSpy).toHaveBeenCalledWith(
+      'QuipGen',
+      'Quip generated via Gemini (gemini-3.1-flash-lite)',
+    );
   });
 
   it('logs the static fallback at info', async () => {
@@ -510,7 +511,11 @@ describe('generateSignupQuip', () => {
   });
 
   it('includes the unsigned count when provided', async () => {
-    const prompt = await capturePrompt({ raidDay: 'Sunday', twoDayReminder: false, unsignedCount: 6 });
+    const prompt = await capturePrompt({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      unsignedCount: 6,
+    });
     expect(prompt).toContain("6 raiders still haven't signed up");
   });
 
@@ -518,7 +523,13 @@ describe('generateSignupQuip', () => {
     const prompt = await capturePrompt({
       raidDay: 'Sunday',
       twoDayReminder: false,
-      progression: { mode: 'progress', raidName: 'Current Raid', bossName: 'The End Boss', killed: 2, total: 3 },
+      progression: {
+        mode: 'progress',
+        raidName: 'Current Raid',
+        bossName: 'The End Boss',
+        killed: 2,
+        total: 3,
+      },
     });
     expect(prompt).toContain('currently progressing The End Boss in Current Raid (2/3M)');
   });
@@ -527,14 +538,24 @@ describe('generateSignupQuip', () => {
     const prompt = await capturePrompt({
       raidDay: 'Sunday',
       twoDayReminder: false,
-      progression: { mode: 'reclear', raidName: 'Current Raid', bossName: 'The End Boss', killed: 3, total: 3 },
+      progression: {
+        mode: 'reclear',
+        raidName: 'Current Raid',
+        bossName: 'The End Boss',
+        killed: 3,
+        total: 3,
+      },
     });
     expect(prompt).toContain('Current Raid on farm');
     expect(prompt).toContain('The End Boss is dead');
   });
 
   it('omits progression and count lines when not provided', async () => {
-    const prompt = await capturePrompt({ raidDay: 'Sunday', twoDayReminder: false, progression: null });
+    const prompt = await capturePrompt({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      progression: null,
+    });
     expect(prompt).not.toContain('progressing');
     expect(prompt).not.toContain('on farm');
     expect(prompt).not.toContain("still haven't signed up");
@@ -583,7 +604,12 @@ describe('generateSignupQuip', () => {
       ok: true,
       json: async () => ({
         content: [
-          { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'trending meme' } },
+          {
+            type: 'server_tool_use',
+            id: 'srvtoolu_1',
+            name: 'web_search',
+            input: { query: 'trending meme' },
+          },
           { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [] },
           { type: 'text', text: 'Grounded quip!' },
         ],
@@ -591,7 +617,11 @@ describe('generateSignupQuip', () => {
       text: async () => '',
     })) as unknown as typeof fetch;
 
-    const result = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: CLAUDE_FIRST });
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      now: CLAUDE_FIRST,
+    });
     expect(result.quip).toBe('Grounded quip!');
   });
 });

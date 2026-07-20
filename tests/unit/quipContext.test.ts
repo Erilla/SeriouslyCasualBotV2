@@ -17,13 +17,19 @@ function staticDataWithCurrentRaid() {
   return {
     raids: [
       {
-        id: 1, slug: 'old-raid', name: 'Old Raid', expansion_id: 10,
+        id: 1,
+        slug: 'old-raid',
+        name: 'Old Raid',
+        expansion_id: 10,
         starts: { us: '2025-01-01', eu: '2025-01-01' },
         ends: { us: '2025-06-01', eu: '2025-06-01' },
         encounters: ENCOUNTERS,
       },
       {
-        id: 2, slug: 'current-raid', name: 'Current Raid', expansion_id: 10,
+        id: 2,
+        slug: 'current-raid',
+        name: 'Current Raid',
+        expansion_id: 10,
         starts: { us: '2026-01-01', eu: '2026-01-01' },
         ends: { us: null, eu: null },
         encounters: ENCOUNTERS,
@@ -41,7 +47,12 @@ describe('getProgressionContext', () => {
     mockedStatic.mockResolvedValueOnce(staticDataWithCurrentRaid());
     mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
     mockedRankings.mockResolvedValueOnce([
-      { rank: 123, guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' }, encountersDefeated: 2, encountersTotal: 3 },
+      {
+        rank: 123,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 2,
+        encountersTotal: 3,
+      },
     ]);
 
     const ctx = await getProgressionContext();
@@ -58,7 +69,12 @@ describe('getProgressionContext', () => {
     mockedStatic.mockResolvedValueOnce(staticDataWithCurrentRaid());
     mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
     mockedRankings.mockResolvedValueOnce([
-      { rank: 45, guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' }, encountersDefeated: 3, encountersTotal: 3 },
+      {
+        rank: 45,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 3,
+        encountersTotal: 3,
+      },
     ]);
 
     const ctx = await getProgressionContext();
@@ -88,7 +104,10 @@ describe('getProgressionContext', () => {
   it('skips Fated/Awakened raids when finding the current raid', async () => {
     const data = staticDataWithCurrentRaid();
     data.raids.push({
-      id: 3, slug: 'fated-current-raid', name: 'Fated Current Raid', expansion_id: 10,
+      id: 3,
+      slug: 'fated-current-raid',
+      name: 'Fated Current Raid',
+      expansion_id: 10,
       starts: { us: '2026-01-01', eu: '2026-01-01' },
       ends: { us: null, eu: null },
       encounters: ENCOUNTERS,
@@ -96,7 +115,12 @@ describe('getProgressionContext', () => {
     mockedStatic.mockResolvedValueOnce(data);
     mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
     mockedRankings.mockResolvedValueOnce([
-      { rank: 1, guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' }, encountersDefeated: 1, encountersTotal: 3 },
+      {
+        rank: 1,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 1,
+        encountersTotal: 3,
+      },
     ]);
 
     const ctx = await getProgressionContext();

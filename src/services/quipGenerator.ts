@@ -93,7 +93,12 @@ const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const PROVIDERS: QuipProvider[] = [
   { name: 'Gemini', model: GEMINI_MODEL, getKey: () => config.geminiApiKey, call: callGemini },
   { name: 'OpenAI', model: OPENAI_MODEL, getKey: () => config.openaiApiKey, call: callOpenAI },
-  { name: 'Claude', model: ANTHROPIC_MODEL, getKey: () => config.anthropicApiKey, call: callClaude },
+  {
+    name: 'Claude',
+    model: ANTHROPIC_MODEL,
+    getKey: () => config.anthropicApiKey,
+    call: callClaude,
+  },
 ];
 
 // Rotate the starting provider daily so the guild hears all three model
@@ -138,7 +143,10 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
         continue;
       }
 
-      logger.info('QuipGen', `Quip generated via ${provider.name} (${result.resolvedModel ?? provider.model})`);
+      logger.info(
+        'QuipGen',
+        `Quip generated via ${provider.name} (${result.resolvedModel ?? provider.model})`,
+      );
       return { quip: cleaned, generated: true };
     } catch (err) {
       logger.warn(
@@ -209,7 +217,10 @@ function buildPrompt({
     lines.push(...recentQuips.map((q, i) => `${i + 1}. ${q}`));
   }
 
-  lines.push('', 'Write ONE quip. Plain text, no quotes, no preamble, no markdown. Under 200 characters. Just the quip.');
+  lines.push(
+    '',
+    'Write ONE quip. Plain text, no quotes, no preamble, no markdown. Under 200 characters. Just the quip.',
+  );
   return lines.join('\n');
 }
 

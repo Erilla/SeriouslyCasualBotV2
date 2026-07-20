@@ -67,7 +67,10 @@ async function lookupProgression(): Promise<ProgressionContext | null> {
       return 0;
     };
 
-    const best = rankings.reduce((a, b) => (defeatedCount(b) > defeatedCount(a) ? b : a), rankings[0]);
+    const best = rankings.reduce(
+      (a, b) => (defeatedCount(b) > defeatedCount(a) ? b : a),
+      rankings[0],
+    );
     const killed = defeatedCount(best);
     const total =
       typeof best.encountersTotal === 'number' && best.encountersTotal > 0

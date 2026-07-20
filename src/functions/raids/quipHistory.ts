@@ -2,9 +2,9 @@ import type Database from 'better-sqlite3';
 
 /** Newest-first list of recent quips for the anti-repetition prompt block. */
 export function getRecentQuips(db: Database.Database, limit = 10): string[] {
-  const rows = db
-    .prepare('SELECT quip FROM quip_history ORDER BY id DESC LIMIT ?')
-    .all(limit) as { quip: string }[];
+  const rows = db.prepare('SELECT quip FROM quip_history ORDER BY id DESC LIMIT ?').all(limit) as {
+    quip: string;
+  }[];
   return rows.map((r) => r.quip);
 }
 
