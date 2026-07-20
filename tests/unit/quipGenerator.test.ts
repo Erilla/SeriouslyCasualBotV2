@@ -46,6 +46,22 @@ function setAllKeys(): void {
   process.env.ANTHROPIC_API_KEY = 'a-key';
 }
 
+async function capturePrompt(options: Parameters<typeof generateSignupQuip>[0]): Promise<string> {
+  process.env.GEMINI_API_KEY = 'test-key';
+  const fetchMock = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ candidates: [{ content: { parts: [{ text: 'Sign up!' }] } }] }),
+    text: async () => '',
+  })) as unknown as typeof fetch;
+  globalThis.fetch = fetchMock;
+
+  await generateSignupQuip({ ...options, now: GEMINI_FIRST });
+  const body = JSON.parse(
+    (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string,
+  );
+  return body.contents[0].parts[0].text as string;
+}
+
 describe('generateSignupQuip', () => {
   it('rotates the starting provider by day of year', async () => {
     setAllKeys();
@@ -484,5 +500,54 @@ describe('generateSignupQuip', () => {
 
     await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false });
     expect(infoSpy).toHaveBeenCalledWith('QuipGen', 'Quip fallback: static V1 corpus');
+  });
+
+  it('always includes a persona, meme licence, and restraint rule in the prompt', async () => {
+    const prompt = await capturePrompt({ raidDay: 'Sunday', twoDayReminder: false });
+    expect(prompt).toContain('Write in the voice of a ');
+    expect(prompt).toContain('classic WoW meme');
+    expect(prompt).toContain('at most one or two');
+  });
+
+  it('includes the unsigned count when provided', async () => {
+    const prompt = await capturePrompt({ raidDay: 'Sunday', twoDayReminder: false, unsignedCount: 6 });
+    expect(prompt).toContain("6 raiders still haven't signed up");
+  });
+
+  it('includes progression context in progress mode', async () => {
+    const prompt = await capturePrompt({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      progression: { mode: 'progress', raidName: 'Current Raid', bossName: 'The End Boss', killed: 2, total: 3 },
+    });
+    expect(prompt).toContain('currently progressing The End Boss in Current Raid (2/3M)');
+  });
+
+  it('includes reclear context when the end boss is dead', async () => {
+    const prompt = await capturePrompt({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      progression: { mode: 'reclear', raidName: 'Current Raid', bossName: 'The End Boss', killed: 3, total: 3 },
+    });
+    expect(prompt).toContain('Current Raid on farm');
+    expect(prompt).toContain('The End Boss is dead');
+  });
+
+  it('omits progression and count lines when not provided', async () => {
+    const prompt = await capturePrompt({ raidDay: 'Sunday', twoDayReminder: false, progression: null });
+    expect(prompt).not.toContain('progressing');
+    expect(prompt).not.toContain('on farm');
+    expect(prompt).not.toContain("still haven't signed up");
+  });
+
+  it('lists recent quips with an instruction not to repeat them', async () => {
+    const prompt = await capturePrompt({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      recentQuips: ['Old quip one', 'Old quip two'],
+    });
+    expect(prompt).toContain('clearly different');
+    expect(prompt).toContain('Old quip one');
+    expect(prompt).toContain('Old quip two');
   });
 });

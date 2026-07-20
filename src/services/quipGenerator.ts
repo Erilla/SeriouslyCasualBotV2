@@ -1,3 +1,4 @@
+import type { ProgressionContext } from './quipContext.js';
 import { logger } from './logger.js';
 import { config } from '../config.js';
 
@@ -13,6 +14,19 @@ const V1_SAMPLE_QUIPS: readonly string[] = [
   'Raid sign-ups: where the only thing better than your DPS is your punctuality!',
   "Bing's checklist: snacks, buffs, and raid sign-ups. Don't make him hunt you down for the last one!",
   "Warzania's decree: Thou shalt sign up for the raid or face the wrath of a thousand guildies!",
+];
+
+// One is picked at random per alert for variety. Personas are flavour only —
+// the restraint rule in the prompt stops the model stacking every element.
+const PERSONAS: readonly string[] = [
+  'drill sergeant',
+  'disappointed parent',
+  'greedy loot goblin',
+  'condescending gnome engineer',
+  'doomsaying shadow priest',
+  'overly cheerful holy priest',
+  'guild bank goblin accountant',
+  'melodramatic bard',
 ];
 
 // Rough upper bound on a quip. Gemini sometimes rambles if left unbounded;
@@ -40,6 +54,12 @@ export interface GenerateQuipOptions {
   twoDayReminder: boolean;
   /** Names of the guild's Overlords to optionally reference. Empty = no name reference. */
   overlordNames?: string[];
+  /** How many raiders haven't signed up yet. Omitted = no count line. */
+  unsignedCount?: number;
+  /** Current Mythic progression, or null/omitted to skip the line. */
+  progression?: ProgressionContext | null;
+  /** Recent quips the model should avoid resembling. */
+  recentQuips?: string[];
   /** Clock override so tests can pin the provider rotation. */
   now?: Date;
 }
@@ -137,29 +157,58 @@ function randomFallback(): string {
   return V1_SAMPLE_QUIPS[index];
 }
 
-function buildPrompt({ raidDay, twoDayReminder, overlordNames = [] }: GenerateQuipOptions): string {
+function buildPrompt({
+  raidDay,
+  twoDayReminder,
+  overlordNames = [],
+  unsignedCount,
+  progression,
+  recentQuips = [],
+}: GenerateQuipOptions): string {
   const examples = V1_SAMPLE_QUIPS.map((q, i) => `${i + 1}. ${q}`).join('\n');
   const reminderNote = twoDayReminder
     ? 'This is the 48-hour early reminder, so a nudge-not-yell tone.'
     : 'This is the day-of reminder, so urgency is fair game.';
+  const persona = PERSONAS[Math.floor(Math.random() * PERSONAS.length)];
+
+  const contextLines = [`Context: the next raid is on ${raidDay}. ${reminderNote}`];
+  if (typeof unsignedCount === 'number' && unsignedCount > 0) {
+    contextLines.push(`${unsignedCount} raiders still haven't signed up.`);
+  }
+  if (progression) {
+    contextLines.push(
+      progression.mode === 'progress'
+        ? `The guild is currently progressing ${progression.bossName} in ${progression.raidName} (${progression.killed}/${progression.total}M).`
+        : `The guild has ${progression.raidName} on farm — ${progression.bossName} is dead, now it's reclear season.`,
+    );
+  }
 
   const toneLine =
     overlordNames.length > 0
       ? `Tone: playful, sarcastic, WoW-themed. Occasionally reference the guild's Overlords (${overlordNames.join(', ')}). OK to be cheeky; keep it safe for a shared Discord channel.`
       : 'Tone: playful, sarcastic, WoW-themed. OK to be cheeky; keep it safe for a shared Discord channel.';
 
-  return [
+  const lines = [
     'You write one-line nudges that a World of Warcraft raiding guild uses to get their raiders to sign up for the next raid.',
     '',
-    `Context: the next raid is on ${raidDay}. ${reminderNote}`,
+    ...contextLines,
     '',
     toneLine,
+    `Write in the voice of a ${persona}.`,
+    "You may reference a classic WoW meme (Leeroy Jenkins, 'more dots', 'You are not prepared', 'You face Jaina') or a currently trending internet meme — if you go trending, use web search to find one.",
+    "Use at most one or two of these flavour elements (the persona is always on); don't cram everything into one line.",
     '',
     'Examples of the tone:',
     examples,
-    '',
-    'Write ONE quip. Plain text, no quotes, no preamble, no markdown. Under 200 characters. Just the quip.',
-  ].join('\n');
+  ];
+
+  if (recentQuips.length > 0) {
+    lines.push('', 'Recent quips — write something clearly different from all of these:');
+    lines.push(...recentQuips.map((q, i) => `${i + 1}. ${q}`));
+  }
+
+  lines.push('', 'Write ONE quip. Plain text, no quotes, no preamble, no markdown. Under 200 characters. Just the quip.');
+  return lines.join('\n');
 }
 
 interface GeminiResponse {
