@@ -5,6 +5,8 @@ import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
 import { generateSignupQuip } from '../../services/quipGenerator.js';
+import { getProgressionContext } from '../../services/quipContext.js';
+import { getRecentQuips, recordQuip } from './quipHistory.js';
 import { getOverlords } from './overlords.js';
 import type { RaiderRow, SettingRow } from '../../types/index.js';
 
@@ -117,14 +119,20 @@ export async function alertSignups(client: Client): Promise<void> {
     }
   }
 
-  // Generate a fresh signup quip via LLM cascade (Gemini → OpenAI → Claude),
-  // falling back to a static quip from the V1 corpus if all providers are unavailable.
+  // Generate a fresh signup quip via the rotating LLM cascade, with raid
+  // progression + recent-quip context. Progression is best-effort (null on
+  // any raider.io hiccup) and never blocks the alert.
   const overlordNames = getOverlords().map((o) => o.name);
+  const progression = await getProgressionContext();
+  const recentQuips = getRecentQuips(db);
 
-  const { quip } = await generateSignupQuip({
+  const { quip, generated } = await generateSignupQuip({
     raidDay: dayConfig.raidDay,
     twoDayReminder: dayConfig.twoDayReminder,
     overlordNames,
+    unsignedCount: unsignedCharacters.length,
+    progression,
+    recentQuips,
   });
 
   // Build the alert message
@@ -145,6 +153,10 @@ export async function alertSignups(client: Client): Promise<void> {
 
   try {
     await channel.send(content);
+    // Only remember LLM-generated quips — the static corpus is meant to repeat.
+    if (generated) {
+      recordQuip(db, quip);
+    }
     logger.info(
       'AlertSignups',
       `Sent signup alert for ${dayConfig.raidDay} (${unsignedCharacters.length} unsigned)`,
