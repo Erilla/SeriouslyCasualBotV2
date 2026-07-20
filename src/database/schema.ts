@@ -189,5 +189,12 @@ export function createTables(db: Database.Database): void {
       key TEXT PRIMARY KEY,
       message TEXT NOT NULL
     );
+
+    -- 24. quip_history
+    CREATE TABLE IF NOT EXISTS quip_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      quip TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }

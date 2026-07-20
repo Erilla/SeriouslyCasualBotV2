@@ -142,6 +142,22 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(6);
     })();
   }
+
+  if (currentVersion < 7) {
+    // Anti-repetition memory for signup quips: recent generated quips are fed
+    // back into the LLM prompt as "don't resemble these". Fresh DBs get the
+    // table from createTables; IF NOT EXISTS keeps this idempotent there.
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS quip_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          quip TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(7);
+    })();
+  }
 }
 
 export function closeDatabase(): void {
