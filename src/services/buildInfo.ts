@@ -44,8 +44,14 @@ async function fetchCommitCount(sha: string): Promise<number | null> {
   const repo = process.env.RAILWAY_GIT_REPO_NAME || 'SeriouslyCasualBotV2';
   const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?sha=${encodeURIComponent(sha)}&per_page=1`;
 
+  // Unauthenticated requests share GitHub's 60 req/h per-IP limit, which
+  // Railway's shared egress IP routinely exhausts (403). A GITHUB_TOKEN env
+  // var (fine-grained PAT, public read-only) lifts this to 5000 req/h.
+  const token = process.env.GITHUB_TOKEN;
+  const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {};
+
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) {
       logger.warn('bot', `buildInfo: GitHub commit lookup failed with status ${res.status}`);
       return null;

@@ -55,6 +55,30 @@ describe('getBuildInfo — Railway path', () => {
     expect(row.build).toBe(171);
   });
 
+  it('sends an Authorization header when GITHUB_TOKEN is set', async () => {
+    vi.stubEnv('RAILWAY_GIT_COMMIT_SHA', SHA);
+    vi.stubEnv('GITHUB_TOKEN', 'ghp_test123');
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(linkHeader(171)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getBuildInfo();
+
+    const options = fetchMock.mock.calls[0][1] as { headers?: Record<string, string> };
+    expect(options.headers?.authorization).toBe('Bearer ghp_test123');
+  });
+
+  it('sends no Authorization header when GITHUB_TOKEN is unset', async () => {
+    vi.stubEnv('RAILWAY_GIT_COMMIT_SHA', SHA);
+    vi.stubEnv('GITHUB_TOKEN', '');
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(linkHeader(171)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getBuildInfo();
+
+    const options = fetchMock.mock.calls[0][1] as { headers?: Record<string, string> };
+    expect(options.headers?.authorization).toBeUndefined();
+  });
+
   it('returns the cached build without calling fetch', async () => {
     vi.stubEnv('RAILWAY_GIT_COMMIT_SHA', SHA);
     getDatabase().prepare('INSERT INTO build_info (sha, build) VALUES (?, ?)').run(SHA, 142);
