@@ -158,6 +158,22 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(7);
     })();
   }
+
+  if (currentVersion < 8) {
+    // Cache for the startup build number: maps a deployed commit SHA to its
+    // commit count so each build makes at most one GitHub API call across
+    // restarts. Fresh DBs get the table from createTables; IF NOT EXISTS
+    // keeps this idempotent there.
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS build_info (
+          sha   TEXT PRIMARY KEY,
+          build INTEGER NOT NULL
+        );
+      `);
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(8);
+    })();
+  }
 }
 
 export function closeDatabase(): void {

@@ -196,5 +196,11 @@ export function createTables(db: Database.Database): void {
       quip TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- 25. build_info (build-number cache, keyed by deployed commit SHA)
+    CREATE TABLE IF NOT EXISTS build_info (
+      sha   TEXT PRIMARY KEY,
+      build INTEGER NOT NULL
+    );
   `);
 }

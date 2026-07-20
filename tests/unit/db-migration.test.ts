@@ -191,6 +191,41 @@ describe('runMigrations — v6 drops the orphaned officer_role_id config key', (
   });
 });
 
+describe('runMigrations — v8 adds the build_info cache table', () => {
+  it('creates build_info on a legacy DB missing it', () => {
+    const db = getDatabase();
+
+    // Represent a pre-v8 install: createTables in beforeEach created the
+    // table, so drop it and replay migrations.
+    db.exec('DROP TABLE IF EXISTS build_info;');
+    db.exec('DELETE FROM schema_version;');
+
+    runMigrations(db);
+
+    const table = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='build_info'`)
+      .get();
+    expect(table).toBeDefined();
+
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
+    expect(version.v).toBeGreaterThanOrEqual(8);
+  });
+
+  it('is a no-op on a fresh DB where the table already exists', () => {
+    const db = getDatabase();
+
+    expect(() => runMigrations(db)).not.toThrow();
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const table = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='build_info'`)
+      .get();
+    expect(table).toBeDefined();
+  });
+});
+
 describe('initDatabase — seeds default application questions', () => {
   it('seeds the 9 default application questions on a fresh database', () => {
     const db = initDatabase(':memory:');
