@@ -5,6 +5,7 @@ import { initLogger, logger } from './services/logger.js';
 import { scheduler } from './events/ready.js';
 import { loadCommands } from './loadCommands.js';
 import { registerProcessErrorHandlers } from './processErrorHandlers.js';
+import { getBuildInfo } from './services/buildInfo.js';
 import { readdirSync } from 'fs';
 import { pathToFileURL } from 'url';
 import { join, dirname } from 'path';
@@ -17,9 +18,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 initLogger(config.logLevel);
 registerProcessErrorHandlers();
-logger.info('bot', 'Starting SeriouslyCasualBot...');
 
 initDatabase();
+const { build, sha } = await getBuildInfo();
+logger.info(
+  'bot',
+  `Starting SeriouslyCasualBot ${sha ? `(build ${build ?? '?'}, ${sha.slice(0, 7)})` : '(dev)'}`,
+);
 logger.info('bot', 'Database initialized');
 
 // ─── Create Client ───────────────────────────────────────────
