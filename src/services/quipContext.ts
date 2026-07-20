@@ -14,13 +14,37 @@ export interface ProgressionContext {
   total: number;
 }
 
+// Overall ceiling on the progression lookup. The walk makes several
+// sequential raider.io calls and the shared http client retries with
+// backoff — without a deadline a hanging (not failing) raider.io could
+// stall the signup alert for minutes.
+const LOOKUP_DEADLINE_MS = 10_000;
+
 /**
  * Derive the guild's current Mythic progression from raider.io for quip
- * flavour. Best-effort only: any API failure, missing current raid, or empty
- * rankings (fresh tier) returns null — the quip must never fail or block on
- * raider.io.
+ * flavour. Best-effort only: any API failure, missing current raid, empty
+ * rankings (fresh tier), or exceeding the overall lookup deadline returns
+ * null — the quip must never fail or block on raider.io.
  */
 export async function getProgressionContext(): Promise<ProgressionContext | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      logger.debug(
+        'QuipContext',
+        `Progression lookup exceeded ${LOOKUP_DEADLINE_MS}ms, omitting context`,
+      );
+      resolve(null);
+    }, LOOKUP_DEADLINE_MS);
+  });
+  try {
+    return await Promise.race([lookupProgression(), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function lookupProgression(): Promise<ProgressionContext | null> {
   try {
     const currentRaid = await findCurrentRaid();
     if (!currentRaid) {

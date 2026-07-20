@@ -43,4 +43,32 @@ describe('quip history', () => {
     // Oldest survivor is quip 6; quips 1-5 were trimmed.
     expect(getRecentQuips(db, 50).at(-1)).toBe('quip 6');
   });
+
+  it('creates quip_history when upgrading an existing v6 database', () => {
+    const oldDb = new Database(':memory:');
+    try {
+      oldDb.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER PRIMARY KEY,
+          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+      for (let v = 1; v <= 6; v++) {
+        oldDb.prepare('INSERT INTO schema_version (version) VALUES (?)').run(v);
+      }
+
+      runMigrations(oldDb);
+
+      const table = oldDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'quip_history'")
+        .get();
+      expect(table).toBeDefined();
+      const max = oldDb.prepare('SELECT MAX(version) AS v FROM schema_version').get() as {
+        v: number;
+      };
+      expect(max.v).toBe(7);
+    } finally {
+      oldDb.close();
+    }
+  });
 });

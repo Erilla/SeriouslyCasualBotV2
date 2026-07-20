@@ -126,4 +126,17 @@ describe('getProgressionContext', () => {
     expect(ctx?.killed).toBe(2);
     expect(ctx?.bossName).toBe('The End Boss');
   });
+
+  it('gives up and returns null when the lookup exceeds the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      mockedStatic.mockImplementation(() => new Promise(() => {}));
+
+      const pending = getProgressionContext();
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(await pending).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

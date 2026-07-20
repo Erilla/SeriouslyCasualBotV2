@@ -55,8 +55,9 @@ New helper `getProgressionContext()` in `src/services/quipContext.ts`
   - `killed === total` → `{ mode: 'reclear', endBossName: encounters[total-1].name, raidName }`.
   - Any API error, no rankings (fresh tier), or no current raid → `null`, logged
     at `debug`. **The quip never fails or blocks on raider.io.**
-- Called once per alert by `alertSignups` and passed in via options — 2 extra
-  raider.io calls per alert, 4 alerts/week.
+- Called once per alert by `alertSignups` and passed in via options — a
+  handful of raider.io calls (~4-5: the expansion walk plus rankings) per
+  alert, 4 alerts/week — negligible.
 
 ## 4. Prompt enrichment
 
