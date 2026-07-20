@@ -1,0 +1,30 @@
+# git-cliff configuration for release notes on prod promotion.
+# Invoked by .github/workflows/release.yml over the promoted commit range;
+# output becomes the GitHub Release body and the #bot-logs Discord post.
+# The <!-- N --> prefixes force group ordering and are stripped by the
+# template's striptags filter.
+
+[changelog]
+trim = true
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{%- endfor %}
+{% endfor %}
+"""
+
+[git]
+conventional_commits = true
+# Keep unconventional commits (rare) instead of dropping them silently;
+# the catch-all parser routes them to Housekeeping.
+filter_unconventional = false
+commit_parsers = [
+  { message = "^Merge", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+  { message = ".*", group = "<!-- 4 -->Housekeeping" },
+]
