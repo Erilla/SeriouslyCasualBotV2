@@ -550,4 +550,48 @@ describe('generateSignupQuip', () => {
     expect(prompt).toContain('Old quip one');
     expect(prompt).toContain('Old quip two');
   });
+
+  it('grounds Gemini with the google_search tool', async () => {
+    setAllKeys();
+    const fetchMock = mockAllProvidersOk();
+    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: GEMINI_FIRST });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.tools).toEqual([{ google_search: {} }]);
+  });
+
+  it('grounds OpenAI with the search-preview model and web_search_options', async () => {
+    setAllKeys();
+    const fetchMock = mockAllProvidersOk();
+    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: OPENAI_FIRST });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.model).toBe('gpt-4o-mini-search-preview');
+    expect(body.web_search_options).toEqual({ search_context_size: 'low' });
+    expect(body.temperature).toBeUndefined();
+  });
+
+  it('grounds Claude with the web_search server tool capped at one search', async () => {
+    setAllKeys();
+    const fetchMock = mockAllProvidersOk();
+    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: CLAUDE_FIRST });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.tools).toEqual([{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }]);
+  });
+
+  it('ignores non-text blocks (search results, citations) in the Claude response', async () => {
+    setAllKeys();
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        content: [
+          { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'trending meme' } },
+          { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [] },
+          { type: 'text', text: 'Grounded quip!' },
+        ],
+      }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+
+    const result = await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: CLAUDE_FIRST });
+    expect(result.quip).toBe('Grounded quip!');
+  });
 });

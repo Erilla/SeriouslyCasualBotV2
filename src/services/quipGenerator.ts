@@ -42,10 +42,9 @@ const MAX_QUIP_LENGTH = 280;
 const GEMINI_MODEL = 'gemini-flash-lite-latest';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-// Don't block the signup alert on a slow model. The cron fires at a fixed
-// time of day; a 5s timeout keeps the alert near-real-time and still gives
-// the free tier plenty of headroom (typical latency is <2s).
-const REQUEST_TIMEOUT_MS = 5_000;
+// 8s (up from 5s): all three providers now carry a server-side web-search
+// tool for meme grounding, and a search round-trip eats most of a 5s budget.
+const REQUEST_TIMEOUT_MS = 8_000;
 
 // ─── Public ─────────────────────────────────────────────────────────────
 
@@ -83,7 +82,10 @@ interface QuipProvider {
 }
 
 // Model constants for PROVIDERS initialization
-const OPENAI_MODEL = 'gpt-4o-mini';
+// The search-preview variant is the only gpt-4o-mini that supports
+// web_search_options on chat completions. It also rejects sampling params,
+// which is why callOpenAI sends no temperature.
+const OPENAI_MODEL = 'gpt-4o-mini-search-preview';
 const ANTHROPIC_MODEL = 'claude-haiku-4-5';
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
@@ -240,7 +242,8 @@ async function callGemini(apiKey: string, prompt: string): Promise<ProviderResul
     },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.9, topP: 0.95, maxOutputTokens: 120 },
+      tools: [{ google_search: {} }],
+      generationConfig: { temperature: 0.9, topP: 0.95, maxOutputTokens: 300 },
     }),
   });
 
@@ -286,8 +289,8 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<ProviderResul
     body: JSON.stringify({
       model: OPENAI_MODEL,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 120,
-      temperature: 0.9,
+      max_tokens: 300,
+      web_search_options: { search_context_size: 'low' },
     }),
   });
 
@@ -327,8 +330,9 @@ async function callClaude(apiKey: string, prompt: string): Promise<ProviderResul
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 120,
+      max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }],
     }),
   });
 
