@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    branches: [prod]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: git-cliff walks the promoted range and the build
+          # number is the commit count of HEAD.
+          fetch-depth: 0
+
+      - name: Compute build number
+        id: build
+        run: echo "number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        env:
+          RANGE: ${{ github.event.before }}..${{ github.event.after }}
+        run: |
+          npx --yes git-cliff@2 --config cliff.toml "$RANGE" -o notes.md
+          # Empty promotion range (e.g. re-push of the same SHA) must not fail.
+          if [ -z "$(tr -d '[:space:]' < notes.md 2>/dev/null)" ]; then
+            echo "No user-facing changes" > notes.md
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD: ${{ steps.build.outputs.number }}
+        run: |
+          gh release create "build-$BUILD" \
+            --target "${{ github.event.after }}" \
+            --title "Build $BUILD" \
+            --notes-file notes.md
+
+      - name: Post to Discord
+        # The deploy already happened; announcing must never fail the workflow.
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          BUILD: ${{ steps.build.outputs.number }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/build-${{ steps.build.outputs.number }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "DISCORD_RELEASE_WEBHOOK not set; skipping Discord post"
+            exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            let notes = fs.readFileSync("notes.md", "utf8").trim();
+            const max = 4096;
+            const suffix = `\n\n[Full notes](${process.env.RELEASE_URL})`;
+            if (notes.length > max) {
+              notes = notes.slice(0, max - suffix.length) + suffix;
+            }
+            const payload = {
+              embeds: [{
+                title: `🚀 Build ${process.env.BUILD} deployed to prod`,
+                description: notes,
+                url: process.env.RELEASE_URL,
+                color: 0x57f287,
+              }],
+            };
+            fs.writeFileSync("payload.json", JSON.stringify(payload));
+          '
+          curl -sS -f -H "Content-Type: application/json" -d @payload.json "$WEBHOOK_URL"

@@ -30,6 +30,18 @@ git push origin origin/main:prod
 commits (no merge commits, no divergence); `git log prod..main` is exactly
 "on test but not yet in prod".
 
+### Release notes
+
+Every promotion triggers `.github/workflows/release.yml`, which tags the promoted
+commit `build-N` (N = commit count — the same number the bot logs at startup),
+creates a GitHub Release with git-cliff-generated notes (config: `cliff.toml`),
+and posts them to `#bot-logs` via the `DISCORD_RELEASE_WEBHOOK` repo secret.
+If the secret is missing the Discord post is skipped; a Discord failure never
+fails the workflow. Releases: <https://github.com/Erilla/SeriouslyCasualBotV2/releases>.
+
+One-time setup: create a webhook in `#bot-logs` (channel settings → Integrations →
+Webhooks) and store it with `gh secret set DISCORD_RELEASE_WEBHOOK`.
+
 **Guard rails:** CI (`ci.yml`) runs on every push; Railway's *Wait for CI*
 holds a deploy until checks pass, so a red push never reaches either
 environment (the old build keeps running). A repo ruleset on `prod`
