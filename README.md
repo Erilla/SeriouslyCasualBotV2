@@ -75,16 +75,16 @@ npm test              # unit + integration in the default project (no network)
 npm run test:e2e      # e2e — needs .env.test with real Discord ids; excluded from CI
 ```
 
-CI (GitHub Actions) runs typecheck, lint, the unit test suite, and a build on every push to `main` and `develop`.
+CI (GitHub Actions) runs typecheck, lint, the unit test suite, and a build on every push to `main` and `prod`.
 
 ## Deployment
 
-Deployed to **Railway** from a Dockerfile. Branch topology:
+Deployed to **Railway** from a Dockerfile. Branch topology (trunk-based):
 
-- `develop` → **test** environment
-- `main` → **production**
+- `main` (trunk) → **test** environment
+- `prod` (release) → **production**
 
-Promotion is done by opening a PR from `develop` to `main` and squash‑merging. See [`docs/deployment.md`](docs/deployment.md) for details.
+Promotion is a fast-forward push: `git push origin origin/main:prod`. See [`docs/deployment.md`](docs/deployment.md) for details.
 
 ## Documentation
 

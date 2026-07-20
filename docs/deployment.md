@@ -10,25 +10,46 @@ persistent volume are configured in the Railway dashboard (not in the repo).
 
 ## Branching & environments
 
-Two long-lived branches, each auto-deployed to its own Railway environment:
+Trunk-based: two long-lived branches, each auto-deployed to its own Railway
+environment:
 
 | Branch | Railway environment | Guild |
 |---|---|---|
-| `main` | `production` | live guild |
-| `develop` | `test` | sandbox guild |
+| `main` (trunk) | `test` | sandbox guild |
+| `prod` (release) | `prod` | live guild |
 
-**Flow:** feature branches → PR into `develop` → auto-deploys to **test** for soak
-testing → when validated, PR `develop` → `main` → auto-deploys to **production**.
-So `main` always reflects what's in prod and `develop` what's in test; promotion
-is a reviewable merge, not a console action. CI (`ci.yml`) runs on pushes/PRs to
-both branches. Each environment has its own variables (separate Discord tokens,
-guild IDs, etc.) and its own volume.
+**Flow:** work lands on `main` (directly or via short-lived feature branches)
+→ auto-deploys to **test** for soak testing → when validated, promote with a
+fast-forward push:
+
+```sh
+git push origin origin/main:prod
+```
+
+→ auto-deploys to **production**. `main` and `prod` always share identical
+commits (no merge commits, no divergence); `git log prod..main` is exactly
+"on test but not yet in prod".
+
+**Guard rails:** CI (`ci.yml`) runs on every push; Railway's *Wait for CI*
+holds a deploy until checks pass, so a red push never reaches either
+environment (the old build keeps running). A repo ruleset on `prod`
+additionally rejects any push whose commit doesn't already have a passing
+`ci` check, and blocks force-pushes and deletion on both branches. Each
+environment has its own variables (separate Discord tokens, guild IDs, etc.)
+and its own volume.
+
+> **Gotcha:** each Railway environment's *trigger branch* is configured in the
+> dashboard (environment → service → Settings → Source). The CLI's
+> `service source connect` changes the service-level source only and does
+> **not** reliably move an environment's trigger — verify with
+> `railway deployment list --environment <env> --json` (check `meta.branch`)
+> after any change.
 
 ## Railway setup (one-time)
 
 1. **Create the project** — at railway.com: *New Project → Deploy from GitHub
-   repo* → select this repo and the branch to deploy (`develop` for the test
-   environment, `main` for production). Railway detects the `Dockerfile` and
+   repo* → select this repo and the branch to deploy (`main` for the test
+   environment, `prod` for production). Railway detects the `Dockerfile` and
    builds it per `railway.json`.
 
 2. **Add a volume for SQLite** — service → *Settings → Volumes* → mount at
