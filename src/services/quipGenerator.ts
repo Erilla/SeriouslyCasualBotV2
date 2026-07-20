@@ -25,8 +25,8 @@ const MAX_QUIP_LENGTH = 280;
 // alias rather than a version because Google retires pinned models
 // (gemini-2.0-flash started 404ing in July 2026) and a dead model silently
 // drops us to the next provider on every call.
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent';
+const GEMINI_MODEL = 'gemini-flash-lite-latest';
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 // Don't block the signup alert on a slow model. The cron fires at a fixed
 // time of day; a 5s timeout keeps the alert near-real-time and still gives
@@ -49,16 +49,29 @@ export interface QuipResult {
   generated: boolean;
 }
 
-interface QuipProvider {
-  name: string;
-  getKey: () => string;
-  call: (apiKey: string, prompt: string) => Promise<string | null>;
+interface ProviderResult {
+  text: string | null;
+  /** Model the API says actually served the request; null if not echoed. */
+  resolvedModel: string | null;
 }
 
+interface QuipProvider {
+  name: string;
+  model: string;
+  getKey: () => string;
+  call: (apiKey: string, prompt: string) => Promise<ProviderResult>;
+}
+
+// Model constants for PROVIDERS initialization
+const OPENAI_MODEL = 'gpt-4o-mini';
+const ANTHROPIC_MODEL = 'claude-haiku-4-5';
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
+
 const PROVIDERS: QuipProvider[] = [
-  { name: 'Gemini', getKey: () => config.geminiApiKey, call: callGemini },
-  { name: 'OpenAI', getKey: () => config.openaiApiKey, call: callOpenAI },
-  { name: 'Claude', getKey: () => config.anthropicApiKey, call: callClaude },
+  { name: 'Gemini', model: GEMINI_MODEL, getKey: () => config.geminiApiKey, call: callGemini },
+  { name: 'OpenAI', model: OPENAI_MODEL, getKey: () => config.openaiApiKey, call: callOpenAI },
+  { name: 'Claude', model: ANTHROPIC_MODEL, getKey: () => config.anthropicApiKey, call: callClaude },
 ];
 
 // Rotate the starting provider daily so the guild hears all three model
@@ -91,10 +104,10 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
     if (!apiKey) continue;
 
     try {
-      const raw = await provider.call(apiKey, prompt);
-      if (!raw) continue;
+      const result = await provider.call(apiKey, prompt);
+      if (!result.text) continue;
 
-      const cleaned = normalizeQuip(raw);
+      const cleaned = normalizeQuip(result.text);
       if (cleaned.length === 0 || cleaned.length > MAX_QUIP_LENGTH) {
         logger.warn(
           'QuipGen',
@@ -103,7 +116,7 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
         continue;
       }
 
-      logger.debug('QuipGen', `Quip generated via ${provider.name}`);
+      logger.info('QuipGen', `Quip generated via ${provider.name} (${result.resolvedModel ?? provider.model})`);
       return { quip: cleaned, generated: true };
     } catch (err) {
       logger.warn(
@@ -113,6 +126,7 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
     }
   }
 
+  logger.info('QuipGen', 'Quip fallback: static V1 corpus');
   return { quip: randomFallback(), generated: false };
 }
 
@@ -153,6 +167,7 @@ interface GeminiResponse {
     content?: { parts?: Array<{ text?: string }> };
     finishReason?: string;
   }>;
+  modelVersion?: string;
   error?: { message?: string };
 }
 
@@ -166,7 +181,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   }
 }
 
-async function callGemini(apiKey: string, prompt: string): Promise<string | null> {
+async function callGemini(apiKey: string, prompt: string): Promise<ProviderResult> {
   // Send the key in the x-goog-api-key header rather than as a query param.
   const response = await fetchWithTimeout(GEMINI_ENDPOINT, {
     method: 'POST',
@@ -201,20 +216,18 @@ async function callGemini(apiKey: string, prompt: string): Promise<string | null
       'QuipGen',
       `Gemini returned no text (finishReason: ${candidate?.finishReason ?? 'unknown'})`,
     );
-    return null;
+    return { text: null, resolvedModel: json.modelVersion ?? null };
   }
-  return text;
+  return { text, resolvedModel: json.modelVersion ?? null };
 }
-
-const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_MODEL = 'gpt-4o-mini';
 
 interface OpenAIResponse {
   choices?: Array<{ message?: { content?: string } }>;
+  model?: string;
   error?: { message?: string };
 }
 
-async function callOpenAI(apiKey: string, prompt: string): Promise<string | null> {
+async function callOpenAI(apiKey: string, prompt: string): Promise<ProviderResult> {
   const response = await fetchWithTimeout(OPENAI_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -242,21 +255,20 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string | null
   const text = json.choices?.[0]?.message?.content?.trim() ?? '';
   if (!text) {
     logger.warn('QuipGen', 'OpenAI returned no text');
-    return null;
+    return { text: null, resolvedModel: json.model ?? null };
   }
-  return text;
+  return { text, resolvedModel: json.model ?? null };
 }
 
-const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_MODEL = 'claude-haiku-4-5';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 interface AnthropicResponse {
   content?: Array<{ type?: string; text?: string }>;
+  model?: string;
   error?: { message?: string };
 }
 
-async function callClaude(apiKey: string, prompt: string): Promise<string | null> {
+async function callClaude(apiKey: string, prompt: string): Promise<ProviderResult> {
   const response = await fetchWithTimeout(ANTHROPIC_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -288,9 +300,9 @@ async function callClaude(apiKey: string, prompt: string): Promise<string | null
     .trim();
   if (!text) {
     logger.warn('QuipGen', 'Anthropic returned no text');
-    return null;
+    return { text: null, resolvedModel: json.model ?? null };
   }
-  return text;
+  return { text, resolvedModel: json.model ?? null };
 }
 
 // Gemini sometimes wraps its answer in quotes, returns a numbered list

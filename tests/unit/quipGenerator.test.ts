@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { generateSignupQuip } from '../../src/services/quipGenerator.js';
+import { logger } from '../../src/services/logger.js';
 
 const originalFetch = globalThis.fetch;
 const originalApiKey = process.env.GEMINI_API_KEY;
@@ -457,5 +458,31 @@ describe('generateSignupQuip', () => {
     const result = await generateSignupQuip({ raidDay: 'Wednesday', twoDayReminder: false });
     expect(typeof result.quip).toBe('string');
     expect(result.quip.length).toBeGreaterThan(0);
+  });
+
+  it('logs the resolved model name at info on success', async () => {
+    setAllKeys();
+    const infoSpy = vi.spyOn(logger, 'info');
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: 'Sign up!' }] } }],
+        modelVersion: 'gemini-3.1-flash-lite',
+      }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+
+    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: GEMINI_FIRST });
+    expect(infoSpy).toHaveBeenCalledWith('QuipGen', 'Quip generated via Gemini (gemini-3.1-flash-lite)');
+  });
+
+  it('logs the static fallback at info', async () => {
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    const infoSpy = vi.spyOn(logger, 'info');
+
+    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false });
+    expect(infoSpy).toHaveBeenCalledWith('QuipGen', 'Quip fallback: static V1 corpus');
   });
 });
