@@ -86,6 +86,8 @@ async function findCurrentRaid(): Promise<StaticRaid | null> {
       break;
     }
 
+    if ((staticData.raids ?? []).length === 0) break;
+
     const now = Date.now();
     const candidates = (staticData.raids ?? [])
       .filter((r) => !r.name.startsWith('Fated') && !r.name.startsWith('Awakened'))

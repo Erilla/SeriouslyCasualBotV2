@@ -102,4 +102,28 @@ describe('getProgressionContext', () => {
     const ctx = await getProgressionContext();
     expect(ctx?.raidName).toBe('Current Raid');
   });
+
+  it('returns null when the API returns empty raids instead of erroring', async () => {
+    mockedStatic.mockResolvedValue({ raids: [] });
+
+    expect(await getProgressionContext()).toBeNull();
+  });
+
+  it('handles encountersDefeated returned as an array', async () => {
+    mockedStatic.mockResolvedValueOnce(staticDataWithCurrentRaid());
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 7,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: [{}, {}] as unknown as number,
+        encountersTotal: 3,
+      },
+    ]);
+
+    const ctx = await getProgressionContext();
+    expect(ctx?.mode).toBe('progress');
+    expect(ctx?.killed).toBe(2);
+    expect(ctx?.bossName).toBe('The End Boss');
+  });
 });
