@@ -42,6 +42,11 @@ export interface GenerateQuipOptions {
   overlordNames?: string[];
 }
 
+export interface QuipResult {
+  quip: string;
+  generated: boolean;
+}
+
 interface QuipProvider {
   name: string;
   getKey: () => string;
@@ -61,7 +66,7 @@ const PROVIDERS: QuipProvider[] = [
  * every provider is skipped or fails. Never throws — the caller is an alert
  * handler and should always get something postable.
  */
-export async function generateSignupQuip(options: GenerateQuipOptions): Promise<string> {
+export async function generateSignupQuip(options: GenerateQuipOptions): Promise<QuipResult> {
   const prompt = buildPrompt(options);
 
   for (const provider of PROVIDERS) {
@@ -82,7 +87,7 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
       }
 
       logger.debug('QuipGen', `Quip generated via ${provider.name}`);
-      return cleaned;
+      return { quip: cleaned, generated: true };
     } catch (err) {
       logger.warn(
         'QuipGen',
@@ -91,7 +96,7 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
     }
   }
 
-  return randomFallback();
+  return { quip: randomFallback(), generated: false };
 }
 
 // ─── Internals ──────────────────────────────────────────────────────────

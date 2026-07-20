@@ -121,14 +121,14 @@ export async function alertSignups(client: Client): Promise<void> {
   // falling back to a static quip from the V1 corpus if all providers are unavailable.
   const overlordNames = getOverlords().map((o) => o.name);
 
-  const randomMessage = await generateSignupQuip({
+  const { quip } = await generateSignupQuip({
     raidDay: dayConfig.raidDay,
     twoDayReminder: dayConfig.twoDayReminder,
     overlordNames,
   });
 
   // Build the alert message
-  let content = `${randomMessage}\n\nThe following raiders have not signed up for **${dayConfig.raidDay}**:\n${mentions.join(', ')}`;
+  let content = `${quip}\n\nThe following raiders have not signed up for **${dayConfig.raidDay}**:\n${mentions.join(', ')}`;
 
   // For 48-hour reminders, add relative timestamp
   if (dayConfig.twoDayReminder) {
