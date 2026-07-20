@@ -21,8 +21,12 @@ const V1_SAMPLE_QUIPS: readonly string[] = [
 // fallback rather than post a paragraph.
 const MAX_QUIP_LENGTH = 280;
 
+// The `-latest` alias tracks the current cheapest flash model. We pin an
+// alias rather than a version because Google retires pinned models
+// (gemini-2.0-flash started 404ing in July 2026) and a dead model silently
+// drops us to the next provider on every call.
 const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent';
 
 // Don't block the signup alert on a slow model. The cron fires at a fixed
 // time of day; a 5s timeout keeps the alert near-real-time and still gives

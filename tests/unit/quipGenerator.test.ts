@@ -45,6 +45,24 @@ describe('generateSignupQuip', () => {
     expect(quip).toBe('Stop standing in fire — sign up!');
   });
 
+  it('calls Gemini via the flash-lite-latest alias (pinned models get retired)', async () => {
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: 'Sign up!' }] } }],
+      }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
+
+    await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false });
+
+    const url = (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain('/models/gemini-flash-lite-latest:generateContent');
+  });
+
   it('strips surrounding quotes from the Gemini response', async () => {
     process.env.GEMINI_API_KEY = 'test-key';
 
