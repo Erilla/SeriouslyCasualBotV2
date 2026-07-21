@@ -109,15 +109,20 @@ const TRIGGERS: Record<string, TriggerDef> = {
     description:
       'Rebuild in-memory timers for pending trial alerts. Past-due alerts fire asynchronously — the reported duration covers scheduling only.',
     handler: async (client) => {
-      rescheduleAllAlerts(client);
-      return 'timers rebuilt; any past-due alerts are firing in the background';
+      const stats = rescheduleAllAlerts(client);
+      return (
+        `rescheduled: ${stats.pastDue} past-due, ${stats.scheduled} scheduled, ` +
+        `${stats.promotePastDue} promote past-due, ${stats.promoteScheduled} promote scheduled ` +
+        `(past-due alerts firing in the background)`
+      );
     },
   },
   resumeSessions: {
     label: 'Startup: resumeSessions',
     description: 'Re-enter DM questionnaire state for in-progress applications.',
     handler: async (client) => {
-      await resumeSessions(client);
+      const resumed = await resumeSessions(client);
+      return `${resumed} session(s) resumed`;
     },
   },
   deployCommands: {
