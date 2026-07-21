@@ -1,6 +1,7 @@
 import { ChannelType, type Client } from 'discord.js';
 import { config } from '../config.js';
 import { logger } from '../services/logger.js';
+import { getBuildInfo } from '../services/buildInfo.js';
 import { getOrCreateChannel } from '../functions/channels.js';
 import { setAuditChannel } from '../services/auditLog.js';
 import { Scheduler } from '../scheduler/scheduler.js';
@@ -73,7 +74,7 @@ export default {
         setAuditChannel(botAuditChannel);
       });
 
-      logger.info('bot', 'Channel bootstrap complete');
+      logger.debug('bot', 'Channel bootstrap complete');
     }
 
     // Register scheduled tasks
@@ -152,14 +153,27 @@ export default {
       handler: () => dailyBackup(),
     });
 
-    scheduler.start();
+    const schedulerStats = scheduler.start();
 
     // Reschedule trial alerts from DB (must happen after scheduler.start)
-    rescheduleAllAlerts(client);
+    const trialStats = rescheduleAllAlerts(client);
 
     // Resume any in-progress DM application sessions from before restart
-    await resumeSessions(client);
+    const sessionsResumed = await resumeSessions(client);
 
-    logger.info('bot', 'Startup complete');
+    // One summary line instead of five — logged after setDiscordChannel, so
+    // it reaches #bot-logs and carries the build number (cached lookup).
+    const { build, sha } = await getBuildInfo();
+    const buildLabel = sha ? `build ${build ?? '?'} (${sha.slice(0, 7)})` : '(dev)';
+    const trialAlerts =
+      trialStats.pastDue +
+      trialStats.scheduled +
+      trialStats.promotePastDue +
+      trialStats.promoteScheduled;
+    logger.info(
+      'bot',
+      `Startup complete — ${buildLabel} | scheduler: ${schedulerStats.intervals} intervals, ${schedulerStats.crons} cron | ` +
+        `trials: ${trialAlerts} alerts rescheduled | applications: ${sessionsResumed} sessions resumed`,
+    );
   },
 };
