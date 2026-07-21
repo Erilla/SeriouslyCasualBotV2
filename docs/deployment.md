@@ -36,8 +36,12 @@ Every promotion triggers `.github/workflows/release.yml`, which tags the promote
 commit `build-N` (N = commit count — the same number the bot logs at startup),
 creates a GitHub Release with git-cliff-generated notes (config: `cliff.toml`),
 and posts them to `#bot-logs` via the `DISCORD_RELEASE_WEBHOOK` repo secret.
-If the secret is missing the Discord post is skipped; a Discord failure never
-fails the workflow. Releases: <https://github.com/Erilla/SeriouslyCasualBotV2/releases>.
+If the secret is missing the Discord post is skipped. Every step soft-fails so
+the workflow can never make Railway's Wait-for-CI skip a prod deploy; failures
+surface as run annotations and a Discord warning. The Discord post fires when
+the workflow finishes, which may be while Railway is still building — a
+Railway build failure after a green workflow means the announcement preceded
+the deploy. Releases: <https://github.com/Erilla/SeriouslyCasualBotV2/releases>.
 
 One-time setup: create a webhook in `#bot-logs` (channel settings → Integrations →
 Webhooks) and store it with `gh secret set DISCORD_RELEASE_WEBHOOK`.

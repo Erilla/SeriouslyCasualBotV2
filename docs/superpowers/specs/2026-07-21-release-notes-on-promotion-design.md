@@ -80,8 +80,11 @@ Discord post with a log line.
 - Empty range (e.g. re-push of the same SHA): git-cliff produces empty notes; the
   workflow substitutes "No user-facing changes" rather than failing.
 - Discord webhook errors never fail the workflow.
-- Release-creation failure (e.g. tag already exists from a re-run) fails the workflow
-  visibly — that is a real conflict a human should see.
+- All steps soft-fail (continue-on-error): Railway's Wait-for-CI watches every
+  workflow on the commit, so a hard failure would silently skip the prod deploy.
+  Failures surface as run annotations plus a Discord warning post naming the
+  failed run. (Revised after review — the original design had release-creation
+  fail visibly, which would have vetoed deploys.)
 
 ## Testing
 

@@ -8,6 +8,8 @@ permissions:
   contents: write
 
 jobs:
+  # Every step below soft-fails: Railway's Wait-for-CI watches ALL workflows
+  # on the commit, so a hard failure here would silently skip the prod deploy.
   release:
     runs-on: ubuntu-latest
     steps:
@@ -16,33 +18,47 @@ jobs:
           # Full history: git-cliff walks the promoted range and the build
           # number is the commit count of HEAD.
           fetch-depth: 0
+          # Nothing after checkout needs git credentials; gh uses GH_TOKEN.
+          persist-credentials: false
 
       - name: Compute build number
         id: build
         run: echo "number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
+        id: notes
+        continue-on-error: true
         env:
           RANGE: ${{ github.event.before }}..${{ github.event.after }}
         run: |
-          npx --yes git-cliff@2 --config cliff.toml "$RANGE" -o notes.md
+          # Recreated-branch guard: github.event.before can be all zeros,
+          # which git-cliff can't resolve as a range endpoint.
+          if [[ "$RANGE" =~ ^0+\.\. ]]; then
+            RANGE="${RANGE#*..}"
+          fi
+          npx --yes git-cliff@2.13.1 --config cliff.toml "$RANGE" -o notes.md
           # Empty promotion range (e.g. re-push of the same SHA) must not fail.
           if [ -z "$(tr -d '[:space:]' < notes.md 2>/dev/null)" ]; then
             echo "No user-facing changes" > notes.md
           fi
 
       - name: Create GitHub release
+        id: release
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD: ${{ steps.build.outputs.number }}
         run: |
           gh release create "build-$BUILD" \
-            --target "${{ github.event.after }}" \
+            --target "$GITHUB_SHA" \
             --title "Build $BUILD" \
             --notes-file notes.md
 
       - name: Post to Discord
-        # The deploy already happened; announcing must never fail the workflow.
+        # Every step in this workflow soft-fails: Railway's Wait-for-CI
+        # watches ALL workflows on the commit, so a hard failure here would
+        # silently skip the prod deploy.
+        id: discord
         continue-on-error: true
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
@@ -72,3 +88,21 @@ jobs:
             fs.writeFileSync("payload.json", JSON.stringify(payload));
           '
           curl -sS -f -H "Content-Type: application/json" -d @payload.json "$WEBHOOK_URL"
+
+      - name: Warn on partial failure
+        if: ${{ steps.notes.outcome == 'failure' || steps.release.outcome == 'failure' || steps.discord.outcome == 'failure' }}
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD: ${{ steps.build.outputs.number }}
+        run: |
+          echo "::warning::release workflow had step failures — notes: ${{ steps.notes.outcome }}, release: ${{ steps.release.outcome }}, discord: ${{ steps.discord.outcome }}"
+          if [ -n "$WEBHOOK_URL" ]; then
+            node -e '
+              const payload = { content: `⚠️ Release workflow for build ${process.env.BUILD} had errors — check the run: ${process.env.RUN_URL}` };
+              require("fs").writeFileSync("warn.json", JSON.stringify(payload));
+            '
+            curl -sS -f -H "Content-Type: application/json" -d @warn.json "$WEBHOOK_URL"
+          fi
+          exit 0
