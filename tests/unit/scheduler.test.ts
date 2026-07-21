@@ -141,4 +141,20 @@ describe('Scheduler', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(handler).toHaveBeenCalledTimes(1); // No more calls
   });
+
+  it('start() returns the registered interval and cron counts', () => {
+    scheduler.registerInterval({
+      name: 'a',
+      intervalMs: 600_000,
+      handler: vi.fn().mockResolvedValue(undefined),
+    });
+    scheduler.registerInterval({
+      name: 'b',
+      intervalMs: 600_000,
+      handler: vi.fn().mockResolvedValue(undefined),
+    });
+    scheduler.registerCron({ name: 'c', expression: '0 4 * * *', handler: vi.fn() });
+
+    expect(scheduler.start()).toEqual({ intervals: 2, crons: 1 });
+  });
 });

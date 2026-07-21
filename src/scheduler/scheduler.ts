@@ -87,12 +87,14 @@ export class Scheduler {
     this.cronJobs.push(job);
   }
 
-  start(): void {
+  start(): { intervals: number; crons: number } {
     this.stopped = false;
-    logger.info(
+    const stats = { intervals: this.intervalTimers.size, crons: this.cronJobs.length };
+    logger.debug(
       'scheduler',
-      `Started with ${this.intervalTimers.size} intervals and ${this.cronJobs.length} cron jobs`,
+      `Started with ${stats.intervals} intervals and ${stats.crons} cron jobs`,
     );
+    return stats;
   }
 
   shutdown(): void {

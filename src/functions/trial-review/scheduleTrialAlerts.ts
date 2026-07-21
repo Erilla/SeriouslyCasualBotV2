@@ -245,7 +245,12 @@ export function scheduleTrialAlerts(client: Client, trialId: number): void {
 /**
  * Reschedule all pending alerts. Called on bot startup.
  */
-export function rescheduleAllAlerts(client: Client): void {
+export function rescheduleAllAlerts(client: Client): {
+  pastDue: number;
+  scheduled: number;
+  promotePastDue: number;
+  promoteScheduled: number;
+} {
   const db = getDatabase();
 
   // Reschedule trial alerts
@@ -295,11 +300,13 @@ export function rescheduleAllAlerts(client: Client): void {
     }
   }
 
-  logger.info(
+  logger.debug(
     'Trials',
     `Rescheduled alerts: ${pastDue} past-due, ${scheduled} scheduled, ` +
       `${promotePastDue} promote past-due, ${promoteScheduled} promote scheduled`,
   );
+
+  return { pastDue, scheduled, promotePastDue, promoteScheduled };
 }
 
 // ─── Schedule Promote Alert ──────────────────────────────────

@@ -9,7 +9,7 @@ import type { ApplicationRow, ApplicationQuestionRow } from '../../types/index.j
  * Queries the DB for all applications with status='in_progress', determines
  * which question each applicant was on, restores the session, and DMs the user.
  */
-export async function resumeSessions(client: Client): Promise<void> {
+export async function resumeSessions(client: Client): Promise<number> {
   const db = getDatabase();
 
   const inProgress = db
@@ -17,8 +17,8 @@ export async function resumeSessions(client: Client): Promise<void> {
     .all() as ApplicationRow[];
 
   if (inProgress.length === 0) {
-    logger.info('Applications', 'resumeSessions: no in-progress sessions to restore');
-    return;
+    logger.debug('Applications', 'resumeSessions: no in-progress sessions to restore');
+    return 0;
   }
 
   const questions = db
@@ -86,7 +86,7 @@ export async function resumeSessions(client: Client): Promise<void> {
       await user.send(
         `Sorry, I had to restart! Let's continue where we left off.\n\nQuestion ${questionIndex + 1}/${questions.length}: ${nextQuestion.question}`,
       );
-      logger.info(
+      logger.debug(
         'Applications',
         `resumeSessions: resumed application #${app.id} for ${user.tag} at question ${questionIndex + 1}/${questions.length}`,
       );
@@ -100,8 +100,10 @@ export async function resumeSessions(client: Client): Promise<void> {
     }
   }
 
-  logger.info(
+  logger.debug(
     'Applications',
     `resumeSessions: complete — ${resumed} resumed, ${skipped} skipped out of ${inProgress.length} in-progress`,
   );
+
+  return resumed;
 }
