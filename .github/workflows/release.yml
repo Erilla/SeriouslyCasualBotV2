@@ -12,6 +12,9 @@ jobs:
   # on the commit, so a hard failure here would silently skip the prod deploy.
   release:
     runs-on: ubuntu-latest
+    # Job-level backstop for the steps without their own continue-on-error
+    # (checkout, build number): even a flake there must not gate the deploy.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
