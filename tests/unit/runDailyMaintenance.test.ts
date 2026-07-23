@@ -89,4 +89,3 @@ describe('runDailyMaintenance', () => {
     expect(mockedRecordTaskRun).toHaveBeenCalledWith('updateTrialLogs', true);
   });
 });
-

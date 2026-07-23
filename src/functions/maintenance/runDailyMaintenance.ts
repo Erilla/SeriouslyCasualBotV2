@@ -25,4 +25,3 @@ export async function runDailyMaintenance(client: Client): Promise<void> {
   await runTask('refreshLinkingMessages', () => refreshLinkingMessages(client));
   await runTask('updateTrialLogs', () => updateTrialLogs(client));
 }
-

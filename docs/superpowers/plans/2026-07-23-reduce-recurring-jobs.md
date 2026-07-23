@@ -136,4 +136,3 @@ Expected: every command exits 0. For the full default suite in this worktree, pr
 git add src/events/ready.ts src/commands/test.ts
 git commit -m "refactor: run scheduled maintenance daily"
 ```
-
