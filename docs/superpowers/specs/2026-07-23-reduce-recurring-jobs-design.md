@@ -15,7 +15,7 @@ The existing signup-reminder cron, weekly reports cron, and daily backup cron re
 
 ## Data flow
 
-The 06:00 maintenance task keeps the existing error boundary and status tracking for each operation. A failed roster sync is recorded and logged without preventing the link-message repair or trial-log refresh from being attempted. Link-message repair is also triggered immediately after an officer links or ignores a raider, avoiding a wait for the daily repair pass.
+The 06:00 maintenance task keeps the existing error boundary and status tracking for each operation. A failed roster sync is recorded and logged without preventing the link-message repair or trial-log refresh from being attempted. Existing link and ignore interactions already delete or clear the affected message immediately; the daily link-message job is therefore only a repair sweep.
 
 The 06:30 achievements task keeps its own status tracking. It runs after the maintenance batch so it does not compete with roster and log API traffic.
 

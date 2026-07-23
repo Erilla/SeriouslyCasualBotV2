@@ -47,30 +47,30 @@ interface TriggerDef {
 // The `value` is the choice key Discord sends back to us.
 // Keep under 25 (Discord's hard limit on choice count per option).
 const TRIGGERS: Record<string, TriggerDef> = {
-  // ─── Scheduled intervals ───────────────────────────────────
+  // ─── Daily maintenance ─────────────────────────────────────
   syncRaiders: {
-    label: 'Interval: syncRaiders (10 min)',
+    label: 'Daily maintenance: syncRaiders (06:00)',
     description: 'Full roster sync from wowaudit into the raiders table.',
     handler: async (client) => {
       await syncRaiders(client);
     },
   },
   refreshLinkingMessages: {
-    label: 'Interval: refreshLinkingMessages (10 min)',
+    label: 'Daily maintenance: refreshLinkingMessages (06:00)',
     description: 'Re-post stale linking messages in #raider-setup.',
     handler: async (client) => {
       await refreshLinkingMessages(client);
     },
   },
   updateAchievements: {
-    label: 'Interval: updateAchievements (30 min)',
+    label: 'Cron: updateAchievements (daily 06:30)',
     description: 'Recompute and re-post the achievements embed.',
     handler: async (client) => {
       await updateAchievements(client);
     },
   },
   updateTrialLogs: {
-    label: 'Interval: updateTrialLogs (1 hour)',
+    label: 'Daily maintenance: updateTrialLogs (06:00)',
     description: 'Regenerate logs for each active trial thread.',
     handler: async (client) => {
       await updateTrialLogs(client);

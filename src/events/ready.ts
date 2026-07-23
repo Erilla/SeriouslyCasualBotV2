@@ -6,16 +6,13 @@ import { getOrCreateChannel } from '../functions/channels.js';
 import { setAuditChannel } from '../services/auditLog.js';
 import { Scheduler } from '../scheduler/scheduler.js';
 import { deployCommands } from '../deploy-commands.js';
-import { syncRaiders } from '../functions/raids/syncRaiders.js';
-import { alertForNewUnlinkedRaiders } from '../functions/raids/alertForNewUnlinkedRaiders.js';
 import { alertSignups } from '../functions/raids/alertSignups.js';
 import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythicPlusDone.js';
-import { refreshLinkingMessages } from '../functions/raids/refreshLinkingMessages.js';
 import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
 import { rescheduleAllAlerts } from '../functions/trial-review/scheduleTrialAlerts.js';
-import { updateTrialLogs } from '../functions/trial-review/updateTrialLogs.js';
 import { resumeSessions } from '../functions/applications/resumeSessions.js';
 import { dailyBackup } from '../functions/backups/dailyBackup.js';
+import { runDailyMaintenance } from '../functions/maintenance/runDailyMaintenance.js';
 import { recordTaskRun } from '../services/statusTracker.js';
 
 export const scheduler = new Scheduler();
@@ -78,33 +75,10 @@ export default {
     }
 
     // Register scheduled tasks
-    scheduler.registerInterval({
-      name: 'syncRaiders',
-      intervalMs: 600_000,
-      handler: async () => {
-        try {
-          const newUnlinked = await syncRaiders(client);
-          await alertForNewUnlinkedRaiders(client, newUnlinked);
-          recordTaskRun('syncRaiders', true);
-        } catch (error) {
-          recordTaskRun('syncRaiders', false, String(error));
-          throw error;
-        }
-      },
-    });
-
-    scheduler.registerInterval({
-      name: 'refreshLinkingMessages',
-      intervalMs: 600_000,
-      handler: async () => {
-        try {
-          await refreshLinkingMessages(client);
-          recordTaskRun('refreshLinkingMessages', true);
-        } catch (error) {
-          recordTaskRun('refreshLinkingMessages', false, String(error));
-          throw error;
-        }
-      },
+    scheduler.registerCron({
+      name: 'dailyMaintenance',
+      expression: '0 6 * * *',
+      handler: () => runDailyMaintenance(client),
     });
 
     scheduler.registerCron({
@@ -119,29 +93,15 @@ export default {
       handler: () => alertHighestMythicPlusDone(client),
     });
 
-    scheduler.registerInterval({
+    scheduler.registerCron({
       name: 'updateAchievements',
-      intervalMs: 1_800_000,
+      expression: '30 6 * * *',
       handler: async () => {
         try {
           await updateAchievements(client);
           recordTaskRun('updateAchievements', true);
         } catch (error) {
           recordTaskRun('updateAchievements', false, String(error));
-          throw error;
-        }
-      },
-    });
-
-    scheduler.registerInterval({
-      name: 'updateTrialLogs',
-      intervalMs: 3_600_000,
-      handler: async () => {
-        try {
-          await updateTrialLogs(client);
-          recordTaskRun('updateTrialLogs', true);
-        } catch (error) {
-          recordTaskRun('updateTrialLogs', false, String(error));
           throw error;
         }
       },
