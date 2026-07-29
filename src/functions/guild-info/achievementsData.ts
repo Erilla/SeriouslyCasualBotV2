@@ -1,4 +1,14 @@
 import type { GuildIdentity, GuildRaidSummary, RaidStaticData } from '../../services/raiderio.js';
+import { getDatabase } from '../../database/db.js';
+import { config } from '../../config.js';
+import {
+  getGuildRaidEncounters,
+  getGuildRaidSummary,
+  getLiveRaidProgress,
+  getRaidStaticData,
+} from '../../services/raiderio.js';
+import { FOREVER, getCachedOrFetch, getIconOrFetch } from '../../services/apiCache.js';
+import type { AchievementsManualRow } from '../../types/index.js';
 
 // ─── Expansion names (moved from updateAchievements.ts) ─────────
 
@@ -125,4 +135,194 @@ export function iconNameFromUrl(iconUrl: string): string | null {
   if (!base) return null;
   const name = base.replace(/\.[a-z]+$/i, '');
   return name.length > 0 ? name : null;
+}
+
+// ─── Model ─────────────────────────────────────────────────────
+
+export interface AchievementBossRow {
+  name: string;
+  icon: string | null;
+  pulls: number;
+  bestPercent: number;
+  defeated: boolean;
+}
+
+export interface AchievementRaidRow {
+  raid: string;
+  icon: string | null;
+  progress: string;
+  isCE: boolean;
+  result: string;
+  bosses?: AchievementBossRow[];
+}
+
+export interface AchievementsSection {
+  expansionLabel: string;
+  expansionIcon: string | null;
+  rows: AchievementRaidRow[];
+}
+
+export interface AchievementsModel {
+  sections: AchievementsSection[];
+  icons: Map<string, Buffer>;
+}
+
+const FIRST_API_EXPANSION = 6;
+
+type StaticRaid = RaidStaticData['raids'][number];
+
+/**
+ * Assemble static raid data, live guild standings, manual achievements, and
+ * their icon buffers. Fetch failures propagate so callers never render a
+ * partial model.
+ */
+export async function buildAchievementsModel(): Promise<AchievementsModel> {
+  const staticByExpansion = new Map<number, RaidStaticData>();
+  for (let expansion = FIRST_API_EXPANSION; ; expansion++) {
+    const data = await getCachedOrFetch(`static-data:${expansion}`, staticDataFreshness, () =>
+      getRaidStaticData(expansion),
+    );
+    if (data.raids.length === 0) break;
+    staticByExpansion.set(expansion, data);
+  }
+
+  const expansionIds = [...staticByExpansion.keys()];
+  const currentExpansion = Math.max(...expansionIds);
+  const summaries = [] as Array<{ identity: GuildIdentity; summary: GuildRaidSummary }>;
+  for (const identity of config.raiderIoGuilds) {
+    summaries.push({ identity, summary: await getGuildRaidSummary(identity, expansionIds) });
+  }
+  const standings = mergeGuildSummaries(summaries);
+
+  const iconNames = new Set<string>();
+  const sections: AchievementsSection[] = [];
+
+  for (const expansion of [...expansionIds].sort((a, b) => b - a)) {
+    const raids = staticByExpansion
+      .get(expansion)!
+      .raids.filter((raid) => !raid.slug.startsWith('fated-') && !raid.slug.startsWith('awakened-'))
+      .sort(byEndDateDescending);
+    const rows: AchievementRaidRow[] = [];
+
+    for (const raid of raids) {
+      const standing = standings.get(raid.slug);
+      if (!standing || standing.mythicKilled === 0) continue;
+
+      const row: AchievementRaidRow = {
+        raid: raid.name,
+        icon: raid.icon ?? null,
+        progress: `${standing.mythicKilled}/${standing.totalBosses}M`,
+        isCE: await resolveCE(raid, standing),
+        result: standing.worldRank > 0 ? `WR ${standing.worldRank}` : '',
+      };
+
+      if (expansion === currentExpansion && standing.mythicKilled < standing.totalBosses) {
+        row.bosses = await resolveLiveBreakdown(raid.slug, standing.identity);
+      }
+
+      if (row.icon) iconNames.add(row.icon);
+      for (const boss of row.bosses ?? []) if (boss.icon) iconNames.add(boss.icon);
+      rows.push(row);
+    }
+
+    if (rows.length === 0) continue;
+    const expansionIcon = expansionIconName(expansion, rows[0]?.icon ?? null);
+    if (expansionIcon) iconNames.add(expansionIcon);
+    sections.push({ expansionLabel: getExpansionName(expansion), expansionIcon, rows });
+  }
+
+  for (const section of buildManualSections()) {
+    if (section.expansionIcon) iconNames.add(section.expansionIcon);
+    for (const row of section.rows) if (row.icon) iconNames.add(row.icon);
+    sections.push(section);
+  }
+
+  const icons = new Map<string, Buffer>();
+  for (const name of iconNames) {
+    icons.set(name, await getIconOrFetch(name, zamimgUrl(name)));
+  }
+
+  return { sections, icons };
+}
+
+function byEndDateDescending(a: StaticRaid, b: StaticRaid): number {
+  const endA = a.ends.eu ?? '';
+  const endB = b.ends.eu ?? '';
+  if (!endA && !endB) return 0;
+  if (!endA) return -1;
+  if (!endB) return 1;
+  return endB.localeCompare(endA);
+}
+
+async function resolveCE(raid: StaticRaid, standing: MergedStanding): Promise<boolean> {
+  if (standing.mythicKilled < standing.totalBosses) return false;
+
+  const tierEndsEu = raid.ends.eu;
+  const tierEnded = tierEndsEu !== null && new Date(tierEndsEu).getTime() < Date.now();
+  if (!tierEnded) return true;
+
+  const encounters = await getCachedOrFetch(
+    `encounters:${standing.identity.realm}:${raid.slug}`,
+    FOREVER,
+    () => getGuildRaidEncounters(standing.identity, raid.slug),
+  );
+  const lastBossSlug = raid.encounters[raid.encounters.length - 1]?.slug;
+  const lastKill = encounters.find((encounter) => encounter.slug === lastBossSlug);
+  return determineCE({
+    mythicKilled: standing.mythicKilled,
+    totalBosses: standing.totalBosses,
+    tierEndsEu,
+    lastBossDefeatedAt: lastKill?.defeatedAt ?? null,
+  });
+}
+
+async function resolveLiveBreakdown(
+  raidSlug: string,
+  identity: GuildIdentity,
+): Promise<AchievementBossRow[]> {
+  const bosses = await getLiveRaidProgress(identity, raidSlug);
+  return [...bosses]
+    .sort((a, b) => a.boss.ordinal - b.boss.ordinal)
+    .map((boss) => ({
+      name: boss.boss.name,
+      icon: boss.boss.iconUrl ? iconNameFromUrl(boss.boss.iconUrl) : null,
+      pulls: boss.pullCount,
+      bestPercent: boss.bestPercent,
+      defeated: Boolean(boss.isDefeated),
+    }));
+}
+
+function buildManualSections(): AchievementsSection[] {
+  const rows = getDatabase()
+    .prepare('SELECT * FROM achievements_manual ORDER BY expansion, sort_order')
+    .all() as AchievementsManualRow[];
+  const grouped = new Map<number, AchievementsManualRow[]>();
+
+  for (const row of rows) {
+    const expansionRows = grouped.get(row.expansion) ?? [];
+    expansionRows.push(row);
+    grouped.set(row.expansion, expansionRows);
+  }
+
+  const sections: AchievementsSection[] = [];
+  for (const [expansion, expansionRows] of grouped) {
+    sections.push({
+      expansionLabel: getExpansionName(expansion),
+      expansionIcon: expansionIconName(expansion, null),
+      rows: expansionRows
+        .map((row) => ({
+          raid: row.raid,
+          icon: row.icon,
+          progress: row.progress,
+          isCE: row.result.includes('CE'),
+          result: row.result
+            .replace(/\*\*/g, '')
+            .replace(/^CE\s*/, '')
+            .trim(),
+        }))
+        .reverse(),
+    });
+  }
+
+  return sections.reverse();
 }

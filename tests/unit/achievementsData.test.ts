@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { closeDatabase, initDatabase } from '../../src/database/db.js';
 import {
+  buildAchievementsModel,
   mergeGuildSummaries,
   determineCE,
   staticDataFreshness,
@@ -8,6 +10,36 @@ import {
   iconNameFromUrl,
 } from '../../src/functions/guild-info/achievementsData.js';
 import type { RaidStaticData } from '../../src/services/raiderio.js';
+
+const originalFetch = globalThis.fetch;
+
+vi.mock('../../src/services/raiderio.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/raiderio.js')>();
+  return {
+    ...actual,
+    getRaidStaticData: vi.fn(),
+    getGuildRaidSummary: vi.fn(),
+    getGuildRaidEncounters: vi.fn(),
+    getLiveRaidProgress: vi.fn(),
+  };
+});
+
+vi.mock('../../src/config.js', () => ({
+  config: {
+    raiderIoGuilds: [
+      { region: 'eu', realm: 'silvermoon', name: 'seriouslycasual' },
+      { region: 'eu', realm: 'darksorrow', name: 'seriously casual' },
+    ],
+    raiderIoGuildIds: 'test',
+  },
+}));
+
+import {
+  getGuildRaidEncounters,
+  getGuildRaidSummary,
+  getLiveRaidProgress,
+  getRaidStaticData,
+} from '../../src/services/raiderio.js';
 
 const silvermoon = { region: 'eu', realm: 'silvermoon', name: 'seriouslycasual' };
 const darksorrow = { region: 'eu', realm: 'darksorrow', name: 'seriously casual' };
@@ -183,5 +215,224 @@ describe('icon helpers', () => {
       'inv_120_raid_voidspire_kaiju',
     );
     expect(iconNameFromUrl('')).toBeNull();
+  });
+});
+
+describe('buildAchievementsModel', () => {
+  const PAST = '2020-06-01T00:00:00Z';
+  const FUTURE = new Date(Date.now() + 30 * 86_400_000).toISOString();
+
+  const legionStatic = {
+    raids: [
+      {
+        id: 1,
+        slug: 'the-emerald-nightmare',
+        name: 'The Emerald Nightmare',
+        expansion_id: 6,
+        icon: 'achievement_zone_emeraldnightmare',
+        starts: { us: PAST, eu: PAST },
+        ends: { us: PAST, eu: PAST },
+        encounters: [
+          { id: 1, slug: 'nythendra', name: 'Nythendra' },
+          { id: 2, slug: 'xavius', name: 'Xavius' },
+        ],
+      },
+      {
+        id: 2,
+        slug: 'fated-the-emerald-nightmare',
+        name: 'Fated The Emerald Nightmare',
+        expansion_id: 6,
+        icon: 'achievement_zone_emeraldnightmare',
+        starts: { us: PAST, eu: PAST },
+        ends: { us: PAST, eu: PAST },
+        encounters: [{ id: 1, slug: 'nythendra', name: 'Nythendra' }],
+      },
+    ],
+  };
+  const midnightStatic = {
+    raids: [
+      {
+        id: 3,
+        slug: 'tier-mn-1',
+        name: 'MN Tier 1 (VS / DR / MQD)',
+        expansion_id: 7,
+        icon: 'inv_achievement_raid_darkwell',
+        starts: { us: PAST, eu: PAST },
+        ends: { us: FUTURE, eu: FUTURE },
+        encounters: [
+          { id: 10, slug: 'imperator-averzian', name: 'Imperator Averzian' },
+          { id: 11, slug: 'midnight-falls', name: 'Midnight Falls' },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    initDatabase(':memory:');
+    vi.mocked(getRaidStaticData).mockReset();
+    vi.mocked(getGuildRaidSummary).mockReset();
+    vi.mocked(getGuildRaidEncounters).mockReset();
+    vi.mocked(getLiveRaidProgress).mockReset();
+
+    vi.mocked(getRaidStaticData).mockImplementation(async (exp: number) => {
+      if (exp === 6) return legionStatic as never;
+      if (exp === 7) return midnightStatic as never;
+      return { raids: [] } as never;
+    });
+
+    vi.mocked(getGuildRaidSummary).mockImplementation(async (identity) => {
+      if (identity.realm === 'darksorrow') {
+        return {
+          raid_progression: {
+            'the-emerald-nightmare': {
+              summary: '2/2 M',
+              total_bosses: 2,
+              mythic_bosses_killed: 2,
+            },
+          },
+          raid_rankings: {
+            'the-emerald-nightmare': { mythic: { world: 818, region: 520, realm: 17 } },
+          },
+        };
+      }
+      return {
+        raid_progression: {
+          'tier-mn-1': { summary: '1/2 M', total_bosses: 2, mythic_bosses_killed: 1 },
+          'fated-the-emerald-nightmare': {
+            summary: '1/1 M',
+            total_bosses: 1,
+            mythic_bosses_killed: 1,
+          },
+        },
+        raid_rankings: {
+          'tier-mn-1': { mythic: { world: 2281, region: 1106, realm: 52 } },
+          'fated-the-emerald-nightmare': { mythic: { world: 805, region: 485, realm: 15 } },
+        },
+      };
+    });
+
+    vi.mocked(getGuildRaidEncounters).mockResolvedValue([
+      { slug: 'nythendra', name: 'Nythendra', defeatedAt: '2016-10-01T00:00:00Z' },
+      { slug: 'xavius', name: 'Xavius', defeatedAt: '2016-11-01T00:00:00Z' },
+    ]);
+
+    vi.mocked(getLiveRaidProgress).mockResolvedValue([
+      {
+        boss: {
+          name: 'Midnight Falls',
+          slug: 'midnight-falls',
+          ordinal: 1,
+          iconUrl: '/images/wow/icons/large/boss_b.jpg',
+        },
+        pullCount: 199,
+        bestPercent: 67.24,
+        isDefeated: false,
+      },
+      {
+        boss: {
+          name: 'Imperator Averzian',
+          slug: 'imperator-averzian',
+          ordinal: 0,
+          iconUrl: '/images/wow/icons/large/boss_a.jpg',
+        },
+        pullCount: 7,
+        bestPercent: 0,
+        isDefeated: 1,
+      },
+    ]);
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([0xff, 0xd8]).buffer,
+    });
+  });
+
+  afterEach(() => {
+    closeDatabase();
+    globalThis.fetch = originalFetch;
+  });
+
+  it('builds API sections newest-expansion-first, filtering Fated raids and zero-kill raids', async () => {
+    const model = await buildAchievementsModel();
+    const labels = model.sections.map((s) => s.expansionLabel);
+    expect(labels).toEqual([
+      'Battle for Azeroth',
+      'Legion',
+      'Warlords of Draenor',
+      'Mists of Pandaria',
+    ]);
+    const legion = model.sections[1]!;
+    expect(legion.rows.map((r) => r.raid)).toEqual(['The Emerald Nightmare']);
+  });
+
+  it('marks CE and formats progress/result on merged rows', async () => {
+    const model = await buildAchievementsModel();
+    const en = model.sections[1]!.rows[0]!;
+    expect(en.progress).toBe('2/2M');
+    expect(en.isCE).toBe(true);
+    expect(en.result).toBe('WR 818');
+    expect(en.icon).toBe('achievement_zone_emeraldnightmare');
+  });
+
+  it('attaches an ordinal-sorted live breakdown to in-progress current-expansion raids', async () => {
+    const model = await buildAchievementsModel();
+    const current = model.sections[0]!.rows[0]!;
+    expect(current.raid).toBe('MN Tier 1 (VS / DR / MQD)');
+    expect(current.bosses).toHaveLength(2);
+    expect(current.bosses![0]).toEqual({
+      name: 'Imperator Averzian',
+      icon: 'boss_a',
+      pulls: 7,
+      bestPercent: 0,
+      defeated: true,
+    });
+    expect(current.bosses![1]).toEqual({
+      name: 'Midnight Falls',
+      icon: 'boss_b',
+      pulls: 199,
+      bestPercent: 67.24,
+      defeated: false,
+    });
+    expect(vi.mocked(getLiveRaidProgress)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getLiveRaidProgress)).toHaveBeenCalledWith(
+      expect.objectContaining({ realm: 'silvermoon' }),
+      'tier-mn-1',
+    );
+  });
+
+  it('includes manual sections with icons and resolves every referenced icon', async () => {
+    const model = await buildAchievementsModel();
+    const wod = model.sections.find((s) => s.expansionLabel === 'Warlords of Draenor')!;
+    expect(wod.rows.map((r) => r.raid)).toEqual([
+      'Hellfire Citadel',
+      'Blackrock Foundry',
+      'Highmaul',
+    ]);
+    const hfc = wod.rows[0]!;
+    expect(hfc.icon).toBe('achievement_boss_hellfire_archimonde');
+    expect(hfc.isCE).toBe(true);
+    expect(hfc.result).toBe('WR 1170');
+
+    for (const section of model.sections) {
+      if (section.expansionIcon) expect(model.icons.has(section.expansionIcon)).toBe(true);
+      for (const row of section.rows) {
+        if (row.icon) expect(model.icons.has(row.icon)).toBe(true);
+        for (const boss of row.bosses ?? []) {
+          if (boss.icon) expect(model.icons.has(boss.icon)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('propagates API errors (fail-fast, no partial model)', async () => {
+    vi.mocked(getGuildRaidSummary).mockRejectedValue(new Error('rio down'));
+    await expect(buildAchievementsModel()).rejects.toThrow('rio down');
+  });
+
+  it('serves ended-tier encounters from cache on the second build', async () => {
+    await buildAchievementsModel();
+    expect(vi.mocked(getGuildRaidEncounters)).toHaveBeenCalledTimes(1);
+    await buildAchievementsModel();
+    expect(vi.mocked(getGuildRaidEncounters)).toHaveBeenCalledTimes(1);
   });
 });
