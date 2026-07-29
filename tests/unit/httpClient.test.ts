@@ -83,6 +83,54 @@ describe('httpRequest — non-retryable failures', () => {
     }
   });
 
+  it('carries an upstream JSON error message when one is supplied', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: { message: 'Requested unsupported expansion_id' },
+      }),
+    );
+
+    const error = await httpRequest('raiderio', 'https://x.test/').catch((err) => err);
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as { responseMessage?: string }).responseMessage).toBe(
+      'Requested unsupported expansion_id',
+    );
+  });
+
+  it('times out while reading a non-success response body', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(async (_url, init?: RequestInit) => {
+      const signal = init?.signal;
+      return {
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        headers: new Headers(),
+        json: async () =>
+          new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            );
+          }),
+      } as unknown as Response;
+    });
+
+    let result: unknown;
+    const request = httpRequest('raiderio', 'https://x.test/', undefined, { timeoutMs: 100 }).catch(
+      (error) => {
+        result = error;
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(101);
+    await Promise.resolve();
+
+    expect(result).toBeInstanceOf(HttpError);
+    await request;
+  });
+
   it('records failed outcome on non-retryable error', async () => {
     globalThis.fetch = vi
       .fn()

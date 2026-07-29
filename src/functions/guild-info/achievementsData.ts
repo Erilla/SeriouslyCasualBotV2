@@ -8,6 +8,7 @@ import {
   getRaidStaticData,
 } from '../../services/raiderio.js';
 import { FOREVER, getCachedOrFetch, getIconOrFetch } from '../../services/apiCache.js';
+import { HttpError } from '../../services/httpClient.js';
 import type { AchievementsManualRow } from '../../types/index.js';
 
 // ─── Expansion names (moved from updateAchievements.ts) ─────────
@@ -179,9 +180,24 @@ type StaticRaid = RaidStaticData['raids'][number];
 export async function buildAchievementsModel(): Promise<AchievementsModel> {
   const staticByExpansion = new Map<number, RaidStaticData>();
   for (let expansion = FIRST_API_EXPANSION; ; expansion++) {
-    const data = await getCachedOrFetch(`static-data:${expansion}`, staticDataFreshness, () =>
-      getRaidStaticData(expansion),
-    );
+    let data: RaidStaticData;
+    try {
+      data = await getCachedOrFetch(`static-data:${expansion}`, staticDataFreshness, () =>
+        getRaidStaticData(expansion),
+      );
+    } catch (error) {
+      // Raider.IO signals that this generated expansion id is beyond its
+      // catalogue with HTTP 400 rather than an empty raids array.
+      if (
+        error instanceof HttpError &&
+        error.service === 'raiderio' &&
+        error.status === 400 &&
+        error.responseMessage === 'Requested unsupported expansion_id'
+      ) {
+        break;
+      }
+      throw error;
+    }
     if (data.raids.length === 0) break;
     staticByExpansion.set(expansion, data);
   }

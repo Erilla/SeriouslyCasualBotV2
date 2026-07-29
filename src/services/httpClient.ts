@@ -22,6 +22,7 @@ export class HttpError extends Error {
   readonly status?: number;
   readonly attempts: number;
   readonly lastError?: Error;
+  readonly responseMessage?: string;
 
   constructor(args: {
     service: ServiceName;
@@ -29,6 +30,7 @@ export class HttpError extends Error {
     attempts: number;
     message: string;
     lastError?: Error;
+    responseMessage?: string;
   }) {
     super(args.message);
     this.name = 'HttpError';
@@ -36,6 +38,7 @@ export class HttpError extends Error {
     this.status = args.status;
     this.attempts = args.attempts;
     this.lastError = args.lastError;
+    this.responseMessage = args.responseMessage;
   }
 }
 
@@ -171,13 +174,16 @@ export async function httpRequest<T>(
         }
       }
 
-      clearTimeout(timeoutId);
       lastStatus = response.status;
       if (response.status === 429) sawRateLimit = true;
 
       if (!RETRYABLE_STATUSES.has(response.status)) {
+        const responseMessage = await getResponseMessage(response);
+        clearTimeout(timeoutId);
         recordOutcome(service, classifyFinalFailure(sawRateLimit, sawTimeout), {
-          msg: `${response.status} ${response.statusText}`,
+          msg: responseMessage
+            ? `${response.status} ${response.statusText}: ${responseMessage}`
+            : `${response.status} ${response.statusText}`,
           status: response.status,
         });
         noteFailure(service);
@@ -186,10 +192,14 @@ export async function httpRequest<T>(
           service,
           attempts: attempt,
           status: response.status,
-          message: `${service} API error: ${response.status} ${response.statusText}`,
+          responseMessage,
+          message: responseMessage
+            ? `${service} API error: ${response.status} ${response.statusText}: ${responseMessage}`
+            : `${service} API error: ${response.status} ${response.statusText}`,
         });
       }
 
+      clearTimeout(timeoutId);
       const retryAfterMs = parseRetryAfter(
         response.headers.get('retry-after'),
         response.headers.get('date'),
@@ -245,6 +255,23 @@ export async function httpRequest<T>(
     // breaker from getting stuck.
     if (breakerWasHalfOpen) releaseBreakerTrialSlot(service);
   }
+}
+
+async function getResponseMessage(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as unknown;
+    if (
+      typeof body === 'object' &&
+      body !== null &&
+      'message' in body &&
+      typeof body.message === 'string'
+    ) {
+      return body.message;
+    }
+  } catch {
+    // Non-JSON error bodies retain the existing status-only HttpError.
+  }
+  return undefined;
 }
 
 function finishSuccess(service: ServiceName, attempt: number, wasTrial: boolean): void {

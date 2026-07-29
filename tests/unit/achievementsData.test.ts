@@ -10,6 +10,7 @@ import {
   iconNameFromUrl,
 } from '../../src/functions/guild-info/achievementsData.js';
 import type { RaidStaticData } from '../../src/services/raiderio.js';
+import { HttpError } from '../../src/services/httpClient.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -427,6 +428,43 @@ describe('buildAchievementsModel', () => {
   it('propagates API errors (fail-fast, no partial model)', async () => {
     vi.mocked(getGuildRaidSummary).mockRejectedValue(new Error('rio down'));
     await expect(buildAchievementsModel()).rejects.toThrow('rio down');
+  });
+
+  it('stops the static-data scan when Raider.IO rejects the next expansion id', async () => {
+    vi.mocked(getRaidStaticData).mockImplementation(async (exp: number) => {
+      if (exp === 6) return legionStatic as never;
+      if (exp === 7) return midnightStatic as never;
+      throw Object.assign(
+        new HttpError({
+          service: 'raiderio',
+          status: 400,
+          attempts: 1,
+          message: 'raiderio API error: 400 Bad Request',
+        }),
+        { responseMessage: 'Requested unsupported expansion_id' },
+      );
+    });
+
+    await expect(buildAchievementsModel()).resolves.toEqual(
+      expect.objectContaining({ sections: expect.any(Array) }),
+    );
+    expect(vi.mocked(getRaidStaticData)).toHaveBeenLastCalledWith(8);
+  });
+
+  it('propagates a non-terminal static-data 400', async () => {
+    vi.mocked(getRaidStaticData).mockRejectedValue(
+      Object.assign(
+        new HttpError({
+          service: 'raiderio',
+          status: 400,
+          attempts: 1,
+          message: 'raiderio API error: 400 Bad Request',
+        }),
+        { responseMessage: 'Invalid fields parameter' },
+      ),
+    );
+
+    await expect(buildAchievementsModel()).rejects.toThrow('raiderio API error: 400 Bad Request');
   });
 
   it('serves ended-tier encounters from cache on the second build', async () => {

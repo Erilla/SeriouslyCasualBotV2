@@ -7,6 +7,7 @@ import {
 import { requireOfficer, audit } from '../utils.js';
 import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
 import { flushCache } from '../services/apiCache.js';
+import { logger } from '../services/logger.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -32,6 +33,11 @@ export default {
     try {
       await updateAchievements(interaction.client);
     } catch (error) {
+      logger.error(
+        'guild-info',
+        `Achievements update failed: ${error}`,
+        error instanceof Error ? error : undefined,
+      );
       await interaction.editReply({ content: `Achievements update failed: ${error}` });
       return;
     }
