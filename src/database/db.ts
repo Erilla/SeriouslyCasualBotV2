@@ -174,6 +174,44 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(8);
     })();
   }
+
+  if (currentVersion < 9) {
+    // Achievements image v2: cache tables for Raider.IO payloads + zamimg
+    // icons, plus a per-row icon on the manual achievements. Fresh DBs get
+    // the tables/column from createTables; the guards keep this idempotent.
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS api_cache (
+          key TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          fetched_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS icon_cache (
+          name TEXT PRIMARY KEY,
+          image BLOB NOT NULL,
+          fetched_at TEXT NOT NULL
+        );
+      `);
+      const tableExists = database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='achievements_manual'")
+        .get();
+      if (tableExists) {
+        const cols = database.pragma('table_info(achievements_manual)') as { name: string }[];
+        if (!cols.some((c) => c.name === 'icon')) {
+          database.exec('ALTER TABLE achievements_manual ADD COLUMN icon TEXT');
+        }
+        // Backfill icons for the known manual rows (no-op if renamed/absent).
+        const setIcon = database.prepare(
+          'UPDATE achievements_manual SET icon = ? WHERE raid = ? AND icon IS NULL',
+        );
+        setIcon.run('achievement_boss_garrosh', 'Siege of Orgrimmar (10 man)');
+        setIcon.run('achievement_boss_highmaul_king', 'Highmaul');
+        setIcon.run('achievement_boss_blackhand', 'Blackrock Foundry');
+        setIcon.run('achievement_boss_hellfire_archimonde', 'Hellfire Citadel');
+      }
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(9);
+    })();
+  }
 }
 
 export function closeDatabase(): void {

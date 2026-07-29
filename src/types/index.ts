@@ -177,6 +177,7 @@ export interface AchievementsManualRow {
   result: string;
   expansion: number;
   sort_order: number;
+  icon: string | null;
 }
 
 export interface DefaultMessageRow {

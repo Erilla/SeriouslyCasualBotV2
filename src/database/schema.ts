@@ -181,7 +181,8 @@ export function createTables(db: Database.Database): void {
       progress TEXT NOT NULL,
       result TEXT NOT NULL,
       expansion INTEGER NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      icon TEXT
     );
 
     -- 23. default_messages
@@ -201,6 +202,20 @@ export function createTables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS build_info (
       sha   TEXT PRIMARY KEY,
       build INTEGER NOT NULL
+    );
+
+    -- 26. api_cache (Raider.IO response cache for the achievements image)
+    CREATE TABLE IF NOT EXISTS api_cache (
+      key TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      fetched_at TEXT NOT NULL
+    );
+
+    -- 27. icon_cache (WoW icon images fetched from zamimg)
+    CREATE TABLE IF NOT EXISTS icon_cache (
+      name TEXT PRIMARY KEY,
+      image BLOB NOT NULL,
+      fetched_at TEXT NOT NULL
     );
   `);
 }

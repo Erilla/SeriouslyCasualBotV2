@@ -97,22 +97,38 @@ export function seedDatabase(db: Database.Database): void {
         result: '**CE** WR 1997',
         expansion: 4,
         sort: 1,
+        icon: 'achievement_boss_garrosh',
       },
-      { raid: 'Highmaul', progress: '7/7M', result: '**CE** WR 1252', expansion: 5, sort: 1 },
-      { raid: 'Blackrock Foundry', progress: '8/10M', result: 'WR 1132', expansion: 5, sort: 2 },
+      {
+        raid: 'Highmaul',
+        progress: '7/7M',
+        result: '**CE** WR 1252',
+        expansion: 5,
+        sort: 1,
+        icon: 'achievement_boss_highmaul_king',
+      },
+      {
+        raid: 'Blackrock Foundry',
+        progress: '8/10M',
+        result: 'WR 1132',
+        expansion: 5,
+        sort: 2,
+        icon: 'achievement_boss_blackhand',
+      },
       {
         raid: 'Hellfire Citadel',
         progress: '13/13M',
         result: '**CE** WR 1170',
         expansion: 5,
         sort: 3,
+        icon: 'achievement_boss_hellfire_archimonde',
       },
     ];
 
     for (const a of achievements) {
       db.prepare(
-        'INSERT INTO achievements_manual (raid, progress, result, expansion, sort_order) VALUES (?, ?, ?, ?, ?)',
-      ).run(a.raid, a.progress, a.result, a.expansion, a.sort);
+        'INSERT INTO achievements_manual (raid, progress, result, expansion, sort_order, icon) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run(a.raid, a.progress, a.result, a.expansion, a.sort, a.icon);
     }
 
     // Default application messages

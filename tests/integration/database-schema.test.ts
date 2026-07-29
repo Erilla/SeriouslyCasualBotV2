@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { initDatabase, closeDatabase, getDatabase } from '../../src/database/db.js';
+import { initDatabase, closeDatabase, getDatabase, runMigrations } from '../../src/database/db.js';
 
 describe('database schema', () => {
   afterEach(() => {
@@ -74,7 +74,7 @@ describe('database schema', () => {
     const version = db
       .prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1')
       .get() as { version: number };
-    expect(version.version).toBe(8);
+    expect(version.version).toBe(9);
   });
 
   it('should be idempotent (safe to run twice)', () => {
@@ -132,5 +132,45 @@ describe('database schema', () => {
       content: string;
     };
     expect(aboutUs.content).toBe('modified');
+  });
+});
+
+describe('schema v9 — achievements cache', () => {
+  afterEach(() => {
+    closeDatabase();
+  });
+
+  it('creates api_cache and icon_cache tables', () => {
+    initDatabase(':memory:');
+    const db = getDatabase();
+    const tables = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('api_cache', 'icon_cache')",
+      )
+      .all() as { name: string }[];
+    expect(tables.map((t) => t.name).sort()).toEqual(['api_cache', 'icon_cache']);
+  });
+
+  it('achievements_manual has an icon column, seeded for the four manual rows', () => {
+    initDatabase(':memory:');
+    const db = getDatabase();
+    const cols = db.pragma('table_info(achievements_manual)') as { name: string }[];
+    expect(cols.some((c) => c.name === 'icon')).toBe(true);
+
+    const rows = db
+      .prepare('SELECT raid, icon FROM achievements_manual ORDER BY expansion, sort_order')
+      .all() as { raid: string; icon: string | null }[];
+    expect(rows).toEqual([
+      { raid: 'Siege of Orgrimmar (10 man)', icon: 'achievement_boss_garrosh' },
+      { raid: 'Highmaul', icon: 'achievement_boss_highmaul_king' },
+      { raid: 'Blackrock Foundry', icon: 'achievement_boss_blackhand' },
+      { raid: 'Hellfire Citadel', icon: 'achievement_boss_hellfire_archimonde' },
+    ]);
+  });
+
+  it('migration v9 is idempotent on a database that already ran it', () => {
+    initDatabase(':memory:');
+    const db = getDatabase();
+    expect(() => runMigrations(db)).not.toThrow();
   });
 });
