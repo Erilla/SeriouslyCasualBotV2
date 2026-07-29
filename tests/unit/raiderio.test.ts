@@ -8,7 +8,10 @@ vi.mock('../../src/config.js', () => ({
 }));
 
 import {
+  getGuildRaidEncounters,
+  getGuildRaidSummary,
   getGuildRoster,
+  getLiveRaidProgress,
   getRaidRankings,
   getRaidStaticData,
   getWeeklyMythicPlusRuns,
@@ -223,5 +226,123 @@ describe('getWeeklyMythicPlusRuns', () => {
       expect.stringContaining(`name=${encodeURIComponent('Tëst Chàr')}`),
       expect.any(Object),
     );
+  });
+});
+
+const identity = { region: 'eu', realm: 'silvermoon', name: 'seriouslycasual' };
+
+describe('getGuildRaidSummary', () => {
+  it('requests parameterised raid_progression and raid_rankings fields', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ raid_progression: {}, raid_rankings: {} }),
+    });
+
+    await getGuildRaidSummary(identity, [6, 7, 10]);
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://raider.io/api/v1/guilds/profile?region=eu&realm=silvermoon&name=seriouslycasual' +
+        '&fields=raid_progression%3A6%3A7%3A10%2Craid_rankings%3A6%3A7%3A10',
+      expect.any(Object),
+    );
+  });
+
+  it('defaults missing sections to empty objects', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ name: 'SeriouslyCasual' }),
+    });
+
+    const result = await getGuildRaidSummary(identity, [10]);
+    expect(result).toEqual({ raid_progression: {}, raid_rankings: {} });
+  });
+
+  it('URL-encodes identities with spaces', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ raid_progression: {}, raid_rankings: {} }),
+    });
+
+    await getGuildRaidSummary({ region: 'eu', realm: 'darksorrow', name: 'seriously casual' }, [6]);
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('name=seriously%20casual'),
+      expect.any(Object),
+    );
+  });
+});
+
+describe('getGuildRaidEncounters', () => {
+  it('requests the raid_encounters field for the raid at mythic', async () => {
+    const kills = [
+      { slug: 'queen-ansurek', name: 'Queen Ansurek', defeatedAt: '2025-02-12T20:37:04.000Z' },
+    ];
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ raid_encounters: kills }),
+    });
+
+    const result = await getGuildRaidEncounters(identity, 'nerubar-palace');
+
+    expect(result).toEqual(kills);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('fields=raid_encounters%3Anerubar-palace%3Amythic'),
+      expect.any(Object),
+    );
+  });
+
+  it('returns [] when the field is absent', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({}),
+    });
+    expect(await getGuildRaidEncounters(identity, 'nerubar-palace')).toEqual([]);
+  });
+});
+
+describe('getLiveRaidProgress', () => {
+  it('requests live raid progress with period=until_kill and returns bosses', async () => {
+    const bosses = [
+      {
+        boss: {
+          name: 'Midnight Falls',
+          slug: 'midnight-falls',
+          ordinal: 8,
+          iconUrl: '/images/wow/icons/large/foo.jpg',
+        },
+        pullCount: 199,
+        bestPercent: 67.24,
+        isDefeated: false,
+      },
+    ];
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ bosses }),
+    });
+
+    const result = await getLiveRaidProgress(identity, 'tier-mn-1');
+
+    expect(result).toEqual(bosses);
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain('/live-tracking/guild/raid-progress?');
+    expect(url).toContain('raid=tier-mn-1');
+    expect(url).toContain('difficulty=mythic');
+    expect(url).toContain('period=until_kill');
+    expect(url).toContain('guild=seriouslycasual');
+  });
+
+  it('returns [] when the response has no bosses', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({}),
+    });
+    expect(await getLiveRaidProgress(identity, 'tier-mn-1')).toEqual([]);
   });
 });
