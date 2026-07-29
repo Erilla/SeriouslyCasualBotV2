@@ -30,7 +30,7 @@ All commands are Discord slash commands registered to a single guild.
 | `/raiders get_overlords` | List all configured overlords | Yes | No |
 | `/raiders remove_overlord` | Remove an overlord | Yes | No |
 | `/guildinfo` | Full refresh of all guild info embeds (About Us, Schedule, Recruitment, Achievements) | Yes | No |
-| `/updateachievements` | Refresh the achievements embed only | Yes | No |
+| `/updateachievements` | Refresh the achievements embed only. Optional `flush:true` clears the Raider.IO response/icon cache before rebuilding, forcing a full refetch (use after a new tier is added or if the image looks stale). | Yes | No |
 | `/apply` | Start a guild application via DM questionnaire | No | No |
 | `/applications list_questions` | List all application questions | Yes | No |
 | `/applications add_question` | Add a new application question | Yes | No |

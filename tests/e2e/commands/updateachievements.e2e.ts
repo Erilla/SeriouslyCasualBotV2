@@ -13,7 +13,7 @@ describe('/updateachievements', () => {
 
   it(
     'officer — replies ephemeral "Updating achievements..." then edits to "Achievements updated."',
-    { timeout: 120_000 }, // raider.io calls: static-data per expansion (6+) + rankings per raid
+    { timeout: 120_000 }, // raider.io calls: static data + guild profiles + live progress
     async () => {
       const ctx = getE2EContext();
       const channel = ctx.guild.systemChannel as TextBasedChannel;
@@ -54,6 +54,34 @@ describe('/updateachievements', () => {
           ? iact.__editedReply!.options
           : ((iact.__editedReply!.options as { content?: string }).content ?? '');
       expect(editedContent).toMatch(/Achievements updated/i);
+    },
+  );
+
+  it(
+    'officer with flush:true — empties the cache tables and reports the flush',
+    { timeout: 120_000 },
+    async () => {
+      const ctx = getE2EContext();
+      const channel = ctx.guild.systemChannel as TextBasedChannel;
+
+      const iact = fakeChatInput({
+        client: ctx.client,
+        guild: ctx.guild,
+        channel,
+        member: ctx.officer,
+        user: ctx.officer.user,
+        commandName: 'updateachievements',
+        options: { flush: true },
+      });
+
+      await updateachievementsCmd.execute(iact as unknown as ChatInputCommandInteraction);
+
+      expect(iact.__editedReply).not.toBeNull();
+      const editedContent =
+        typeof iact.__editedReply!.options === 'string'
+          ? iact.__editedReply!.options
+          : ((iact.__editedReply!.options as { content?: string }).content ?? '');
+      expect(editedContent).toMatch(/cache flushed/i);
     },
   );
 });
