@@ -12,6 +12,19 @@ function optional(name: string, defaultValue: string): string {
   return process.env[name] || defaultValue;
 }
 
+export interface RaiderIoGuildIdentity {
+  region: string;
+  realm: string;
+  name: string;
+}
+
+// The guild's Raider.IO identities: current (Silvermoon, Shadowlands onward)
+// and pre-transfer (Darksorrow, Legion/BfA era). Overridable via the
+// RAIDERIO_GUILDS env var (JSON array of {region, realm, name}).
+const DEFAULT_RAIDERIO_GUILDS =
+  '[{"region":"eu","realm":"silvermoon","name":"seriouslycasual"},' +
+  '{"region":"eu","realm":"darksorrow","name":"seriously casual"}]';
+
 export const config = {
   discordToken: required('DISCORD_TOKEN'),
   clientId: required('CLIENT_ID'),
@@ -22,6 +35,9 @@ export const config = {
   warcraftLogsClientSecret: required('WARCRAFTLOGS_CLIENT_SECRET'),
   warcraftLogsGuildId: required('WARCRAFTLOGS_GUILD_ID'),
   raiderIoGuildIds: required('RAIDERIO_GUILD_IDS'),
+  raiderIoGuilds: JSON.parse(
+    optional('RAIDERIO_GUILDS', DEFAULT_RAIDERIO_GUILDS),
+  ) as RaiderIoGuildIdentity[],
   // Optional: signup quip generator falls back to a static V1 corpus when unset.
   // Read lazily so tests that toggle the env var between cases see the change.
   get geminiApiKey() {

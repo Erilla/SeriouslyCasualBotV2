@@ -35,4 +35,40 @@ describe('config', () => {
     expect(config.officerRoleId).toBe('test-role');
     expect(config.isDevelopment).toBe(true);
   });
+
+  it('parses raiderIoGuilds with the built-in default identities', async () => {
+    vi.stubEnv('DISCORD_TOKEN', 'test-token');
+    vi.stubEnv('CLIENT_ID', 'test-client');
+    vi.stubEnv('GUILD_ID', 'test-guild');
+    vi.stubEnv('OFFICER_ROLE_ID', 'test-role');
+    vi.stubEnv('WOWAUDIT_API_SECRET', 'test-secret');
+    vi.stubEnv('WARCRAFTLOGS_CLIENT_ID', 'test-wcl-id');
+    vi.stubEnv('WARCRAFTLOGS_CLIENT_SECRET', 'test-wcl-secret');
+    vi.stubEnv('WARCRAFTLOGS_GUILD_ID', '486913');
+    vi.stubEnv('RAIDERIO_GUILD_IDS', '123%2C456');
+
+    const { config } = await import('../../src/config.js');
+
+    expect(config.raiderIoGuilds).toEqual([
+      { region: 'eu', realm: 'silvermoon', name: 'seriouslycasual' },
+      { region: 'eu', realm: 'darksorrow', name: 'seriously casual' },
+    ]);
+  });
+
+  it('honours a RAIDERIO_GUILDS env override', async () => {
+    vi.stubEnv('DISCORD_TOKEN', 'test-token');
+    vi.stubEnv('CLIENT_ID', 'test-client');
+    vi.stubEnv('GUILD_ID', 'test-guild');
+    vi.stubEnv('OFFICER_ROLE_ID', 'test-role');
+    vi.stubEnv('WOWAUDIT_API_SECRET', 'test-secret');
+    vi.stubEnv('WARCRAFTLOGS_CLIENT_ID', 'test-wcl-id');
+    vi.stubEnv('WARCRAFTLOGS_CLIENT_SECRET', 'test-wcl-secret');
+    vi.stubEnv('WARCRAFTLOGS_GUILD_ID', '486913');
+    vi.stubEnv('RAIDERIO_GUILD_IDS', '123%2C456');
+    vi.stubEnv('RAIDERIO_GUILDS', '[{"region":"us","realm":"illidan","name":"other"}]');
+
+    const { config } = await import('../../src/config.js');
+
+    expect(config.raiderIoGuilds).toEqual([{ region: 'us', realm: 'illidan', name: 'other' }]);
+  });
 });
