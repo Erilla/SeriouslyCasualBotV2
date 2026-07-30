@@ -60,7 +60,7 @@ function readinessRow(name: string, runs = weeklyRuns([])): WeeklyReadinessRow {
 }
 
 describe('generateGreatVaultReport', () => {
-  it('renders Raid and World unlock counts with Dungeon choices from weekly runs', async () => {
+  it('renders compact positive Raid and World counts without truncating max Dungeon keys', async () => {
     // Real /historical_data entry shape: { id, name, realm, data }.
     // Each vault option is the reward item level as a number (or null for an
     // unfilled slot) — NOT a nested object.
@@ -80,17 +80,17 @@ describe('generateGreatVaultReport', () => {
     ];
 
     const report = await generateGreatVaultReport(
-      [readinessRow('Testchar', weeklyRuns([10, 10, 9, 9]))],
+      [readinessRow('Testchar', weeklyRuns([10, 10, 10, 10, 10, 10, 10, 10]))],
       historicalData,
     );
 
-    expect(report).toContain('Dungeon keys');
+    expect(report.split('\n')[3]).toBe(
+      'Character Name'.padEnd(16) + 'Raid'.padEnd(6) + 'Dungeon keys'.padEnd(20) + 'World',
+    );
     const line = report.split('\n').find((l) => l.startsWith('Testchar'));
-    expect(line).toBeDefined();
-    expect(line).toContain('3');
-    expect(line).toContain('+10 / +9 / -');
-    expect(line).toContain('1');
-    expect(line).not.toContain('259/-/-');
+    expect(line).toBe(
+      'Testchar'.padEnd(16) + '3'.padEnd(6) + '+10 / +10 / +10'.padEnd(20) + '1'.padEnd(5),
+    );
   });
 
   it('counts only filled first and second Raid and World options', async () => {
@@ -136,7 +136,7 @@ describe('generateGreatVaultReport', () => {
     const line = report.split('\n').find((l) => l.startsWith('Ghostchar'));
 
     expect(line).toBe(
-      'Ghostchar'.padEnd(16) + '-'.padEnd(20) + '+10 / - / -'.padEnd(20) + '-'.padEnd(20),
+      'Ghostchar'.padEnd(16) + '-'.padEnd(6) + '+10 / - / -'.padEnd(20) + '-'.padEnd(5),
     );
   });
 });
@@ -158,26 +158,33 @@ describe('alertHighestMythicPlusDone', () => {
   });
 
   it('posts readiness exceptions separately after the weekly report attachments', async () => {
-    const channel = { send: vi.fn().mockResolvedValue(undefined) };
-    mocks.getOrCreateChannel.mockResolvedValue(channel);
-    mocks.getPreviousWeekProfile.mockResolvedValue({
-      runs: weeklyRuns([9]),
-      lastCrawledAt: new Date().toISOString(),
-    });
-    const client = { guilds: { fetch: vi.fn().mockResolvedValue({}) } };
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T12:00:00.000Z'));
 
-    await alertHighestMythicPlusDone(client as never);
+    try {
+      const channel = { send: vi.fn().mockResolvedValue(undefined) };
+      mocks.getOrCreateChannel.mockResolvedValue(channel);
+      mocks.getPreviousWeekProfile.mockResolvedValue({
+        runs: weeklyRuns([9]),
+        lastCrawledAt: new Date().toISOString(),
+      });
+      const client = { guilds: { fetch: vi.fn().mockResolvedValue({}) } };
 
-    expect(channel.send).toHaveBeenCalledTimes(2);
-    const firstPayload = channel.send.mock.calls[0][0];
-    expect(firstPayload.content).toContain('Weekly Reports');
-    expect(firstPayload.files).toHaveLength(2);
-    const readinessPayload = channel.send.mock.calls[1][0];
-    expect(readinessPayload).not.toHaveProperty('content');
-    expect(readinessPayload.files).toHaveLength(1);
-    const [readinessFile] = readinessPayload.files;
-    expect(readinessFile.name).toBe('weekly_readiness_exceptions_2026-07-30.txt');
-    expect(readinessFile.attachment.toString()).toContain('Weekly Readiness Exceptions');
+      await alertHighestMythicPlusDone(client as never);
+
+      expect(channel.send).toHaveBeenCalledTimes(2);
+      const firstPayload = channel.send.mock.calls[0][0];
+      expect(firstPayload.content).toContain('Weekly Reports');
+      expect(firstPayload.files).toHaveLength(2);
+      const readinessPayload = channel.send.mock.calls[1][0];
+      expect(readinessPayload).not.toHaveProperty('content');
+      expect(readinessPayload.files).toHaveLength(1);
+      const [readinessFile] = readinessPayload.files;
+      expect(readinessFile.name).toBe('weekly_readiness_exceptions_2026-07-30.txt');
+      expect(readinessFile.attachment.toString()).toContain('Weekly Readiness Exceptions');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('posts only the weekly report attachments when no readiness exceptions exist', async () => {

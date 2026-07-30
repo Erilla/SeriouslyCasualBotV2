@@ -129,12 +129,15 @@ export async function generateGreatVaultReport(
 
   // Find max name length for alignment
   const maxNameLen = Math.max(14, ...rows.map((row) => row.characterName.length));
+  const raidColumnWidth = 6;
+  const dungeonColumnWidth = 20;
+  const worldColumnWidth = 5;
 
   const header =
     'Character Name'.padEnd(maxNameLen + 2) +
-    'Raid'.padEnd(20) +
-    'Dungeon keys'.padEnd(20) +
-    'World'.padEnd(20);
+    'Raid'.padEnd(raidColumnWidth) +
+    'Dungeon keys'.padEnd(dungeonColumnWidth) +
+    'World'.padEnd(worldColumnWidth);
 
   lines.push('Weekly Great Vault Report');
   lines.push('='.repeat(header.length));
@@ -155,9 +158,9 @@ export async function generateGreatVaultReport(
 
     const line =
       row.characterName.padEnd(maxNameLen + 2) +
-      raidOpts.padEnd(20) +
-      dungeonOpts.padEnd(20) +
-      worldOpts.padEnd(20);
+      raidOpts.padEnd(raidColumnWidth) +
+      dungeonOpts.padEnd(dungeonColumnWidth) +
+      worldOpts.padEnd(worldColumnWidth);
 
     lines.push(line);
   }
