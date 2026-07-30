@@ -35,6 +35,17 @@ function toDiscordTimestamp(date: Date, style: 'D' | 'R' | 'f' = 'D'): string {
 /**
  * Build the review message content for a trial.
  */
+export function finalReviewLabel(startDate: string, finalReviewDate: Date): string {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const totalWeeks = Math.round(
+    (finalReviewDate.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000),
+  );
+  const extensionWeeks = totalWeeks - 6;
+  return extensionWeeks > 0
+    ? `${totalWeeks}-week review (${extensionWeeks}-week extension)`
+    : `${totalWeeks}-week review`;
+}
+
 export function buildReviewMessage(
   characterName: string,
   role: string,
@@ -44,6 +55,7 @@ export function buildReviewMessage(
   sixWeek: Date,
 ): string {
   const startDateObj = new Date(startDate + 'T00:00:00Z');
+  const finalLabel = finalReviewLabel(startDate, sixWeek);
 
   return [
     `**Trial Review: ${characterName}**`,
@@ -54,7 +66,7 @@ export function buildReviewMessage(
     `**Review Schedule:**`,
     `  2-week review: ${toDiscordTimestamp(twoWeek)} (${toDiscordTimestamp(twoWeek, 'R')})`,
     `  4-week review: ${toDiscordTimestamp(fourWeek)} (${toDiscordTimestamp(fourWeek, 'R')})`,
-    `  6-week review: ${toDiscordTimestamp(sixWeek)} (${toDiscordTimestamp(sixWeek, 'R')})`,
+    `  ${finalLabel}: ${toDiscordTimestamp(sixWeek)} (${toDiscordTimestamp(sixWeek, 'R')})`,
   ].join('\n');
 }
 
