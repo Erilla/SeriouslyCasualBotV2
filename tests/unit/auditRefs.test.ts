@@ -2,16 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { trialRef, applicationRef, dateRef } from '../../src/services/auditRefs.js';
 
 describe('trialRef', () => {
-  it('includes name, id, and a thread link when thread_id is set', () => {
-    expect(trialRef({ character_name: 'Sploboss', id: 3, thread_id: '123' })).toBe(
-      '**Sploboss** (#3) — <#123>',
+  it('includes name and a thread link when thread_id is set', () => {
+    expect(trialRef({ character_name: 'Sploboss', thread_id: '123' })).toBe(
+      '**Sploboss** — <#123>',
     );
   });
 
   it('omits the thread link when thread_id is null', () => {
-    expect(trialRef({ character_name: 'Sploboss', id: 3, thread_id: null })).toBe(
-      '**Sploboss** (#3)',
-    );
+    expect(trialRef({ character_name: 'Sploboss', thread_id: null })).toBe('**Sploboss**');
   });
 });
 
