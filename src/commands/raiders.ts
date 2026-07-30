@@ -20,6 +20,8 @@ import { alertForNewUnlinkedRaiders } from '../functions/raids/alertForNewUnlink
 import { updateRaiderDiscordUser } from '../functions/raids/updateRaiderDiscordUser.js';
 import { ignoreCharacter } from '../functions/raids/ignoreCharacter.js';
 import { addOverlord, removeOverlord, getOverlords } from '../functions/raids/overlords.js';
+import { updateRecruitment } from '../functions/guild-info/updateRecruitment.js';
+import { logger } from '../services/logger.js';
 import {
   generateMythicPlusReport,
   generateGreatVaultReport,
@@ -349,6 +351,18 @@ export default {
 
         try {
           addOverlord(name, user.id);
+          try {
+            await updateRecruitment(interaction.client);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error('guild-info', `Failed to refresh Recruitment after adding overlord: ${err.message}`, err);
+            await audit(interaction.user, 'added overlord', `${name} (<@${user.id}>)`);
+            await interaction.reply({
+              content: `Added overlord **${name}**, but Recruitment was not refreshed. Run /guildinfo to retry.`,
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
           await audit(interaction.user, 'added overlord', `${name} (<@${user.id}>)`);
           await interaction.reply({
             content: `Added overlord **${name}** (${user}).`,
@@ -383,6 +397,26 @@ export default {
         try {
           const overlord = getOverlords().find((o) => o.name === name);
           removeOverlord(name);
+          try {
+            await updateRecruitment(interaction.client);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(
+              'guild-info',
+              `Failed to refresh Recruitment after removing overlord: ${err.message}`,
+              err,
+            );
+            await audit(
+              interaction.user,
+              'removed overlord',
+              overlord ? `${name} (<@${overlord.user_id}>)` : name,
+            );
+            await interaction.reply({
+              content: `Removed overlord **${name}**, but Recruitment was not refreshed. Run /guildinfo to retry.`,
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
           await audit(
             interaction.user,
             'removed overlord',
