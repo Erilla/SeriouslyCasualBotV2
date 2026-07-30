@@ -504,7 +504,7 @@ describe('buildAchievementsModel', () => {
     expect(vi.mocked(getRaidStaticData)).toHaveBeenLastCalledWith(8);
   });
 
-  it('stops the scan on a 400 whose message Raider.IO has reworded', async () => {
+  it('propagates a non-terminal 400 mid-scan instead of posting incomplete data', async () => {
     vi.mocked(getRaidStaticData).mockImplementation(async (exp: number) => {
       if (exp === 6) return legionStatic as never;
       if (exp === 7) return midnightStatic as never;
@@ -519,10 +519,7 @@ describe('buildAchievementsModel', () => {
       );
     });
 
-    await expect(buildAchievementsModel()).resolves.toEqual(
-      expect.objectContaining({ sections: expect.any(Array) }),
-    );
-    expect(vi.mocked(getRaidStaticData)).toHaveBeenLastCalledWith(8);
+    await expect(buildAchievementsModel()).rejects.toThrow('raiderio API error: 400 Bad Request');
   });
 
   it('propagates a 400 on the first expansion id, which means a malformed request', async () => {
