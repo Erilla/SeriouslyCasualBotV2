@@ -31,6 +31,8 @@ All commands are Discord slash commands registered to a single guild.
 | `/raiders remove_overlord` | Remove an overlord | Yes | No |
 | `/guildinfo` | Full refresh of all guild info embeds (About Us, Schedule, Recruitment, Achievements) | Yes | No |
 | `/updateachievements` | Refresh the achievements embed only. Optional `flush:true` clears the Raider.IO response/icon cache before rebuilding, forcing a full refetch (use after a new tier is added or if the image looks stale). | Yes | No |
+| `/ceoverride set` | Set a raid's first non-CE UTC date, then refresh achievements. | Yes | No |
+| `/ceoverride remove` | Remove a raid CE cutoff override, then refresh achievements. | Yes | No |
 | `/apply` | Start a guild application via DM questionnaire | No | No |
 | `/applications list_questions` | List all application questions | Yes | No |
 | `/applications add_question` | Add a new application question | Yes | No |
@@ -63,6 +65,14 @@ All commands are Discord slash commands registered to a single guild.
 
 ### `/migrate`
 Admin only. One-time import from a V1 `db.sqlite` (uploaded as the `db_file` attachment): raider identity map, overlords, ignored characters, and the current raid tier's loot posts + votes. Idempotent — safe to re-run.
+
+### `/ceoverride`
+Admin and officer only. Use `/ceoverride set` with a Raider.IO raid slug and a
+`cutoff` in `YYYY-MM-DD` UTC form. The cutoff is the first date that does not
+qualify for Cutting Edge; for example,
+`/ceoverride set raid:manaforge-omega cutoff:2026-01-21` excludes kills on or
+after 21 January 2026 UTC. Overrides are persistent and are not removed by
+`/updateachievements flush:true`.
 
 ## Adding a Command
 
