@@ -42,6 +42,18 @@ Base URL: `https://www.warcraftlogs.com/api/v2` (GraphQL)
 
 Authentication: OAuth2 client credentials via `WARCRAFTLOGS_CLIENT_ID` / `WARCRAFTLOGS_CLIENT_SECRET`. Guild identified by `WARCRAFTLOGS_GUILD_ID`. Tokens are cached with expiry tracking and refreshed automatically.
 
+## Blizzard / Battle.net
+
+Used to retrieve the equipped items that weekly readiness checks inspect for applied enchants and empty sockets.
+
+Base URL: `https://{region}.api.blizzard.com`
+
+| Endpoint | Function | Description | Status |
+|---|---|---|---|
+| `GET /profile/wow/character/{realm}/{name}/equipment?namespace=profile-{region}&locale=en_GB` | `getCharacterEquipment(region, realm, name)` | Fetches a character's equipped-item profile | Implemented |
+
+Authentication: OAuth2 application credentials via `BLIZZARD_CLIENT_ID` / `BLIZZARD_CLIENT_SECRET`, exchanged at `https://oauth.battle.net/token`. Tokens are cached with expiry tracking and refreshed automatically. Raider.IO crawl data older than `WEEKLY_GEAR_STALE_HOURS` (48 hours by default) is marked `Needs verification`; stale data is not treated as missing gear.
+
 ## LLM providers (signup quips)
 
 `src/services/quipGenerator.ts` generates one-line signup-reminder quips via a

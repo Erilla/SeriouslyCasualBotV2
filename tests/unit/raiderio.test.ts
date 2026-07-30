@@ -14,6 +14,7 @@ import {
   getLiveRaidProgress,
   getRaidRankings,
   getRaidStaticData,
+  getPreviousWeekProfile,
   getWeeklyMythicPlusRuns,
 } from '../../src/services/raiderio.js';
 import { __resetForTests } from '../../src/services/apiHealth.js';
@@ -186,8 +187,8 @@ describe('getRaidStaticData', () => {
   });
 });
 
-describe('getWeeklyMythicPlusRuns', () => {
-  it('should fetch M+ runs for a character', async () => {
+describe('getPreviousWeekProfile', () => {
+  it('returns M+ runs and when the profile was last crawled', async () => {
     const mockRuns = [
       {
         dungeon: 'The Stonevault',
@@ -201,12 +202,18 @@ describe('getWeeklyMythicPlusRuns', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       headers: new Headers(),
-      json: async () => ({ mythic_plus_previous_weekly_highest_level_runs: mockRuns }),
+      json: async () => ({
+        mythic_plus_previous_weekly_highest_level_runs: mockRuns,
+        last_crawled_at: '2026-07-29T10:00:00Z',
+      }),
     });
 
-    const result = await getWeeklyMythicPlusRuns('eu', 'silvermoon', 'Testchar');
+    const result = await getPreviousWeekProfile('eu', 'silvermoon', 'Testchar');
 
-    expect(result).toEqual(mockRuns);
+    expect(result).toEqual({
+      runs: mockRuns,
+      lastCrawledAt: '2026-07-29T10:00:00Z',
+    });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('name=Testchar'),
       expect.any(Object),

@@ -12,6 +12,14 @@ function optional(name: string, defaultValue: string): string {
   return process.env[name] || defaultValue;
 }
 
+function positiveFiniteNumber(name: string, value: string): number {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error(`${name} must be a finite number greater than zero`);
+  }
+  return number;
+}
+
 export interface RaiderIoGuildIdentity {
   region: string;
   realm: string;
@@ -34,6 +42,12 @@ export const config = {
   warcraftLogsClientId: required('WARCRAFTLOGS_CLIENT_ID'),
   warcraftLogsClientSecret: required('WARCRAFTLOGS_CLIENT_SECRET'),
   warcraftLogsGuildId: required('WARCRAFTLOGS_GUILD_ID'),
+  blizzardClientId: required('BLIZZARD_CLIENT_ID'),
+  blizzardClientSecret: required('BLIZZARD_CLIENT_SECRET'),
+  weeklyGearStaleHours: positiveFiniteNumber(
+    'WEEKLY_GEAR_STALE_HOURS',
+    optional('WEEKLY_GEAR_STALE_HOURS', '48'),
+  ),
   raiderIoGuildIds: required('RAIDERIO_GUILD_IDS'),
   raiderIoGuilds: JSON.parse(
     optional('RAIDERIO_GUILDS', DEFAULT_RAIDERIO_GUILDS),

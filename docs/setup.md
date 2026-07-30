@@ -43,6 +43,9 @@ The bot creates `db.sqlite` on first run and seeds it with default data.
 | `WARCRAFTLOGS_CLIENT_ID` | Yes | WarcraftLogs OAuth client ID |
 | `WARCRAFTLOGS_CLIENT_SECRET` | Yes | WarcraftLogs OAuth client secret |
 | `WARCRAFTLOGS_GUILD_ID` | Yes | WarcraftLogs numeric guild ID |
+| `BLIZZARD_CLIENT_ID` | Yes | Battle.net OAuth application client ID |
+| `BLIZZARD_CLIENT_SECRET` | Yes | Battle.net OAuth application client secret |
+| `WEEKLY_GEAR_STALE_HOURS` | No | Raider.IO profile crawl age before gear data needs verification (default: `48`) |
 | `RAIDERIO_GUILD_IDS` | Yes | Comma-separated Raider.IO guild IDs |
 | `GEMINI_API_KEY` | No | Signup-quip generator; falls back to static quips if unset |
 | `OPENAI_API_KEY` | No | Additional quip-generator fallback, tried after Gemini |

@@ -133,6 +133,11 @@ export default {
       },
       {
         name: '\u200B',
+        value: formatApiHealthLine('Blizzard', apiSummaries.blizzard),
+        inline: false,
+      },
+      {
+        name: '\u200B',
         value: formatApiHealthLine('wowaudit', apiSummaries.wowaudit),
         inline: false,
       },

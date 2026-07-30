@@ -20,7 +20,7 @@ See [`docs/commands.md`](docs/commands.md) for the full slash‑command referenc
 
 - Node.js **>= 22**
 - A Discord application + bot token
-- API credentials for Raider.IO, WoW Audit, and WarcraftLogs (see below)
+- API credentials for Raider.IO, WoW Audit, WarcraftLogs, and Battle.net (see below)
 
 ## Getting Started
 
@@ -48,6 +48,8 @@ Environment variables (see [`.env.example`](.env.example) and [`docs/setup.md`](
 | `OFFICER_ROLE_ID` | Yes | Role gating officer‑only commands |
 | `WOWAUDIT_API_SECRET` | Yes | WoW Audit |
 | `WARCRAFTLOGS_CLIENT_ID`, `WARCRAFTLOGS_CLIENT_SECRET`, `WARCRAFTLOGS_GUILD_ID` | Yes | WarcraftLogs OAuth2 |
+| `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET` | Yes | Battle.net OAuth application credentials |
+| `WEEKLY_GEAR_STALE_HOURS` | No | Raider.IO profile crawl age before gear data needs verification (default `48`) |
 | `RAIDERIO_GUILD_IDS` | Yes | Comma‑separated (URL‑encoded) Raider.IO guild ids |
 | `GEMINI_API_KEY` | No | Signup‑quip generator; falls back to static quips if unset |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | No | Additional quip fallbacks, tried in order after Gemini |

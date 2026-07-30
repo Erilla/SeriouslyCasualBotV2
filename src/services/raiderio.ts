@@ -68,16 +68,28 @@ export async function getRaidStaticData(expansionId: number): Promise<RaidStatic
   return httpRequest<RaidStaticData>('raiderio', url);
 }
 
+export async function getPreviousWeekProfile(
+  region: string,
+  realm: string,
+  name: string,
+): Promise<{ runs: MythicPlusRun[]; lastCrawledAt: string | null }> {
+  const url = `${BASE_URL}/characters/profile?region=${region}&realm=${realm}&name=${encodeURIComponent(name)}&fields=mythic_plus_previous_weekly_highest_level_runs`;
+  const data = await httpRequest<{
+    mythic_plus_previous_weekly_highest_level_runs?: MythicPlusRun[];
+    last_crawled_at?: string;
+  }>('raiderio', url);
+  return {
+    runs: data.mythic_plus_previous_weekly_highest_level_runs ?? [],
+    lastCrawledAt: data.last_crawled_at ?? null,
+  };
+}
+
 export async function getWeeklyMythicPlusRuns(
   region: string,
   realm: string,
   name: string,
 ): Promise<MythicPlusRun[]> {
-  const url = `${BASE_URL}/characters/profile?region=${region}&realm=${realm}&name=${encodeURIComponent(name)}&fields=mythic_plus_previous_weekly_highest_level_runs`;
-  const data = await httpRequest<{
-    mythic_plus_previous_weekly_highest_level_runs: MythicPlusRun[];
-  }>('raiderio', url);
-  return data.mythic_plus_previous_weekly_highest_level_runs;
+  return (await getPreviousWeekProfile(region, realm, name)).runs;
 }
 
 export interface GuildIdentity {
