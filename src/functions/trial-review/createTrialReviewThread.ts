@@ -15,7 +15,7 @@ import { addOverlordsToThread } from '../raids/overlords.js';
 import { generateTrialLogsContent } from './generateTrialLogs.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
 import { ensureTrialForumTags } from './trialForumTags.js';
-import type { TrialRow } from '../../types/index.js';
+import type { TrialAlertRow, TrialRow } from '../../types/index.js';
 
 export interface TrialData {
   characterName: string;
@@ -44,6 +44,21 @@ export function finalReviewLabel(startDate: string, finalReviewDate: Date): stri
   return extensionWeeks > 0
     ? `${totalWeeks}-week review (${extensionWeeks}-week extension)`
     : `${totalWeeks}-week review`;
+}
+
+export function reviewDatesFromAlerts(
+  alerts: TrialAlertRow[],
+  fallbackStartDate: string,
+): { twoWeek: Date; fourWeek: Date; sixWeek: Date } {
+  const alertDates = new Map(alerts.map((alert) => [alert.alert_name, alert.alert_date]));
+  const dateFor = (alertName: string) =>
+    new Date(`${alertDates.get(alertName) ?? fallbackStartDate}T00:00:00Z`);
+
+  return {
+    twoWeek: dateFor('2_week'),
+    fourWeek: dateFor('4_week'),
+    sixWeek: dateFor('6_week'),
+  };
 }
 
 export function buildReviewMessage(

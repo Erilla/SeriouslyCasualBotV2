@@ -24,10 +24,10 @@ import { changeTrialInfo } from '../functions/trial-review/changeTrialInfo.js';
 import { updateTrialLogs } from '../functions/trial-review/updateTrialLogs.js';
 import {
   buildReviewMessage,
-  calculateReviewDates,
   buildTrialButtons,
+  reviewDatesFromAlerts,
 } from '../functions/trial-review/createTrialReviewThread.js';
-import type { TrialRow } from '../types/index.js';
+import type { TrialAlertRow, TrialRow } from '../types/index.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -301,7 +301,13 @@ export default {
             const channel = await guild.channels.fetch(trial.thread_id);
             if (!channel || !channel.isThread()) continue;
 
-            const { twoWeek, fourWeek, sixWeek } = calculateReviewDates(trial.start_date);
+            const alerts = db
+              .prepare('SELECT * FROM trial_alerts WHERE trial_id = ?')
+              .all(trial.id) as TrialAlertRow[];
+            const { twoWeek, fourWeek, sixWeek } = reviewDatesFromAlerts(
+              alerts,
+              trial.start_date,
+            );
             const content = buildReviewMessage(
               trial.character_name,
               trial.role,

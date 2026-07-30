@@ -3,7 +3,11 @@ import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
-import { buildReviewMessage, buildTrialButtons } from './createTrialReviewThread.js';
+import {
+  buildReviewMessage,
+  buildTrialButtons,
+  reviewDatesFromAlerts,
+} from './createTrialReviewThread.js';
 import type { TrialRow, TrialAlertRow } from '../../types/index.js';
 
 /**
@@ -51,18 +55,10 @@ export async function extendTrial(client: Client, trialId: number): Promise<void
         .prepare('SELECT * FROM trial_alerts WHERE trial_id = ? ORDER BY alert_date')
         .all(trialId) as TrialAlertRow[];
 
-      // Use the alert dates for display (they may have been extended multiple times)
-      const alertDates = updatedAlerts.reduce(
-        (acc, a) => {
-          acc[a.alert_name] = a.alert_date;
-          return acc;
-        },
-        {} as Record<string, string>,
+      const { twoWeek, fourWeek, sixWeek } = reviewDatesFromAlerts(
+        updatedAlerts,
+        trial.start_date,
       );
-
-      const twoWeek = new Date((alertDates['2_week'] || trial.start_date) + 'T00:00:00Z');
-      const fourWeek = new Date((alertDates['4_week'] || trial.start_date) + 'T00:00:00Z');
-      const sixWeek = new Date((alertDates['6_week'] || trial.start_date) + 'T00:00:00Z');
 
       const content = buildReviewMessage(
         trial.character_name,

@@ -7,8 +7,9 @@ import {
   buildReviewMessage,
   calculateReviewDates,
   buildTrialButtons,
+  reviewDatesFromAlerts,
 } from './createTrialReviewThread.js';
-import type { TrialRow } from '../../types/index.js';
+import type { TrialAlertRow, TrialRow } from '../../types/index.js';
 
 export interface TrialInfoUpdates {
   characterName?: string;
@@ -90,7 +91,10 @@ export async function changeTrialInfo(
       if (!channel || !channel.isThread()) return;
       const thread = channel as AnyThreadChannel;
 
-      const { twoWeek, fourWeek, sixWeek } = calculateReviewDates(newStartDate);
+      const alerts = db
+        .prepare('SELECT * FROM trial_alerts WHERE trial_id = ?')
+        .all(trialId) as TrialAlertRow[];
+      const { twoWeek, fourWeek, sixWeek } = reviewDatesFromAlerts(alerts, newStartDate);
       const content = buildReviewMessage(
         newCharName,
         newRole,
