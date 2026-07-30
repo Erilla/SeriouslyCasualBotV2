@@ -1,11 +1,15 @@
-import { type Client, type Message, ChannelType, type TextChannel } from 'discord.js';
+import { type Client, ChannelType, type TextChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
+import {
+  isUnknownGuildInfoMessage,
+  MANAGED_GUILD_INFO_KEYS,
+} from './managedGuildInfoMessage.js';
 
 /**
- * Delete all messages in the guild info channel and clear the guild_info_messages table.
+ * Delete tracked guild-info messages and clear their message IDs for a forced rebuild.
  */
 export async function clearGuildInfo(client: Client): Promise<void> {
   const channel = await getOrCreateGuildInfoChannel(client);
@@ -14,51 +18,29 @@ export async function clearGuildInfo(client: Client): Promise<void> {
     return;
   }
 
-  // Fetch all messages (up to 100 at a time)
-  let fetched;
-  const allMessages: Message[] = [];
+  const db = getDatabase();
+  const placeholders = MANAGED_GUILD_INFO_KEYS.map(() => '?').join(', ');
+  const rows = db
+    .prepare(`SELECT key, message_id FROM guild_info_messages WHERE key IN (${placeholders})`)
+    .all(...MANAGED_GUILD_INFO_KEYS) as { key: string; message_id: string }[];
+  const messageIds = new Map(rows.map((row) => [row.key, row.message_id]));
 
-  do {
-    fetched = await channel.messages.fetch({
-      limit: 100,
-      ...(allMessages.length > 0 ? { before: allMessages[allMessages.length - 1].id } : {}),
-    });
-    allMessages.push(...fetched.values());
-  } while (fetched.size === 100);
+  for (const key of MANAGED_GUILD_INFO_KEYS) {
+    const messageId = messageIds.get(key);
+    if (!messageId) continue;
 
-  if (allMessages.length === 0) {
-    logger.debug('guild-info', 'No messages to clear in guild info channel');
-  } else {
-    // Split into messages < 14 days old (bulk deletable) and older ones
-    const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-    const recent = allMessages.filter((m) => m.createdTimestamp > twoWeeksAgo);
-    const old = allMessages.filter((m) => m.createdTimestamp <= twoWeeksAgo);
-
-    // Bulk delete recent messages (in chunks of 100)
-    for (let i = 0; i < recent.length; i += 100) {
-      const chunk = recent.slice(i, i + 100);
-      if (chunk.length === 1) {
-        await chunk[0].delete();
-      } else if (chunk.length > 1) {
-        await channel.bulkDelete(chunk);
+    try {
+      await channel.messages.delete(messageId);
+    } catch (error) {
+      if (!isUnknownGuildInfoMessage(error)) {
+        throw error;
       }
     }
-
-    // Delete old messages individually
-    for (const message of old) {
-      try {
-        await message.delete();
-      } catch {
-        logger.warn('guild-info', `Failed to delete old message ${message.id}`);
-      }
-    }
-
-    logger.info('guild-info', `Cleared ${allMessages.length} messages from guild info channel`);
   }
 
-  // Clear guild_info_messages table
-  const db = getDatabase();
-  db.prepare('DELETE FROM guild_info_messages').run();
+  db.prepare(`DELETE FROM guild_info_messages WHERE key IN (${placeholders})`).run(
+    ...MANAGED_GUILD_INFO_KEYS,
+  );
 }
 
 /**

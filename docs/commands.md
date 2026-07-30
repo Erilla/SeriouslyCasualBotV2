@@ -29,7 +29,8 @@ All commands are Discord slash commands registered to a single guild.
 | `/raiders add_overlord` | Add an overlord (officer with special permissions) | Yes | No |
 | `/raiders get_overlords` | List all configured overlords | Yes | No |
 | `/raiders remove_overlord` | Remove an overlord | Yes | No |
-| `/guildinfo` | Full refresh of all guild info embeds (About Us, Schedule, Recruitment, Achievements) | Yes | No |
+| `/guildinfo` | Refresh all four managed Guild Info messages in place. Use `force:true` to delete and recreate only those four messages. | Yes | No |
+| `/editguildinfo about / schedule-config / schedule-day / recruitment / link / achievements` | Open a prefilled modal to edit a seeded Guild Info value; saving refreshes only its affected message. | Yes | No |
 | `/updateachievements` | Refresh the achievements embed only. Optional `flush:true` clears the Raider.IO response/icon cache before rebuilding, forcing a full refetch (use after a new tier is added or if the image looks stale). | Yes | No |
 | `/ceoverride set` | Set a raid's first non-CE UTC date, then refresh achievements. | Yes | No |
 | `/ceoverride remove` | Remove a raid CE cutoff override, then refresh achievements. | Yes | No |
@@ -74,9 +75,35 @@ qualify for Cutting Edge; for example,
 after 21 January 2026 UTC. Overrides are persistent and are not removed by
 `/updateachievements flush:true`.
 
+### `/guildinfo`
+Admin and officer only. By default, `/guildinfo` updates the four managed Guild
+Info messages (About Us, Schedule, Recruitment, and Achievements) in place.
+Use `force:true` only when those messages must be recreated: it deletes and
+reposts the four tracked messages, and never removes unrelated messages in the
+channel.
+
+### `/editguildinfo`
+Admin and officer only. Each route opens a modal prefilled from the existing
+seeded value. Saving changes that value and refreshes only its affected Guild
+Info message:
+
+- `about` edits the About Us heading and body.
+- `schedule-config` edits the Schedule heading and timezone.
+- `schedule-day` requires a fixed `day` choice: `Wednesday` or `Sunday`.
+- `recruitment` requires a fixed `section` choice: `Who We Are`, `What We Want`,
+  `What We Give`, or `Contact`.
+- `link` requires a fixed `link` choice: `Raider.IO`, `WoWProgress`, or
+  `Warcraft Logs`; its URL must use `http://` or `https://`.
+- `achievements` edits the Achievements heading.
+
+Recruitment text may contain `{{OVERLORDS}}`; when the Recruitment message is
+rendered, it is replaced with the configured overlord mentions, or `an officer`
+when none are configured. The editor updates only these seeded fields: it does
+not add, remove, or reorder schedule days, recruitment sections, or links.
+
 ## Adding a Command
 
 1. Create `src/commands/<name>.ts` exporting a default `Command` object with `data` and `execute`.
-2. Run `npm run deploy-commands` to register it with Discord.
+2. After code is merged and an operator is ready to update Discord's registered commands, run `npm run deploy-commands` manually.
 3. For admin-only commands add `.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)` to the builder and call `requireOfficer(interaction)` at the top of `execute`.
 4. For dev-only commands set `devOnly: true` on the exported object.

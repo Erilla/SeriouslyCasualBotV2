@@ -9,6 +9,7 @@ import {
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getOrCreateGuildInfoChannel } from './clearGuildInfo.js';
+import { upsertGuildInfoMessage } from './managedGuildInfoMessage.js';
 import type { GuildInfoContentRow, OverlordRow } from '../../types/index.js';
 
 /**
@@ -17,8 +18,9 @@ import type { GuildInfoContentRow, OverlordRow } from '../../types/index.js';
 export async function updateRecruitment(client: Client): Promise<void> {
   const channel = await getOrCreateGuildInfoChannel(client);
   if (!channel) {
-    logger.warn('guild-info', 'Could not resolve guild info channel for Recruitment');
-    return;
+    const message = 'Could not resolve guild info channel for Recruitment';
+    logger.warn('guild-info', message);
+    throw new Error(message);
   }
 
   const db = getDatabase();
@@ -81,17 +83,11 @@ export async function updateRecruitment(client: Client): Promise<void> {
       .setEmoji('📝'),
   );
 
-  const message = await channel.send({
+  await upsertGuildInfoMessage(channel, 'recruitment', {
     embeds: [embed],
     components: [row],
     allowedMentions: { users: [] },
   });
-
-  // Store message ID
-  db.prepare('INSERT OR REPLACE INTO guild_info_messages (key, message_id) VALUES (?, ?)').run(
-    'recruitment',
-    message.id,
-  );
 
   logger.info('guild-info', 'Posted Recruitment embed');
 }

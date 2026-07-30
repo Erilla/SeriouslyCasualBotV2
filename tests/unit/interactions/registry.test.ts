@@ -25,6 +25,12 @@ describe('registry prefix collisions', () => {
     assertNoCollisions(modalHandlers, 'modal');
   });
 
+  it('registers the officer-only Guild Info editor modal handler', () => {
+    expect(modalHandlers).toContainEqual(
+      expect.objectContaining({ prefix: 'guildinfo-edit', officerOnly: true }),
+    );
+  });
+
   it('no two user-select handlers share a prefix-with-boundary overlap', () => {
     assertNoCollisions(userSelectHandlers, 'userSelect');
   });

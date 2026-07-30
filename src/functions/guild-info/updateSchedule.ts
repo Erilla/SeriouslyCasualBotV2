@@ -2,6 +2,7 @@ import { type Client, EmbedBuilder, Colors } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getOrCreateGuildInfoChannel } from './clearGuildInfo.js';
+import { upsertGuildInfoMessage } from './managedGuildInfoMessage.js';
 import type { ScheduleConfigRow, ScheduleDayRow } from '../../types/index.js';
 
 /**
@@ -10,8 +11,9 @@ import type { ScheduleConfigRow, ScheduleDayRow } from '../../types/index.js';
 export async function updateSchedule(client: Client): Promise<void> {
   const channel = await getOrCreateGuildInfoChannel(client);
   if (!channel) {
-    logger.warn('guild-info', 'Could not resolve guild info channel for Schedule');
-    return;
+    const message = 'Could not resolve guild info channel for Schedule';
+    logger.warn('guild-info', message);
+    throw new Error(message);
   }
 
   const db = getDatabase();
@@ -48,13 +50,7 @@ export async function updateSchedule(client: Client): Promise<void> {
     )
     .setFooter({ text: timezone });
 
-  const message = await channel.send({ embeds: [embed] });
-
-  // Store message ID
-  db.prepare('INSERT OR REPLACE INTO guild_info_messages (key, message_id) VALUES (?, ?)').run(
-    'schedule',
-    message.id,
-  );
+  await upsertGuildInfoMessage(channel, 'schedule', { embeds: [embed] });
 
   logger.info('guild-info', 'Posted Schedule embed');
 }

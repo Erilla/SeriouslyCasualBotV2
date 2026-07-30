@@ -14,17 +14,21 @@ vi.mock('../../src/functions/guild-info/clearGuildInfo.js', () => ({
 import { updateRecruitment } from '../../src/functions/guild-info/updateRecruitment.js';
 import { getOrCreateGuildInfoChannel } from '../../src/functions/guild-info/clearGuildInfo.js';
 
+const { upsertGuildInfoMessage } = vi.hoisted(() => ({ upsertGuildInfoMessage: vi.fn() }));
+
+vi.mock('../../src/functions/guild-info/managedGuildInfoMessage.js', () => ({
+  upsertGuildInfoMessage,
+}));
+
 const mockedGetChannel = vi.mocked(getOrCreateGuildInfoChannel);
 
 function makeChannel() {
-  return {
-    send: vi.fn(async () => ({ id: 'msg-1' })),
-  };
+  return {};
 }
 
-/** Pull the single button out of the message sent to the channel. */
-function sentButton(channel: ReturnType<typeof makeChannel>): APIButtonComponent {
-  const arg = channel.send.mock.calls[0]![0] as {
+/** Pull the single button out of the payload passed to the managed-message helper. */
+function sentButton(): APIButtonComponent {
+  const arg = upsertGuildInfoMessage.mock.calls[0]![2] as {
     components: { toJSON(): APIActionRowComponent<APIButtonComponent> }[];
   };
   return arg.components[0]!.toJSON().components[0]!;
@@ -47,7 +51,7 @@ describe('updateRecruitment — Apply Here button', () => {
 
     await updateRecruitment({} as Client);
 
-    const button = sentButton(channel);
+    const button = sentButton();
     expect(button.style).toBe(ButtonStyle.Success);
     expect('custom_id' in button && button.custom_id).toBe('application:apply');
     expect('url' in button).toBe(false);
@@ -59,7 +63,7 @@ describe('updateRecruitment — Apply Here button', () => {
 
     await updateRecruitment({} as Client);
 
-    const button = sentButton(channel);
+    const button = sentButton();
     expect('url' in button && button.url).not.toBe('https://discord.com');
   });
 });

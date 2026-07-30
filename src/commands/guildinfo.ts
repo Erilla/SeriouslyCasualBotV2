@@ -15,7 +15,13 @@ export default {
   data: new SlashCommandBuilder()
     .setName('guildinfo')
     .setDescription('Full refresh of all guild info embeds')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addBooleanOption((option) =>
+      option
+        .setName('force')
+        .setDescription('Delete and recreate the four managed Guild Info messages')
+        .setRequired(false),
+    ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (!(await requireOfficer(interaction))) return;
@@ -23,14 +29,15 @@ export default {
     await interaction.reply({ content: 'Updating Guild Info...', flags: MessageFlags.Ephemeral });
 
     const client = interaction.client;
+    const force = interaction.options.getBoolean('force') ?? false;
 
-    await clearGuildInfo(client);
+    if (force) await clearGuildInfo(client);
     await updateAboutUs(client);
     await updateSchedule(client);
     await updateRecruitment(client);
     await updateAchievements(client);
 
-    await audit(interaction.user, 'refreshed guild info', 'all embeds');
+    await audit(interaction.user, 'refreshed guild info', force ? 'all embeds (force rebuild)' : 'all embeds');
     await interaction.editReply({ content: 'Guild Info updated.' });
   },
 };
