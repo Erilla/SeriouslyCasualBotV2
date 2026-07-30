@@ -81,16 +81,20 @@ verification`, never as a missing gem or enchant.
 ## Data sources and boundaries
 
 Raider.IO's existing character profile endpoint supplies previous-week Mythic+
-runs, equipped item details, enchant data, gem data, and crawl timestamps.
-It is sufficient to detect required enchantments once the required slots are
-defined.
+runs and continues to be the source for the M+ attachment and Dungeon Vault
+key levels.
 
-The profile data alone cannot reliably establish an empty gem socket: a piece
-without a socket and a piece with an unfilled socket can both contain no gems.
-A dependable missing-socket check therefore requires a character-equipment
-source with socket capacity, such as Blizzard's Character Equipment Profile
-API. Until that source is added, the report must not claim that a character is
-missing a gem; it may report confirmed enchant gaps and stale data only.
+Blizzard's Character Equipment Profile API is the source of truth for gear
+readiness. Its per-item payload exposes both applied enchantments and every
+available socket, including sockets without a gem. The report uses it to
+identify required enchant slots without an enchantment and available sockets
+without a gem. It does not rely on Raider.IO's gem list to infer socket
+capacity.
+
+The bot authenticates the Blizzard equipment requests with its own Battle.net
+OAuth application credentials; raiders do not need to connect individual
+Battle.net accounts. Failed or stale equipment responses remain `Needs
+verification` entries rather than missing-enhancement claims.
 
 The freshness threshold for a profile is intentionally not specified in this
 design. It will be configured once the guild chooses a policy (for example, 24
@@ -112,4 +116,5 @@ Unit coverage will verify:
 - exceptions omitted when no issues exist;
 - lower unlocked Dungeon choices reported;
 - confirmed missing enchantments and stale-data classification; and
-- gear records without socket capacity never reported as missing gems.
+- empty sockets reported from Blizzard equipment data, while unavailable
+  equipment data is never reported as a missing gem.
