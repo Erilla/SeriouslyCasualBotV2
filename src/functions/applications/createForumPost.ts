@@ -13,6 +13,7 @@ import { getOrCreateChannel } from '../channels.js';
 import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { splitMessage } from './splitMessage.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
+import { resolveApplicationLogCategory } from './applicationLogCategory.js';
 
 export interface CreateForumPostResult {
   forumPost: { id: string };
@@ -28,11 +29,13 @@ export async function createForumPost(
 ): Promise<CreateForumPostResult> {
   let forum: ForumChannel;
   try {
+    const category = await resolveApplicationLogCategory(guild);
     forum = await getOrCreateChannel(guild, {
       name: 'application-log',
       type: ChannelType.GuildForum,
-      categoryName: 'Application-logs',
+      categoryName: null,
       configKey: 'application_log_forum_id',
+      createOptions: category ? { parent: category.id } : undefined,
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

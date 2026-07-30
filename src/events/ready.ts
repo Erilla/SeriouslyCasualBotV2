@@ -14,6 +14,7 @@ import { resumeSessions } from '../functions/applications/resumeSessions.js';
 import { dailyBackup } from '../functions/backups/dailyBackup.js';
 import { runDailyMaintenance } from '../functions/maintenance/runDailyMaintenance.js';
 import { recordTaskRun } from '../services/statusTracker.js';
+import { refreshPendingApplicationCategory } from '../functions/applications/applicationLogCategory.js';
 
 export const scheduler = new Scheduler();
 
@@ -69,6 +70,10 @@ export default {
           configKey: 'bot_audit_channel_id',
         });
         setAuditChannel(botAuditChannel);
+      });
+
+      await tryBootstrap('application pending count', async () => {
+        await refreshPendingApplicationCategory(guild);
       });
 
       logger.debug('bot', 'Channel bootstrap complete');
