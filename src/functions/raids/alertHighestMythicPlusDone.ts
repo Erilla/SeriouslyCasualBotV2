@@ -110,6 +110,10 @@ function formatDungeonChoices(row: WeeklyReadinessRow): string {
     .join(' / ');
 }
 
+function formatUnlockedChoiceCount(count: number): string {
+  return count === 0 ? '-' : String(count);
+}
+
 export async function generateGreatVaultReport(
   input: WeeklyReportInput,
   historicalData: WowAuditHistoricalEntry[],
@@ -141,9 +145,13 @@ export async function generateGreatVaultReport(
   for (const row of rows) {
     const entry = histMap.get(row.characterName.toLowerCase());
     const data = entry?.data as Record<string, unknown> | undefined;
-    const raidOpts = String(getUnlockedChoiceCount(getVaultOptions(data, 'raids')));
+    const raidOpts = formatUnlockedChoiceCount(
+      getUnlockedChoiceCount(getVaultOptions(data, 'raids')),
+    );
     const dungeonOpts = formatDungeonChoices(row);
-    const worldOpts = String(getUnlockedChoiceCount(getVaultOptions(data, 'world')));
+    const worldOpts = formatUnlockedChoiceCount(
+      getUnlockedChoiceCount(getVaultOptions(data, 'world')),
+    );
 
     const line =
       row.characterName.padEnd(maxNameLen + 2) +
@@ -229,7 +237,10 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
     const readinessExceptions = buildReadinessExceptions(rows, new Date());
     if (!readinessExceptions) return;
 
-    await channel.send({ content: readinessExceptions });
+    const readinessFile = new AttachmentBuilder(Buffer.from(readinessExceptions), {
+      name: `weekly_readiness_exceptions_${dateStr}.txt`,
+    });
+    await channel.send({ files: [readinessFile] });
   } catch (error) {
     logger.error('WeeklyReports', 'Failed to send weekly readiness exceptions', error as Error);
   }

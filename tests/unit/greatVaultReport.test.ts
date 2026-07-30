@@ -115,11 +115,29 @@ describe('generateGreatVaultReport', () => {
     expect(line).not.toContain('259/269/-');
   });
 
-  it('renders zeroes when a raider has no matching historical entry', async () => {
-    const report = await generateGreatVaultReport([readinessRow('Ghostchar')], []);
+  it('renders dashes for absent Raid and World choices', async () => {
+    const historicalData: WowAuditHistoricalEntry[] = [
+      {
+        id: 102,
+        name: 'Ghostchar',
+        realm: 'silvermoon',
+        data: {
+          vault_options: {
+            dungeons: { option_1: 272, option_2: null, option_3: null },
+          },
+        },
+      },
+    ];
+
+    const report = await generateGreatVaultReport(
+      [readinessRow('Ghostchar', weeklyRuns([10]))],
+      historicalData,
+    );
     const line = report.split('\n').find((l) => l.startsWith('Ghostchar'));
-    expect(line).toBeDefined();
-    expect(line).toContain('0');
+
+    expect(line).toBe(
+      'Ghostchar'.padEnd(16) + '-'.padEnd(20) + '+10 / - / -'.padEnd(20) + '-'.padEnd(20),
+    );
   });
 });
 
@@ -154,9 +172,12 @@ describe('alertHighestMythicPlusDone', () => {
     const firstPayload = channel.send.mock.calls[0][0];
     expect(firstPayload.content).toContain('Weekly Reports');
     expect(firstPayload.files).toHaveLength(2);
-    expect(channel.send).toHaveBeenNthCalledWith(2, {
-      content: expect.stringContaining('Weekly Readiness Exceptions'),
-    });
+    const readinessPayload = channel.send.mock.calls[1][0];
+    expect(readinessPayload).not.toHaveProperty('content');
+    expect(readinessPayload.files).toHaveLength(1);
+    const [readinessFile] = readinessPayload.files;
+    expect(readinessFile.name).toBe('weekly_readiness_exceptions_2026-07-30.txt');
+    expect(readinessFile.attachment.toString()).toContain('Weekly Readiness Exceptions');
   });
 
   it('posts only the weekly report attachments when no readiness exceptions exist', async () => {
