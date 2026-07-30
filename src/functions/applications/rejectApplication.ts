@@ -19,6 +19,7 @@ import { audit } from '../../services/auditLog.js';
 import { applicationRef } from '../../services/auditRefs.js';
 import { generateTranscript } from './generateTranscript.js';
 import { closeThread } from '../threads.js';
+import { refreshPendingApplicationCategory } from './applicationLogCategory.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
 
 /**
@@ -197,7 +198,7 @@ export async function processRejectModal(interaction: ModalSubmitInteraction): P
          resolved_at = datetime('now')
      WHERE id = ?`,
   ).run(applicationId);
-
+  await refreshPendingApplicationCategory(guild);
   // Audit log
   await audit(interaction.user, 'rejected application', applicationRef(application));
 

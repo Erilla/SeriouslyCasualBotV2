@@ -18,6 +18,7 @@ import { deriveCharacterNameFromAnswers } from './raiderIoName.js';
 import { linkCharacterIdentity } from '../raids/linkCharacterIdentity.js';
 import { getOverlords } from '../raids/overlords.js';
 import { buildOverlordNotification } from './overlordNotification.js';
+import { refreshPendingApplicationCategory } from './applicationLogCategory.js';
 import type { ApplicationRow } from '../../types/index.js';
 
 interface AnswerWithQuestion {
@@ -119,6 +120,7 @@ export async function submitApplication(
            submitted_at = datetime('now')
        WHERE id = ?`,
     ).run(characterName, channel.id, forumPost?.id ?? null, threadId ?? null, applicationId);
+    await refreshPendingApplicationCategory(guild);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error(

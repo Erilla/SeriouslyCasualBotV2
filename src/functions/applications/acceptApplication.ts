@@ -19,6 +19,7 @@ import { audit } from '../../services/auditLog.js';
 import { applicationRef, dateRef } from '../../services/auditRefs.js';
 import { generateTranscript } from './generateTranscript.js';
 import { closeThread } from '../threads.js';
+import { refreshPendingApplicationCategory } from './applicationLogCategory.js';
 import { createTrialReviewThread } from '../trial-review/createTrialReviewThread.js';
 import { assignRaiderRole } from './assignRaiderRole.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
@@ -240,7 +241,7 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
          resolved_at = datetime('now')
      WHERE id = ?`,
   ).run(characterName, applicationId);
-
+  await refreshPendingApplicationCategory(guild);
   // Audit log
   const acceptRef = applicationRef({
     character_name: characterName,
