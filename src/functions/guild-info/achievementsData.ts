@@ -10,6 +10,7 @@ import {
 import { FOREVER, getCachedOrFetch, getIconOrFetch } from '../../services/apiCache.js';
 import { HttpError } from '../../services/httpClient.js';
 import type { AchievementsManualRow } from '../../types/index.js';
+import { getCeOverrideCutoff } from './ceOverrides.js';
 
 // ─── Expansion names (moved from updateAchievements.ts) ─────────
 
@@ -119,6 +120,16 @@ const EXPANSION_ICONS: Record<number, string> = {
   8: 'inv_progenitor_runevessel',
 };
 
+// Raider.IO omits raid icons for all Legion raids. These use the matching
+// Blizzard achievement art and are fetched through the usual icon cache.
+const LEGION_RAID_ICONS: Record<string, string> = {
+  'the-emerald-nightmare': 'achievement_emeraldnightmare_xavius',
+  'the-nighthold': 'achievement_thenighthold',
+  'trial-of-valor': 'achievement_raid_trialofvalor',
+  'tomb-of-sargeras': 'achievement_boss_kiljaeden2',
+  'antorus-the-burning-throne': 'achievement_boss_argus_worldsoul',
+};
+
 export function expansionIconName(
   expansionId: number,
   newestRaidIcon: string | null,
@@ -171,6 +182,10 @@ export interface AchievementsModel {
 const FIRST_API_EXPANSION = 6;
 
 type StaticRaid = RaidStaticData['raids'][number];
+
+export function raidIconName(raid: Pick<StaticRaid, 'slug' | 'icon'>): string | null {
+  return raid.icon ?? LEGION_RAID_ICONS[raid.slug] ?? null;
+}
 
 /**
  * Assemble static raid data, live guild standings, manual achievements, and
@@ -226,7 +241,7 @@ export async function buildAchievementsModel(): Promise<AchievementsModel> {
 
       const row: AchievementRaidRow = {
         raid: raid.name,
-        icon: raid.icon ?? null,
+        icon: raidIconName(raid),
         progress: `${standing.mythicKilled}/${standing.totalBosses}M`,
         isCE: await resolveCE(raid, standing),
         result: standing.worldRank > 0 ? `WR ${standing.worldRank}` : '',
@@ -273,7 +288,7 @@ function byEndDateDescending(a: StaticRaid, b: StaticRaid): number {
 async function resolveCE(raid: StaticRaid, standing: MergedStanding): Promise<boolean> {
   if (standing.mythicKilled < standing.totalBosses) return false;
 
-  const tierEndsEu = raid.ends.eu;
+  const tierEndsEu = getCeOverrideCutoff(raid.slug) ?? raid.ends.eu;
   const tierEnded = tierEndsEu !== null && new Date(tierEndsEu).getTime() < Date.now();
   if (!tierEnded) return true;
 

@@ -8,9 +8,11 @@ import {
   expansionIconName,
   zamimgUrl,
   iconNameFromUrl,
+  raidIconName,
 } from '../../src/functions/guild-info/achievementsData.js';
 import type { RaidStaticData } from '../../src/services/raiderio.js';
 import { HttpError } from '../../src/services/httpClient.js';
+import { setCeOverride } from '../../src/functions/guild-info/ceOverrides.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -217,6 +219,25 @@ describe('icon helpers', () => {
     );
     expect(iconNameFromUrl('')).toBeNull();
   });
+
+  it('uses Legion fallback icons only when Raider.IO omits a raid icon', () => {
+    expect(raidIconName({ slug: 'the-emerald-nightmare', icon: null })).toBe(
+      'achievement_emeraldnightmare_xavius',
+    );
+    expect(raidIconName({ slug: 'the-nighthold', icon: null })).toBe(
+      'achievement_thenighthold',
+    );
+    expect(raidIconName({ slug: 'trial-of-valor', icon: null })).toBe(
+      'achievement_raid_trialofvalor',
+    );
+    expect(raidIconName({ slug: 'tomb-of-sargeras', icon: null })).toBe(
+      'achievement_boss_kiljaeden2',
+    );
+    expect(raidIconName({ slug: 'antorus-the-burning-throne', icon: null })).toBe(
+      'achievement_boss_argus_worldsoul',
+    );
+    expect(raidIconName({ slug: 'the-nighthold', icon: 'raider-icon' })).toBe('raider-icon');
+  });
 });
 
 describe('buildAchievementsModel', () => {
@@ -373,6 +394,40 @@ describe('buildAchievementsModel', () => {
     expect(en.isCE).toBe(true);
     expect(en.result).toBe('WR 818');
     expect(en.icon).toBe('achievement_zone_emeraldnightmare');
+  });
+
+  it('uses a saved cutoff instead of Raider.IO’s later raid end date for CE', async () => {
+    vi.mocked(getRaidStaticData).mockImplementation(async (exp: number) => {
+      if (exp !== 6) return { raids: [] } as never;
+      return {
+        raids: [
+          {
+            id: 9,
+            slug: 'manaforge-omega',
+            name: 'Manaforge Omega',
+            expansion_id: 6,
+            icon: null,
+            starts: { us: '2025-08-12T04:00:00Z', eu: '2025-08-13T04:00:00Z' },
+            ends: { us: '2026-03-02T22:00:00Z', eu: '2026-03-02T22:00:00Z' },
+            encounters: [
+              { id: 90, slug: 'earlier-boss', name: 'Earlier Boss' },
+              { id: 91, slug: 'dimensius', name: 'Dimensius' },
+            ],
+          },
+        ],
+      } as never;
+    });
+    vi.mocked(getGuildRaidSummary).mockResolvedValue(
+      summaryFor({ 'manaforge-omega': { killed: 2, total: 2, world: 100 } }) as never,
+    );
+    vi.mocked(getGuildRaidEncounters).mockResolvedValue([
+      { slug: 'dimensius', name: 'Dimensius', defeatedAt: '2026-01-28T21:53:45.496Z' },
+    ]);
+    setCeOverride('manaforge-omega', '2026-01-21T00:00:00.000Z');
+
+    const model = await buildAchievementsModel();
+
+    expect(model.sections[0]!.rows[0]!.isCE).toBe(false);
   });
 
   it('attaches an ordinal-sorted live breakdown to in-progress current-expansion raids', async () => {
