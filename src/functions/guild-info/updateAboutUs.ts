@@ -9,6 +9,7 @@ import {
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getOrCreateGuildInfoChannel } from './clearGuildInfo.js';
+import { upsertGuildInfoMessage } from './managedGuildInfoMessage.js';
 import type { GuildInfoContentRow, GuildInfoLinkRow } from '../../types/index.js';
 
 /**
@@ -44,10 +45,10 @@ export async function updateAboutUs(client: Client): Promise<void> {
     .setDescription(aboutUs.content);
 
   // Build action row with link buttons
-  const messagePayload: { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[] } =
-    {
-      embeds: [embed],
-    };
+  const messagePayload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } = {
+    embeds: [embed],
+    components: [],
+  };
 
   if (links.length > 0) {
     const row = new ActionRowBuilder<ButtonBuilder>();
@@ -66,13 +67,7 @@ export async function updateAboutUs(client: Client): Promise<void> {
     messagePayload.components = [row];
   }
 
-  const message = await channel.send(messagePayload);
-
-  // Store message ID
-  db.prepare('INSERT OR REPLACE INTO guild_info_messages (key, message_id) VALUES (?, ?)').run(
-    'aboutus',
-    message.id,
-  );
+  await upsertGuildInfoMessage(channel, 'aboutus', messagePayload);
 
   logger.info('guild-info', 'Posted About Us embed');
 }
