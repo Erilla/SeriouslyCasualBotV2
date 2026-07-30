@@ -224,9 +224,7 @@ describe('icon helpers', () => {
     expect(raidIconName({ slug: 'the-emerald-nightmare', icon: null })).toBe(
       'achievement_emeraldnightmare_xavius',
     );
-    expect(raidIconName({ slug: 'the-nighthold', icon: null })).toBe(
-      'achievement_thenighthold',
-    );
+    expect(raidIconName({ slug: 'the-nighthold', icon: null })).toBe('achievement_thenighthold');
     expect(raidIconName({ slug: 'trial-of-valor', icon: null })).toBe(
       'achievement_raid_trialofvalor',
     );
@@ -506,7 +504,28 @@ describe('buildAchievementsModel', () => {
     expect(vi.mocked(getRaidStaticData)).toHaveBeenLastCalledWith(8);
   });
 
-  it('propagates a non-terminal static-data 400', async () => {
+  it('stops the scan on a 400 whose message Raider.IO has reworded', async () => {
+    vi.mocked(getRaidStaticData).mockImplementation(async (exp: number) => {
+      if (exp === 6) return legionStatic as never;
+      if (exp === 7) return midnightStatic as never;
+      throw Object.assign(
+        new HttpError({
+          service: 'raiderio',
+          status: 400,
+          attempts: 1,
+          message: 'raiderio API error: 400 Bad Request',
+        }),
+        { responseMessage: 'expansion_id must be one of 1..11' },
+      );
+    });
+
+    await expect(buildAchievementsModel()).resolves.toEqual(
+      expect.objectContaining({ sections: expect.any(Array) }),
+    );
+    expect(vi.mocked(getRaidStaticData)).toHaveBeenLastCalledWith(8);
+  });
+
+  it('propagates a 400 on the first expansion id, which means a malformed request', async () => {
     vi.mocked(getRaidStaticData).mockRejectedValue(
       Object.assign(
         new HttpError({
@@ -520,6 +539,22 @@ describe('buildAchievementsModel', () => {
     );
 
     await expect(buildAchievementsModel()).rejects.toThrow('raiderio API error: 400 Bad Request');
+  });
+
+  it('propagates a non-400 static-data failure mid-scan instead of truncating', async () => {
+    vi.mocked(getRaidStaticData).mockImplementation(async (exp: number) => {
+      if (exp === 6) return legionStatic as never;
+      throw new HttpError({
+        service: 'raiderio',
+        status: 500,
+        attempts: 3,
+        message: 'raiderio API error: 500 Internal Server Error',
+      });
+    });
+
+    await expect(buildAchievementsModel()).rejects.toThrow(
+      'raiderio API error: 500 Internal Server Error',
+    );
   });
 
   it('serves ended-tier encounters from cache on the second build', async () => {

@@ -9,6 +9,7 @@ import {
 } from '../../services/raiderio.js';
 import { FOREVER, getCachedOrFetch, getIconOrFetch } from '../../services/apiCache.js';
 import { HttpError } from '../../services/httpClient.js';
+import { logger } from '../../services/logger.js';
 import type { AchievementsManualRow } from '../../types/index.js';
 import { getCeOverrideCutoff } from './ceOverrides.js';
 
@@ -202,13 +203,21 @@ export async function buildAchievementsModel(): Promise<AchievementsModel> {
       );
     } catch (error) {
       // Raider.IO signals that this generated expansion id is beyond its
-      // catalogue with HTTP 400 rather than an empty raids array.
+      // catalogue with HTTP 400 rather than an empty raids array. Any 400 ends
+      // the scan rather than one specific message, so a reworded response
+      // can't turn every update into a hard failure — but only once an
+      // expansion has loaded: a 400 on the very first id means the request
+      // itself is malformed, not that we ran off the end of the catalogue.
       if (
+        staticByExpansion.size > 0 &&
         error instanceof HttpError &&
         error.service === 'raiderio' &&
-        error.status === 400 &&
-        error.responseMessage === 'Requested unsupported expansion_id'
+        error.status === 400
       ) {
+        logger.debug(
+          'Achievements',
+          `Static data scan stopped at expansion ${expansion}: ${error.responseMessage ?? error.message}`,
+        );
         break;
       }
       throw error;
