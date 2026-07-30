@@ -130,6 +130,8 @@ describe('/guildinfo', () => {
     for (const key of Object.keys(before)) {
       expect(after[key]).not.toBe(before[key]);
     }
-    await expect(guildInfoChannel.messages.fetch(unrelated.id)).resolves.toMatchObject({ id: unrelated.id });
+    await expect(guildInfoChannel.messages.fetch(unrelated.id)).resolves.toMatchObject({
+      id: unrelated.id,
+    });
   });
 });

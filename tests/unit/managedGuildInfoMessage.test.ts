@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  DiscordAPIError,
-  RESTJSONErrorCodes,
-  type Client,
-} from 'discord.js';
+import { DiscordAPIError, RESTJSONErrorCodes, type Client } from 'discord.js';
 import { closeDatabase, getDatabase, initDatabase } from '../../src/database/db.js';
 
 vi.mock('../../src/functions/channels.js', () => ({
@@ -121,7 +117,9 @@ describe('managed guild info messages', () => {
 
     await clearGuildInfo({ guilds: { fetch: vi.fn() } } as unknown as Client);
 
-    expect(getDatabase().prepare('SELECT * FROM guild_info_messages WHERE key = ?').get('aboutus')).toBeUndefined();
+    expect(
+      getDatabase().prepare('SELECT * FROM guild_info_messages WHERE key = ?').get('aboutus'),
+    ).toBeUndefined();
   });
 
   it('stops force-clear on a non-404 delete error without deleting later rows', async () => {
@@ -130,12 +128,18 @@ describe('managed guild info messages', () => {
     channel.messages.delete.mockRejectedValueOnce(denied);
     mockedGetOrCreateChannel.mockResolvedValue(channel as never);
     const db = getDatabase();
-    db.prepare('INSERT INTO guild_info_messages (key, message_id) VALUES (?, ?)').run('aboutus', 'first');
-    db.prepare('INSERT INTO guild_info_messages (key, message_id) VALUES (?, ?)').run('schedule', 'second');
-
-    await expect(clearGuildInfo({ guilds: { fetch: vi.fn() } } as unknown as Client)).rejects.toThrow(
-      'Missing Permissions',
+    db.prepare('INSERT INTO guild_info_messages (key, message_id) VALUES (?, ?)').run(
+      'aboutus',
+      'first',
     );
+    db.prepare('INSERT INTO guild_info_messages (key, message_id) VALUES (?, ?)').run(
+      'schedule',
+      'second',
+    );
+
+    await expect(
+      clearGuildInfo({ guilds: { fetch: vi.fn() } } as unknown as Client),
+    ).rejects.toThrow('Missing Permissions');
 
     expect(channel.messages.delete).toHaveBeenCalledTimes(1);
     expect(db.prepare('SELECT key FROM guild_info_messages ORDER BY key').all()).toEqual([

@@ -55,10 +55,7 @@ export async function extendTrial(client: Client, trialId: number): Promise<void
         .prepare('SELECT * FROM trial_alerts WHERE trial_id = ? ORDER BY alert_date')
         .all(trialId) as TrialAlertRow[];
 
-      const { twoWeek, fourWeek, sixWeek } = reviewDatesFromAlerts(
-        updatedAlerts,
-        trial.start_date,
-      );
+      const { twoWeek, fourWeek, sixWeek } = reviewDatesFromAlerts(updatedAlerts, trial.start_date);
 
       const content = buildReviewMessage(
         trial.character_name,

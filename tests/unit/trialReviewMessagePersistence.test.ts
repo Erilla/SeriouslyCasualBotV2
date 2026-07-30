@@ -45,7 +45,8 @@ function createDatabase(trial: Trial, alerts: Alert[]) {
           throw new Error(`Unexpected get query: ${sql}`);
         },
         all: () => {
-          if (sql.includes("SELECT * FROM trials WHERE status IN ('active', 'promoted')")) return [trial];
+          if (sql.includes("SELECT * FROM trials WHERE status IN ('active', 'promoted')"))
+            return [trial];
           if (sql.includes('SELECT * FROM trial_alerts WHERE trial_id = ?')) return alerts;
           throw new Error(`Unexpected all query: ${sql}`);
         },
@@ -58,7 +59,9 @@ function createDatabase(trial: Trial, alerts: Alert[]) {
             const [alertDate, trialId, alertName] = args as [string, number, string];
             const alert = alerts.find(
               (candidate) =>
-                candidate.trial_id === trialId && candidate.alert_name === alertName && candidate.alerted === 0,
+                candidate.trial_id === trialId &&
+                candidate.alert_name === alertName &&
+                candidate.alerted === 0,
             );
             if (alert) alert.alert_date = alertDate;
             return;
@@ -111,7 +114,9 @@ describe('persisted trial alert review messages', () => {
 
     await changeTrialInfo(
       {
-        guilds: { cache: { get: () => ({ channels: { fetch: vi.fn().mockResolvedValue(thread) } }) } },
+        guilds: {
+          cache: { get: () => ({ channels: { fetch: vi.fn().mockResolvedValue(thread) } }) },
+        },
       } as never,
       trial.id,
       { role: 'Healer' },
@@ -155,7 +160,9 @@ describe('persisted trial alert review messages', () => {
 
     await changeTrialInfo(
       {
-        guilds: { cache: { get: () => ({ channels: { fetch: vi.fn().mockResolvedValue(thread) } }) } },
+        guilds: {
+          cache: { get: () => ({ channels: { fetch: vi.fn().mockResolvedValue(thread) } }) },
+        },
       } as never,
       trial.id,
       { startDate: '2026-01-08' },

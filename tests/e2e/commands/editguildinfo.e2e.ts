@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { ChatInputCommandInteraction, ModalSubmitInteraction, TextBasedChannel } from 'discord.js';
+import type {
+  ChatInputCommandInteraction,
+  ModalSubmitInteraction,
+  TextBasedChannel,
+} from 'discord.js';
 import { getE2EContext } from '../setup/bootstrap.js';
 import { getReadonlyTestDb } from '../setup/db.js';
 import { resetAndSeed } from '../setup/baseline.js';

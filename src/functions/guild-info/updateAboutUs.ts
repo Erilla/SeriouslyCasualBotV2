@@ -46,10 +46,11 @@ export async function updateAboutUs(client: Client): Promise<void> {
     .setDescription(aboutUs.content);
 
   // Build action row with link buttons
-  const messagePayload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } = {
-    embeds: [embed],
-    components: [],
-  };
+  const messagePayload: { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } =
+    {
+      embeds: [embed],
+      components: [],
+    };
 
   if (links.length > 0) {
     const row = new ActionRowBuilder<ButtonBuilder>();

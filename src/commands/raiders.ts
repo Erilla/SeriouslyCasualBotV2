@@ -355,7 +355,11 @@ export default {
             await updateRecruitment(interaction.client);
           } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
-            logger.error('guild-info', `Failed to refresh Recruitment after adding overlord: ${err.message}`, err);
+            logger.error(
+              'guild-info',
+              `Failed to refresh Recruitment after adding overlord: ${err.message}`,
+              err,
+            );
             await audit(interaction.user, 'added overlord', `${name} (<@${user.id}>)`);
             await interaction.reply({
               content: `Added overlord **${name}**, but Recruitment was not refreshed. Run /guildinfo to retry.`,

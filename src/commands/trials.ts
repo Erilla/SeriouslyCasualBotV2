@@ -304,10 +304,7 @@ export default {
             const alerts = db
               .prepare('SELECT * FROM trial_alerts WHERE trial_id = ?')
               .all(trial.id) as TrialAlertRow[];
-            const { twoWeek, fourWeek, sixWeek } = reviewDatesFromAlerts(
-              alerts,
-              trial.start_date,
-            );
+            const { twoWeek, fourWeek, sixWeek } = reviewDatesFromAlerts(alerts, trial.start_date);
             const content = buildReviewMessage(
               trial.character_name,
               trial.role,

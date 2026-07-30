@@ -48,10 +48,7 @@ describe('guild info modal channel-resolution failure', () => {
       user: {},
     };
 
-    await guildInfoModals[0]!.handle(
-      interaction as unknown as ModalSubmitInteraction,
-      ['about'],
-    );
+    await guildInfoModals[0]!.handle(interaction as unknown as ModalSubmitInteraction, ['about']);
 
     const saved = getDatabase()
       .prepare('SELECT title, content FROM guild_info_content WHERE key = ?')

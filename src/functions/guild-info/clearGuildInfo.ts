@@ -3,10 +3,7 @@ import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
-import {
-  isUnknownGuildInfoMessage,
-  MANAGED_GUILD_INFO_KEYS,
-} from './managedGuildInfoMessage.js';
+import { isUnknownGuildInfoMessage, MANAGED_GUILD_INFO_KEYS } from './managedGuildInfoMessage.js';
 
 /**
  * Delete tracked guild-info messages and clear their message IDs for a forced rebuild.

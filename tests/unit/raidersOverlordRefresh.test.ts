@@ -84,23 +84,26 @@ describe('/raiders Overlord Recruitment refresh', () => {
   it.each([
     ['add_overlord', 'added overlord', 'New Officer (<@123>)'],
     ['remove_overlord', 'removed overlord', 'Old Officer (<@456>)'],
-  ] as const)('keeps a saved %s change and reports a refresh failure', async (subcommand, action, detail) => {
-    mocks.updateRecruitment.mockRejectedValue(new Error('guild-info unavailable'));
-    const interaction = interactionFor(subcommand);
+  ] as const)(
+    'keeps a saved %s change and reports a refresh failure',
+    async (subcommand, action, detail) => {
+      mocks.updateRecruitment.mockRejectedValue(new Error('guild-info unavailable'));
+      const interaction = interactionFor(subcommand);
 
-    await command.execute(interaction as unknown as ChatInputCommandInteraction);
+      await command.execute(interaction as unknown as ChatInputCommandInteraction);
 
-    expect(mocks.audit).toHaveBeenCalledWith(interaction.user, action, detail);
-    expect(mocks.loggerError).toHaveBeenCalledWith(
-      'guild-info',
-      expect.stringContaining('guild-info unavailable'),
-      expect.any(Error),
-    );
-    expect(interaction.reply).toHaveBeenCalledWith({
-      content: expect.stringMatching(/(Added|Removed).*Recruitment.*not refreshed.*\/guildinfo/i),
-      flags: MessageFlags.Ephemeral,
-    });
-  });
+      expect(mocks.audit).toHaveBeenCalledWith(interaction.user, action, detail);
+      expect(mocks.loggerError).toHaveBeenCalledWith(
+        'guild-info',
+        expect.stringContaining('guild-info unavailable'),
+        expect.any(Error),
+      );
+      expect(interaction.reply).toHaveBeenCalledWith({
+        content: expect.stringMatching(/(Added|Removed).*Recruitment.*not refreshed.*\/guildinfo/i),
+        flags: MessageFlags.Ephemeral,
+      });
+    },
+  );
 
   it.each(['add_overlord', 'remove_overlord'] as const)(
     'does not refresh Recruitment when %s mutation fails',
@@ -115,7 +118,9 @@ describe('/raiders Overlord Recruitment refresh', () => {
 
       expect(mocks.updateRecruitment).not.toHaveBeenCalled();
       expect(interaction.reply).toHaveBeenCalledWith(
-        expect.objectContaining({ content: expect.stringMatching(/Failed to (add|remove) overlord/i) }),
+        expect.objectContaining({
+          content: expect.stringMatching(/Failed to (add|remove) overlord/i),
+        }),
       );
     },
   );

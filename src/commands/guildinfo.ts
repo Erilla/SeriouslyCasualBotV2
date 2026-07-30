@@ -37,7 +37,11 @@ export default {
     await updateRecruitment(client);
     await updateAchievements(client);
 
-    await audit(interaction.user, 'refreshed guild info', force ? 'all embeds (force rebuild)' : 'all embeds');
+    await audit(
+      interaction.user,
+      'refreshed guild info',
+      force ? 'all embeds (force rebuild)' : 'all embeds',
+    );
     await interaction.editReply({ content: 'Guild Info updated.' });
   },
 };
