@@ -178,4 +178,3 @@ git commit -m "fix(audit): include trial extension end date"
 - Spec coverage: Task 1 removes normal internal trial IDs; Task 2 records the persisted post-extension six-week date and preserves the unavailable-trial fallback.
 - Placeholder scan: no unresolved implementation steps or vague error-handling requirements remain.
 - Type consistency: `TrialAlertRow.alert_date` is defined in `src/types/index.ts`; `dateRef` already accepts a `string`; `trialRef` accepts the fields available from `TrialRow`.
-
