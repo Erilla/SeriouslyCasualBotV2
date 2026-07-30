@@ -36,7 +36,7 @@ function fakeInteraction(values: { subcommand: 'set' | 'remove'; raid: string; c
   return {
     options: {
       getSubcommand: vi.fn().mockReturnValue(values.subcommand),
-      getString: vi.fn((name: string) => (name === 'raid' ? values.raid : values.cutoff ?? null)),
+      getString: vi.fn((name: string) => (name === 'raid' ? values.raid : (values.cutoff ?? null))),
     },
     reply: vi.fn().mockResolvedValue(undefined),
     editReply: vi.fn().mockResolvedValue(undefined),
@@ -62,10 +62,7 @@ describe('/ceoverride', () => {
 
     await command.execute(interaction as unknown as ChatInputCommandInteraction);
 
-    expect(mocks.setCeOverride).toHaveBeenCalledWith(
-      'manaforge-omega',
-      '2026-01-21T00:00:00.000Z',
-    );
+    expect(mocks.setCeOverride).toHaveBeenCalledWith('manaforge-omega', '2026-01-21T00:00:00.000Z');
     expect(mocks.updateAchievements).toHaveBeenCalledWith(interaction.client);
     expect(mocks.audit).toHaveBeenCalledWith(
       interaction.user,

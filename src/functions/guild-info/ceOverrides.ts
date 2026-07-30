@@ -23,9 +23,7 @@ export function getCeOverrideCutoff(raidSlug: string): string | null {
 
 export function setCeOverride(raidSlug: string, cutoffAt: string): void {
   getDatabase()
-    .prepare(
-      'INSERT OR REPLACE INTO achievement_ce_overrides (raid_slug, cutoff_at) VALUES (?, ?)',
-    )
+    .prepare('INSERT OR REPLACE INTO achievement_ce_overrides (raid_slug, cutoff_at) VALUES (?, ?)')
     .run(raidSlug, cutoffAt);
 }
 

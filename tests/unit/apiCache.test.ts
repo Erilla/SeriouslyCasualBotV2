@@ -7,10 +7,7 @@ import {
   FOREVER,
   ttl,
 } from '../../src/services/apiCache.js';
-import {
-  getCeOverrideCutoff,
-  setCeOverride,
-} from '../../src/functions/guild-info/ceOverrides.js';
+import { getCeOverrideCutoff, setCeOverride } from '../../src/functions/guild-info/ceOverrides.js';
 
 const originalFetch = globalThis.fetch;
 
