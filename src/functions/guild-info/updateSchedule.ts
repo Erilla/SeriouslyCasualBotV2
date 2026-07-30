@@ -11,8 +11,9 @@ import type { ScheduleConfigRow, ScheduleDayRow } from '../../types/index.js';
 export async function updateSchedule(client: Client): Promise<void> {
   const channel = await getOrCreateGuildInfoChannel(client);
   if (!channel) {
-    logger.warn('guild-info', 'Could not resolve guild info channel for Schedule');
-    return;
+    const message = 'Could not resolve guild info channel for Schedule';
+    logger.warn('guild-info', message);
+    throw new Error(message);
   }
 
   const db = getDatabase();

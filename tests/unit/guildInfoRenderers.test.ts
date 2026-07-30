@@ -4,6 +4,7 @@ import { closeDatabase, getDatabase, initDatabase } from '../../src/database/db.
 
 const mocks = vi.hoisted(() => ({
   channel: {},
+  getOrCreateGuildInfoChannel: vi.fn(),
   upsertGuildInfoMessage: vi.fn(),
   buildAchievementsModel: vi.fn(),
   renderAchievementsImage: vi.fn(),
@@ -14,7 +15,7 @@ vi.mock('../../src/services/logger.js', () => ({
 }));
 
 vi.mock('../../src/functions/guild-info/clearGuildInfo.js', () => ({
-  getOrCreateGuildInfoChannel: vi.fn(async () => mocks.channel),
+  getOrCreateGuildInfoChannel: mocks.getOrCreateGuildInfoChannel,
 }));
 
 vi.mock('../../src/functions/guild-info/managedGuildInfoMessage.js', () => ({
@@ -38,6 +39,7 @@ beforeEach(() => {
   closeDatabase();
   initDatabase(':memory:');
   vi.clearAllMocks();
+  mocks.getOrCreateGuildInfoChannel.mockResolvedValue(mocks.channel);
   mocks.buildAchievementsModel.mockResolvedValue({ sections: [], icons: new Map() });
   mocks.renderAchievementsImage.mockResolvedValue(Buffer.from('image'));
 });
@@ -47,6 +49,21 @@ afterEach(() => {
 });
 
 describe('guild-info renderers', () => {
+  it.each([
+    ['About Us', updateAboutUs],
+    ['Schedule', updateSchedule],
+    ['Recruitment', updateRecruitment],
+    ['Achievements', updateAchievements],
+  ])('%s rejects when the Guild Info channel cannot be resolved', async (name, update) => {
+    mocks.getOrCreateGuildInfoChannel.mockResolvedValueOnce(null);
+
+    await expect(update({} as Client)).rejects.toThrow(
+      `Could not resolve guild info channel for ${name}`,
+    );
+
+    expect(mocks.upsertGuildInfoMessage).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['aboutus', updateAboutUs],
     ['schedule', updateSchedule],

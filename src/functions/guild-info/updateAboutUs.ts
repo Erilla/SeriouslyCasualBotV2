@@ -18,8 +18,9 @@ import type { GuildInfoContentRow, GuildInfoLinkRow } from '../../types/index.js
 export async function updateAboutUs(client: Client): Promise<void> {
   const channel = await getOrCreateGuildInfoChannel(client);
   if (!channel) {
-    logger.warn('guild-info', 'Could not resolve guild info channel for About Us');
-    return;
+    const message = 'Could not resolve guild info channel for About Us';
+    logger.warn('guild-info', message);
+    throw new Error(message);
   }
 
   const db = getDatabase();

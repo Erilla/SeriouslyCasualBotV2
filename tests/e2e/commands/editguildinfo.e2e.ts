@@ -28,6 +28,21 @@ function raiderIoLinkRow(): { id: number; label: string; url: string } | undefin
     .get() as { id: number; label: string; url: string } | undefined;
 }
 
+async function fetchStoredMessage(key: string) {
+  const messageId = storedId(key);
+  if (!messageId) throw new Error(`No stored Guild Info message ID for ${key}`);
+
+  const channelRow = getReadonlyTestDb()
+    .prepare("SELECT value FROM config WHERE key = 'guild_info_channel_id'")
+    .get() as { value: string } | undefined;
+  if (!channelRow) throw new Error('No configured Guild Info channel ID');
+
+  const channel = await getE2EContext().guild.channels.fetch(channelRow.value);
+  if (!channel?.isTextBased()) throw new Error('Guild Info channel is not text-based');
+
+  return channel.messages.fetch(messageId);
+}
+
 function editInteraction(subcommand: string, options: Record<string, string> = {}): FakeChatInput {
   const ctx = getE2EContext();
   return fakeChatInput({
@@ -54,7 +69,7 @@ function refreshInteraction(): FakeChatInput {
   });
 }
 
-function aboutModal(content: string) {
+function aboutModal(title: string, content: string) {
   const ctx = getE2EContext();
   return fakeModalSubmit({
     client: ctx.client,
@@ -63,7 +78,7 @@ function aboutModal(content: string) {
     member: ctx.officer,
     user: ctx.officer.user,
     customId: 'guildinfo-edit:about',
-    fields: { title: 'About Us', content },
+    fields: { title, content },
   });
 }
 
@@ -104,12 +119,19 @@ describe('/editguildinfo', () => {
     await dispatch(
       modalHandlers,
       'modal',
-      aboutModal('A changed body') as unknown as ModalSubmitInteraction,
+      aboutModal('Updated About Us', 'A changed body') as unknown as ModalSubmitInteraction,
       'guildinfo-edit:about',
     );
 
-    expect(contentRow('aboutus')?.content).toBe('A changed body');
+    expect(contentRow('aboutus')).toEqual({
+      title: 'Updated About Us',
+      content: 'A changed body',
+    });
     expect(storedId('aboutus')).toBe(before);
+
+    const storedMessage = await fetchStoredMessage('aboutus');
+    expect(storedMessage.embeds[0]?.title).toBe('Updated About Us');
+    expect(storedMessage.embeds[0]?.description).toBe('A changed body');
   });
 
   it('rejects an invalid link without changing its row or the About Us message ID', async () => {

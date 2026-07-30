@@ -15,8 +15,9 @@ import type { GuildInfoContentRow } from '../../types/index.js';
 export async function updateAchievements(client: Client): Promise<void> {
   const channel = await getOrCreateGuildInfoChannel(client);
   if (!channel) {
-    logger.warn('guild-info', 'Could not resolve guild info channel for Achievements');
-    return;
+    const message = 'Could not resolve guild info channel for Achievements';
+    logger.warn('guild-info', message);
+    throw new Error(message);
   }
 
   const db = getDatabase();

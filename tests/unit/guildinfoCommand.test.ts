@@ -92,6 +92,19 @@ describe('/guildinfo', () => {
     );
   });
 
+  it('propagates a renderer failure without auditing or claiming success', async () => {
+    const error = new Error('Guild Info channel unavailable');
+    mocks.updateAboutUs.mockRejectedValueOnce(error);
+    const interaction = fakeInteraction(null);
+
+    await expect(
+      command.execute(interaction as unknown as ChatInputCommandInteraction),
+    ).rejects.toBe(error);
+
+    expect(mocks.audit).not.toHaveBeenCalled();
+    expect(interaction.editReply).not.toHaveBeenCalled();
+  });
+
   it('exposes force as an optional boolean command option', () => {
     const option = command.data.toJSON().options?.find((candidate) => candidate.name === 'force');
 
