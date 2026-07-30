@@ -172,6 +172,7 @@ export interface AchievementsSection {
   expansionLabel: string;
   expansionIcon: string | null;
   rows: AchievementRaidRow[];
+  isCurrent?: boolean;
 }
 
 export interface AchievementsModel {
@@ -261,7 +262,12 @@ export async function buildAchievementsModel(): Promise<AchievementsModel> {
     if (rows.length === 0) continue;
     const expansionIcon = expansionIconName(expansion, rows[0]?.icon ?? null);
     if (expansionIcon) iconNames.add(expansionIcon);
-    sections.push({ expansionLabel: getExpansionName(expansion), expansionIcon, rows });
+    sections.push({
+      expansionLabel: getExpansionName(expansion),
+      expansionIcon,
+      rows,
+      isCurrent: expansion === currentExpansion,
+    });
   }
 
   for (const section of buildManualSections()) {
@@ -342,6 +348,7 @@ function buildManualSections(): AchievementsSection[] {
     sections.push({
       expansionLabel: getExpansionName(expansion),
       expansionIcon: expansionIconName(expansion, null),
+      isCurrent: false,
       rows: expansionRows
         .map((row) => ({
           raid: row.raid,

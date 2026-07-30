@@ -36,6 +36,11 @@ const BG = '#2b2d31';
 const HEADER_TEXT = '#96989d';
 const RULE = '#3f4147';
 const BLURPLE = '#5865f2';
+const SECTION_HEADER_BG = '#35373d';
+const SECTION_HEADER_TEXT = '#a1a5b2';
+const CURRENT_SECTION_BG = '#323747';
+const CURRENT_HEADER_BG = '#3d435c';
+const CURRENT_HEADER_TEXT = '#c7d2ff';
 const WHITE = '#ffffff';
 const CE_GREEN = '#57f287';
 const CE_BADGE_BG = '#248046';
@@ -77,6 +82,24 @@ export async function renderAchievementsImage(model: AchievementsModel): Promise
   let y = PADDING + HEADER_HEIGHT + ROW_HEIGHT;
 
   for (const section of model.sections) {
+    const sectionTop = y - ROW_HEIGHT + 6;
+    const sectionHeight = sectionRenderHeight(section);
+    const sectionWidth = WIDTH - PADDING * 2 + 8;
+
+    if (section.isCurrent) {
+      // Current tier is readable at a glance without overpowering the rows.
+      ctx.fillStyle = CURRENT_SECTION_BG;
+      ctx.fillRect(PADDING - 8, sectionTop, sectionWidth, sectionHeight);
+      ctx.fillStyle = BLURPLE;
+      ctx.fillRect(PADDING - 8, sectionTop, 4, sectionHeight);
+      ctx.fillStyle = CURRENT_HEADER_BG;
+      ctx.fillRect(PADDING - 4, sectionTop, sectionWidth - 4, ROW_HEIGHT - 4);
+    } else {
+      // Historical expansions get a quiet band that separates their sections.
+      ctx.fillStyle = SECTION_HEADER_BG;
+      ctx.fillRect(PADDING - 8, sectionTop, sectionWidth, ROW_HEIGHT - 4);
+    }
+
     // Expansion header row.
     const expIcon = section.expansionIcon ? images.get(section.expansionIcon) : undefined;
     let labelX = COL_RAID;
@@ -90,7 +113,7 @@ export async function renderAchievementsImage(model: AchievementsModel): Promise
       );
       labelX = COL_RAID + EXPANSION_ICON_SIZE + 10;
     }
-    ctx.fillStyle = BLURPLE;
+    ctx.fillStyle = section.isCurrent ? CURRENT_HEADER_TEXT : SECTION_HEADER_TEXT;
     ctx.font = `bold ${FONT_SIZE}px ${ACHIEVEMENTS_FONT}`;
     ctx.fillText(section.expansionLabel, labelX, y);
     y += ROW_HEIGHT;
@@ -159,6 +182,17 @@ function computeHeight(sections: AchievementsSection[]): number {
     height += SECTION_GAP;
   }
   return height + PADDING;
+}
+
+function sectionRenderHeight(section: AchievementsSection): number {
+  return (
+    ROW_HEIGHT +
+    section.rows.reduce(
+      (height, row) => height + ROW_HEIGHT + (row.bosses?.length ?? 0) * BOSS_ROW_HEIGHT,
+      0,
+    ) -
+    4
+  );
 }
 
 function drawCeBadge(ctx: SKRSContext2D, baselineY: number): void {

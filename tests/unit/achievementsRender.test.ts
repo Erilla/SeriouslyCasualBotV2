@@ -92,4 +92,15 @@ describe('renderAchievementsImage', () => {
     const buffer = await renderAchievementsImage(model);
     expect(buffer.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
   });
+
+  it('adds a distinct current-tier accent to the expansion section', async () => {
+    const historical = fixtureModel();
+    const current = fixtureModel();
+    current.sections[0]!.isCurrent = true;
+
+    const historicalImage = await renderAchievementsImage(historical);
+    const currentImage = await renderAchievementsImage(current);
+
+    expect(currentImage.equals(historicalImage)).toBe(false);
+  });
 });

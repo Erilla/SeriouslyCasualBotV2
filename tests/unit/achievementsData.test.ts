@@ -383,6 +383,7 @@ describe('buildAchievementsModel', () => {
     ]);
     const legion = model.sections[1]!;
     expect(legion.rows.map((r) => r.raid)).toEqual(['The Emerald Nightmare']);
+    expect(model.sections.map((section) => section.isCurrent)).toEqual([true, false, false, false]);
   });
 
   it('marks CE and formats progress/result on merged rows', async () => {
