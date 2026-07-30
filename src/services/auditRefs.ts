@@ -1,8 +1,8 @@
 import type { TrialRow, ApplicationRow } from '../types/index.js';
 
-/** `**Name** (#id)`, plus ` — <#thread_id>` when the review thread exists. */
-export function trialRef(trial: Pick<TrialRow, 'character_name' | 'id' | 'thread_id'>): string {
-  const base = `**${trial.character_name}** (#${trial.id})`;
+/** `**Name**`, plus ` — <#thread_id>` when the review thread exists. */
+export function trialRef(trial: Pick<TrialRow, 'character_name' | 'thread_id'>): string {
+  const base = `**${trial.character_name}**`;
   return trial.thread_id ? `${base} — <#${trial.thread_id}>` : base;
 }
 
