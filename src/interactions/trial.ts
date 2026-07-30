@@ -9,14 +9,14 @@ import type { ButtonInteraction, ModalSubmitInteraction } from 'discord.js';
 import type { ButtonHandler, ModalHandler } from './registry.js';
 import { getDatabase } from '../database/db.js';
 import { audit } from '../services/auditLog.js';
-import { trialRef } from '../services/auditRefs.js';
+import { dateRef, trialRef } from '../services/auditRefs.js';
 import { logger } from '../services/logger.js';
 import { extendTrial } from '../functions/trial-review/extendTrial.js';
 import { markForPromotion } from '../functions/trial-review/markForPromotion.js';
 import { closeTrial } from '../functions/trial-review/closeTrial.js';
 import { changeTrialInfo } from '../functions/trial-review/changeTrialInfo.js';
 import { createTrialReviewThread } from '../functions/trial-review/createTrialReviewThread.js';
-import type { TrialRow } from '../types/index.js';
+import type { TrialAlertRow, TrialRow } from '../types/index.js';
 
 async function updateInfo(interaction: ButtonInteraction, params: string[]): Promise<void> {
   const trialId = parseInt(params[0], 10);
@@ -74,7 +74,13 @@ async function extend(interaction: ButtonInteraction, params: string[]): Promise
 
   try {
     await extendTrial(interaction.client, trialId);
-    await audit(interaction.user, 'extended trial', trial ? trialRef(trial) : `#${trialId}`);
+    const endAlert = getDatabase()
+      .prepare("SELECT alert_date FROM trial_alerts WHERE trial_id = ? AND alert_name = '6_week'")
+      .get(trialId) as Pick<TrialAlertRow, 'alert_date'> | undefined;
+    const detail = trial
+      ? `${trialRef(trial)}${endAlert ? `; ends ${dateRef(endAlert.alert_date)}` : ''}`
+      : `#${trialId}`;
+    await audit(interaction.user, 'extended trial', detail);
     await interaction.editReply({ content: 'Trial extended by 1 week.' });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
