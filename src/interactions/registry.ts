@@ -10,6 +10,7 @@ import * as loot from './loot.js';
 import * as raider from './raider.js';
 import * as trial from './trial.js';
 import * as application from './application.js';
+import * as guildInfo from './guildInfo.js';
 
 export type ButtonHandler = {
   prefix: string;
@@ -74,5 +75,9 @@ export const buttonHandlers: ButtonHandler[] = [
   ...trial.buttons,
   ...application.buttons,
 ];
-export const modalHandlers: ModalHandler[] = [...trial.modals, ...application.modals];
+export const modalHandlers: ModalHandler[] = [
+  ...trial.modals,
+  ...application.modals,
+  ...guildInfo.modals,
+];
 export const userSelectHandlers: UserSelectHandler[] = [...raider.userSelects];
