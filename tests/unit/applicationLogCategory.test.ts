@@ -103,6 +103,7 @@ vi.mock('../../src/services/statusTracker.js', () => ({ recordTaskRun: vi.fn() }
 vi.mock('../../src/services/buildInfo.js', () => ({ getBuildInfo: vi.fn(async () => ({})) }));
 
 import {
+  buildPendingApplicationCategoryName,
   refreshPendingApplicationCategory,
   resolveApplicationLogCategory,
 } from '../../src/functions/applications/applicationLogCategory.js';
@@ -189,6 +190,11 @@ afterEach(() => {
 });
 
 describe('application log category', () => {
+  it('formats pending-category titles with an alert only when applications are active', () => {
+    expect(buildPendingApplicationCategoryName(0)).toBe('APPLICATION LOGS · 0 PENDING');
+    expect(buildPendingApplicationCategoryName(2)).toBe('🟥 APPLICATION LOGS · 2 PENDING');
+  });
+
   it('uses the stored category ID and counts only active applications', async () => {
     seedConfig('application_log_category_id', 'category-1');
     seedApplication('active');
@@ -199,7 +205,7 @@ describe('application log category', () => {
 
     await refreshPendingApplicationCategory(makeGuild([category]));
 
-    expect(category.setName).toHaveBeenCalledWith('APPLICATION LOGS · 2 PENDING');
+    expect(category.setName).toHaveBeenCalledWith('🟥 APPLICATION LOGS · 2 PENDING');
   });
 
   it('discovers and persists the legacy-named category when no ID is stored', async () => {
@@ -213,6 +219,16 @@ describe('application log category', () => {
   it('does not rename a category that already displays the current count', async () => {
     const category = makeCategory({ id: 'category-1', name: 'APPLICATION LOGS · 0 PENDING' });
     seedConfig('application_log_category_id', 'category-1');
+
+    await refreshPendingApplicationCategory(makeGuild([category]));
+
+    expect(category.setName).not.toHaveBeenCalled();
+  });
+
+  it('does not rename a category that already displays an alerted active count', async () => {
+    const category = makeCategory({ id: 'category-1', name: '🟥 APPLICATION LOGS · 1 PENDING' });
+    seedConfig('application_log_category_id', 'category-1');
+    seedApplication('active');
 
     await refreshPendingApplicationCategory(makeGuild([category]));
 
@@ -235,6 +251,12 @@ describe('application log category', () => {
     await expect(resolveApplicationLogCategory(makeGuild([category]))).resolves.toBe(category);
 
     expect(readConfig('application_log_category_id')).toBe('category-2');
+  });
+
+  it('discovers an alerted current-format category', async () => {
+    const category = makeCategory({ id: 'category-2', name: '🟥 APPLICATION LOGS · 3 PENDING' });
+
+    await expect(resolveApplicationLogCategory(makeGuild([category]))).resolves.toBe(category);
   });
 
   it('uses the resolved category as the application-log forum parent', async () => {
