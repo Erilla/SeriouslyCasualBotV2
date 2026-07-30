@@ -30,15 +30,18 @@ interface TokenResponse {
 
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
+let inFlightToken: Promise<string> | null = null;
 
-async function getAccessToken(): Promise<string> {
+function getAccessToken(): Promise<string> {
   const now = Date.now();
   if (cachedToken && now < tokenExpiresAt) {
-    return cachedToken;
+    return Promise.resolve(cachedToken);
   }
 
+  if (inFlightToken) return inFlightToken;
+
   const body = new URLSearchParams({ grant_type: 'client_credentials' });
-  const data = await httpRequest<TokenResponse>('blizzard', 'https://oauth.battle.net/token', {
+  const request = httpRequest<TokenResponse>('blizzard', 'https://oauth.battle.net/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -47,11 +50,17 @@ async function getAccessToken(): Promise<string> {
         Buffer.from(`${config.blizzardClientId}:${config.blizzardClientSecret}`).toString('base64'),
     },
     body: body.toString(),
+  }).then((data) => {
+    cachedToken = data.access_token;
+    tokenExpiresAt = now + Math.max(0, data.expires_in - 60) * 1000;
+    return cachedToken;
   });
 
-  cachedToken = data.access_token;
-  tokenExpiresAt = now + Math.max(0, data.expires_in - 60) * 1000;
-  return cachedToken;
+  const inFlightRequest = request.finally(() => {
+    if (inFlightToken === inFlightRequest) inFlightToken = null;
+  });
+  inFlightToken = inFlightRequest;
+  return inFlightRequest;
 }
 
 export async function getCharacterEquipment(
@@ -62,7 +71,7 @@ export async function getCharacterEquipment(
   const token = await getAccessToken();
   const url =
     `https://${region}.api.blizzard.com/profile/wow/character/` +
-    `${encodeURIComponent(realm)}/${encodeURIComponent(name)}/equipment` +
+    `${encodeURIComponent(realm.toLowerCase())}/${encodeURIComponent(name.toLowerCase())}/equipment` +
     `?namespace=profile-${region}&locale=en_GB`;
 
   return httpRequest<BlizzardEquipmentProfile>('blizzard', url, {

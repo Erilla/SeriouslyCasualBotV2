@@ -83,6 +83,9 @@ and its own volume.
    | `WOWAUDIT_API_SECRET` | |
    | `WARCRAFTLOGS_CLIENT_ID` / `WARCRAFTLOGS_CLIENT_SECRET` | |
    | `WARCRAFTLOGS_GUILD_ID` | e.g. `486913` |
+   | `BLIZZARD_CLIENT_ID` | Battle.net OAuth application client ID |
+   | `BLIZZARD_CLIENT_SECRET` | Battle.net OAuth application client secret |
+   | `WEEKLY_GEAR_STALE_HOURS` | optional; Raider.IO crawl age before gear needs verification (default `48`) |
    | `RAIDERIO_GUILD_IDS` | e.g. `1061585%2C43113` |
    | `GEMINI_API_KEY` | optional (static quips fallback if unset) |
    | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | optional (further quip fallbacks, tried after Gemini) |

@@ -129,7 +129,7 @@ export async function generateGreatVaultReport(
   const header =
     'Character Name'.padEnd(maxNameLen + 2) +
     'Raid'.padEnd(20) +
-    'Dungeon'.padEnd(20) +
+    'Dungeon keys'.padEnd(20) +
     'World'.padEnd(20);
 
   lines.push('Weekly Great Vault Report');
@@ -214,8 +214,6 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
     return;
   }
 
-  const readinessExceptions = buildReadinessExceptions(rows, new Date());
-
   try {
     await channel.send({
       content: `**Weekly Reports** - ${dateStr}`,
@@ -227,9 +225,10 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
     return;
   }
 
-  if (!readinessExceptions) return;
-
   try {
+    const readinessExceptions = buildReadinessExceptions(rows, new Date());
+    if (!readinessExceptions) return;
+
     await channel.send({ content: readinessExceptions });
   } catch (error) {
     logger.error('WeeklyReports', 'Failed to send weekly readiness exceptions', error as Error);

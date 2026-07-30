@@ -36,6 +36,7 @@ import {
   generateGreatVaultReport,
 } from '../../src/functions/raids/alertHighestMythicPlusDone.js';
 import type { WowAuditHistoricalEntry } from '../../src/services/wowaudit.js';
+import * as weeklyReadiness from '../../src/functions/raids/weeklyReadiness.js';
 import type { WeeklyReadinessRow } from '../../src/functions/raids/weeklyReadiness.js';
 import type { MythicPlusRun } from '../../src/services/raiderio.js';
 
@@ -83,6 +84,7 @@ describe('generateGreatVaultReport', () => {
       historicalData,
     );
 
+    expect(report).toContain('Dungeon keys');
     const line = report.split('\n').find((l) => l.startsWith('Testchar'));
     expect(line).toBeDefined();
     expect(line).toContain('3');
@@ -169,5 +171,30 @@ describe('alertHighestMythicPlusDone', () => {
     await alertHighestMythicPlusDone(client as never);
 
     expect(channel.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends report attachments when building readiness exceptions fails', async () => {
+    const channel = { send: vi.fn().mockResolvedValue(undefined) };
+    mocks.getOrCreateChannel.mockResolvedValue(channel);
+    mocks.getPreviousWeekProfile.mockResolvedValue({
+      runs: weeklyRuns([9]),
+      lastCrawledAt: new Date().toISOString(),
+    });
+    const readinessSpy = vi
+      .spyOn(weeklyReadiness, 'buildReadinessExceptions')
+      .mockImplementation(() => {
+        throw new Error('readiness formatter failed');
+      });
+    const client = { guilds: { fetch: vi.fn().mockResolvedValue({}) } };
+
+    try {
+      await expect(alertHighestMythicPlusDone(client as never)).resolves.toBeUndefined();
+      expect(channel.send).toHaveBeenCalledTimes(1);
+      expect(channel.send).toHaveBeenCalledWith(
+        expect.objectContaining({ files: expect.any(Array) }),
+      );
+    } finally {
+      readinessSpy.mockRestore();
+    }
   });
 });

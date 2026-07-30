@@ -54,11 +54,11 @@ describe('getCharacterEquipment', () => {
 
     const { getCharacterEquipment } = await import('../../src/services/blizzard.js');
 
-    const profile = await getCharacterEquipment('eu', 'silvermoon', 'Tëst Chàr');
+    const profile = await getCharacterEquipment('eu', 'SilverMoon', 'TËST CHÀR');
     expect(profile.equipped_items[0].slot.type).toBe('BACK');
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('/profile/wow/character/silvermoon/T%C3%ABst%20Ch%C3%A0r/equipment'),
+      expect.stringContaining('/profile/wow/character/silvermoon/t%C3%ABst%20ch%C3%A0r/equipment'),
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer token' }),
       }),
@@ -68,10 +68,38 @@ describe('getCharacterEquipment', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(3);
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       3,
-      expect.stringContaining('/profile/wow/character/silvermoon/Second/equipment'),
+      expect.stringContaining('/profile/wow/character/silvermoon/second/equipment'),
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer token' }),
       }),
     );
+  });
+
+  it('shares one in-flight OAuth request across concurrent equipment lookups', async () => {
+    let resolveToken!: (response: Response) => void;
+    const tokenResponse = new Promise<Response>((resolve) => {
+      resolveToken = resolve;
+    });
+
+    globalThis.fetch = vi.fn((url: string) => {
+      if (url === 'https://oauth.battle.net/token') {
+        return tokenResponse;
+      }
+
+      return Promise.resolve(mockResponse({ equipped_items: [] }));
+    }) as typeof globalThis.fetch;
+
+    const { getCharacterEquipment } = await import('../../src/services/blizzard.js');
+    const requests = Promise.all([
+      getCharacterEquipment('eu', 'silvermoon', 'One'),
+      getCharacterEquipment('eu', 'silvermoon', 'Two'),
+      getCharacterEquipment('eu', 'silvermoon', 'Three'),
+    ]);
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    resolveToken(mockResponse({ access_token: 'token', expires_in: 3600 }));
+
+    await expect(requests).resolves.toHaveLength(3);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4);
   });
 });
