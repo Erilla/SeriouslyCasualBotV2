@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { renderAchievementsImage } from '../../src/functions/guild-info/achievementsRender.js';
 import type { AchievementsModel } from '../../src/functions/guild-info/achievementsData.js';
 
@@ -69,6 +69,17 @@ function fixtureModel(): AchievementsModel {
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
+async function pixelAt(buffer: Buffer, x: number, y: number): Promise<string> {
+  const image = await loadImage(buffer);
+  const canvas = createCanvas(image.width, image.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0);
+  const [red, green, blue] = ctx.getImageData(x, y, 1, 1).data;
+  return `#${red!.toString(16).padStart(2, '0')}${green!
+    .toString(16)
+    .padStart(2, '0')}${blue!.toString(16).padStart(2, '0')}`;
+}
+
 describe('renderAchievementsImage', () => {
   it('renders a PNG with the expected width', async () => {
     const buffer = await renderAchievementsImage(fixtureModel());
@@ -93,7 +104,7 @@ describe('renderAchievementsImage', () => {
     expect(buffer.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
   });
 
-  it('adds a distinct current-tier accent to the expansion section', async () => {
+  it('renders muted headers and a full-height current-tier accent', async () => {
     const historical = fixtureModel();
     const current = fixtureModel();
     current.sections[0]!.isCurrent = true;
@@ -101,6 +112,9 @@ describe('renderAchievementsImage', () => {
     const historicalImage = await renderAchievementsImage(historical);
     const currentImage = await renderAchievementsImage(current);
 
-    expect(currentImage.equals(historicalImage)).toBe(false);
+    expect(await pixelAt(historicalImage, 100, 100)).toBe('#35373d');
+    expect(await pixelAt(currentImage, 100, 100)).toBe('#3d435c');
+    expect(await pixelAt(currentImage, 25, 200)).toBe('#5865f2');
+    expect(await pixelAt(currentImage, 50, 260)).toBe('#323747');
   });
 });

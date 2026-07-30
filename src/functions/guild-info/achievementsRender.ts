@@ -93,11 +93,11 @@ export async function renderAchievementsImage(model: AchievementsModel): Promise
       ctx.fillStyle = BLURPLE;
       ctx.fillRect(PADDING - 8, sectionTop, 4, sectionHeight);
       ctx.fillStyle = CURRENT_HEADER_BG;
-      ctx.fillRect(PADDING - 4, sectionTop, sectionWidth - 4, ROW_HEIGHT - 4);
+      ctx.fillRect(PADDING - 4, sectionTop, sectionWidth - 4, ROW_HEIGHT);
     } else {
       // Historical expansions get a quiet band that separates their sections.
       ctx.fillStyle = SECTION_HEADER_BG;
-      ctx.fillRect(PADDING - 8, sectionTop, sectionWidth, ROW_HEIGHT - 4);
+      ctx.fillRect(PADDING - 8, sectionTop, sectionWidth, ROW_HEIGHT);
     }
 
     // Expansion header row.
@@ -186,12 +186,12 @@ function computeHeight(sections: AchievementsSection[]): number {
 
 function sectionRenderHeight(section: AchievementsSection): number {
   return (
-    ROW_HEIGHT +
+    ROW_HEIGHT * 2 -
+    6 +
     section.rows.reduce(
       (height, row) => height + ROW_HEIGHT + (row.bosses?.length ?? 0) * BOSS_ROW_HEIGHT,
       0,
-    ) -
-    4
+    )
   );
 }
 
