@@ -42,6 +42,7 @@ describe('database schema', () => {
     expect(tableNames).toContain('default_messages');
     expect(tableNames).toContain('quip_history');
     expect(tableNames).toContain('build_info');
+    expect(tableNames).toContain('achievement_ce_overrides');
     expect(tableNames).toContain('schema_version');
 
     // signup_messages was removed in migration v3 (#27).
@@ -74,7 +75,7 @@ describe('database schema', () => {
     const version = db
       .prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1')
       .get() as { version: number };
-    expect(version.version).toBe(9);
+    expect(version.version).toBe(10);
   });
 
   it('should be idempotent (safe to run twice)', () => {

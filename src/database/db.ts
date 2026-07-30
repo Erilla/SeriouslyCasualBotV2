@@ -212,6 +212,20 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(9);
     })();
   }
+
+  if (currentVersion < 10) {
+    // Officer-managed CE cutoffs are persistent business data, deliberately
+    // separate from the achievements API/icon cache tables.
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS achievement_ce_overrides (
+          raid_slug TEXT PRIMARY KEY,
+          cutoff_at TEXT NOT NULL
+        );
+      `);
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(10);
+    })();
+  }
 }
 
 export function closeDatabase(): void {

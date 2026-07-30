@@ -180,6 +180,11 @@ export interface AchievementsManualRow {
   icon: string | null;
 }
 
+export interface CeOverrideRow {
+  raid_slug: string;
+  cutoff_at: string;
+}
+
 export interface DefaultMessageRow {
   key: string;
   message: string;

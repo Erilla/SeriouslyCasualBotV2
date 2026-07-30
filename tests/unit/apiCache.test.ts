@@ -7,6 +7,10 @@ import {
   FOREVER,
   ttl,
 } from '../../src/services/apiCache.js';
+import {
+  getCeOverrideCutoff,
+  setCeOverride,
+} from '../../src/functions/guild-info/ceOverrides.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -112,5 +116,13 @@ describe('flushCache', () => {
     const db = getDatabase();
     expect(db.prepare('SELECT COUNT(*) AS n FROM api_cache').get()).toEqual({ n: 0 });
     expect(db.prepare('SELECT COUNT(*) AS n FROM icon_cache').get()).toEqual({ n: 0 });
+  });
+
+  it('preserves CE overrides because they are not cache data', () => {
+    setCeOverride('manaforge-omega', '2026-01-21T00:00:00.000Z');
+
+    flushCache();
+
+    expect(getCeOverrideCutoff('manaforge-omega')).toBe('2026-01-21T00:00:00.000Z');
   });
 });

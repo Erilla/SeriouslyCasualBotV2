@@ -217,5 +217,11 @@ export function createTables(db: Database.Database): void {
       image BLOB NOT NULL,
       fetched_at TEXT NOT NULL
     );
+
+    -- 28. achievement_ce_overrides (officer-managed CE cutoffs, not cache data)
+    CREATE TABLE IF NOT EXISTS achievement_ce_overrides (
+      raid_slug TEXT PRIMARY KEY,
+      cutoff_at TEXT NOT NULL
+    );
   `);
 }
