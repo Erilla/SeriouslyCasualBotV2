@@ -237,7 +237,7 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
   }
 
   try {
-    const readinessExceptions = buildReadinessExceptions(rows, new Date());
+    const readinessExceptions = buildReadinessExceptions(rows);
     if (!readinessExceptions) return;
 
     const readinessFile = new AttachmentBuilder(Buffer.from(readinessExceptions), {

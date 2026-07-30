@@ -1,8 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../src/config.js', () => ({
-  config: { weeklyGearStaleHours: 48 },
-}));
+import { describe, expect, it } from 'vitest';
 
 import {
   buildReadinessExceptions,
@@ -32,11 +28,86 @@ describe('weekly readiness rules', () => {
   });
 
   it('reports only real readiness exceptions and treats untimed +10 as completed', () => {
-    const result = buildReadinessExceptions(
-      [
+    const result = buildReadinessExceptions([
+      {
+        characterName: 'Untimedten',
+        runs: runs([10]),
+        lastCrawledAt: '2026-07-30T11:00:00Z',
+        equipment: {
+          equipped_items: [
+            { slot: { type: 'BACK' }, item: { name: 'Cape' }, enchantments: [] },
+            {
+              slot: { type: 'HEAD' },
+              item: { name: 'Helm' },
+              sockets: [{ socket_type: 'PRISMATIC', item: undefined }],
+            },
+          ],
+        },
+      },
+      {
+        characterName: 'Nineten',
+        runs: runs([9]),
+        lastCrawledAt: '2026-07-30T11:00:00Z',
+        equipment: { equipped_items: [] },
+      },
+      {
+        characterName: 'Stalegear',
+        runs: runs([10]),
+        lastCrawledAt: '2026-07-27T11:00:00Z',
+        equipment: {
+          equipped_items: [{ slot: { type: 'CHEST' }, item: { name: 'Chest' }, enchantments: [] }],
+        },
+      },
+    ]);
+
+    expect(result).not.toContain('## No completed +10\n- Untimedten');
+    expect(result).toContain('## No completed +10');
+    expect(result).toContain('- Nineten');
+    expect(result).toContain('## Dungeon Vault below +10');
+    expect(result).toContain('- Nineten: +9 / - / -');
+  });
+
+  it('reports no gear or verification sections', () => {
+    const result = buildReadinessExceptions([
+      {
+        characterName: 'Nineten',
+        runs: runs([9]),
+        lastCrawledAt: '2026-07-30T11:00:00Z',
+        equipment: {
+          equipped_items: [
+            { slot: { type: 'BACK' }, item: { name: 'Cape' }, enchantments: [] },
+            {
+              slot: { type: 'HEAD' },
+              item: { name: 'Helm' },
+              sockets: [{ socket_type: 'PRISMATIC', item: undefined }],
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(result).not.toContain('Gear progression');
+    expect(result).not.toContain('Needs verification');
+    expect(result).not.toContain('empty socket');
+    expect(result).not.toContain('missing enchant');
+  });
+
+  it('returns null when only gear gaps and stale crawl data would be reported', () => {
+    expect(
+      buildReadinessExceptions([
         {
-          characterName: 'Untimedten',
-          runs: runs([10]),
+          // Stale crawl and a missing equipment profile: previously a
+          // "Needs verification" entry, now not an exception at all.
+          characterName: 'Stalegear',
+          runs: runs([10, 10, 10, 10, 10, 10, 10, 10]),
+          lastCrawledAt: '2026-07-27T11:00:00Z',
+          equipment: null,
+        },
+        {
+          // Empty socket and an unenchanted BACK: previously a "Gear
+          // progression" entry. BACK has no enchant this expansion.
+          characterName: 'Gappy',
+          runs: runs([10, 10, 10, 10, 10, 10, 10, 10]),
           lastCrawledAt: '2026-07-30T11:00:00Z',
           equipment: {
             equipped_items: [
@@ -49,51 +120,20 @@ describe('weekly readiness rules', () => {
             ],
           },
         },
-        {
-          characterName: 'Nineten',
-          runs: runs([9]),
-          lastCrawledAt: '2026-07-30T11:00:00Z',
-          equipment: { equipped_items: [] },
-        },
-        {
-          characterName: 'Stalegear',
-          runs: runs([10]),
-          lastCrawledAt: '2026-07-27T11:00:00Z',
-          equipment: {
-            equipped_items: [
-              { slot: { type: 'CHEST' }, item: { name: 'Chest' }, enchantments: [] },
-            ],
-          },
-        },
-      ],
-      new Date('2026-07-30T12:00:00Z'),
-    );
-
-    expect(result).not.toContain('## No completed +10\n- Untimedten');
-    expect(result).toContain('## No completed +10');
-    expect(result).toContain('- Nineten');
-    expect(result).toContain('## Dungeon Vault below +10');
-    expect(result).toContain('- Nineten: +9 / - / -');
-    expect(result).toContain('## Gear progression');
-    expect(result).toContain('Untimedten: empty socket (HEAD); missing enchant (BACK)');
-    expect(result).toContain('## Needs verification');
-    expect(result).toContain('- Stalegear');
-    expect(result).not.toContain('Stalegear: missing enchant');
+      ]),
+    ).toBeNull();
   });
 
   it('returns null when every readiness list is empty', () => {
     expect(
-      buildReadinessExceptions(
-        [
-          {
-            characterName: 'Ready',
-            runs: runs([10, 10, 10, 10, 10, 10, 10, 10]),
-            lastCrawledAt: '2026-07-30T11:00:00Z',
-            equipment: { equipped_items: [] },
-          },
-        ],
-        new Date('2026-07-30T12:00:00Z'),
-      ),
+      buildReadinessExceptions([
+        {
+          characterName: 'Ready',
+          runs: runs([10, 10, 10, 10, 10, 10, 10, 10]),
+          lastCrawledAt: '2026-07-30T11:00:00Z',
+          equipment: { equipped_items: [] },
+        },
+      ]),
     ).toBeNull();
   });
 });

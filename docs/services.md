@@ -52,7 +52,7 @@ Base URL: `https://{region}.api.blizzard.com`
 |---|---|---|---|
 | `GET /profile/wow/character/{realm}/{name}/equipment?namespace=profile-{region}&locale=en_GB` | `getCharacterEquipment(region, realm, name)` | Fetches a character's equipped-item profile | Implemented |
 
-Authentication: OAuth2 application credentials via `BLIZZARD_CLIENT_ID` / `BLIZZARD_CLIENT_SECRET`, exchanged at `https://oauth.battle.net/token`. Tokens are cached with expiry tracking and refreshed automatically. Raider.IO crawl data older than `WEEKLY_GEAR_STALE_HOURS` (48 hours by default) is marked `Needs verification`; stale data is not treated as missing gear.
+Authentication: OAuth2 application credentials via `BLIZZARD_CLIENT_ID` / `BLIZZARD_CLIENT_SECRET`, exchanged at `https://oauth.battle.net/token`. Tokens are cached with expiry tracking and refreshed automatically. The equipment profile is still fetched per raider, but the weekly readiness report no longer emits the `Gear progression` or `Needs verification` sections — the required-enchant slot list was not expansion-accurate (`BACK` takes no enchant this expansion), so both were dropped until the slot rules are corrected. `WEEKLY_GEAR_STALE_HOURS` is consequently unused for now.
 
 ## LLM providers (signup quips)
 
