@@ -10,6 +10,7 @@ import type { RaiderRow } from '../../types/index.js';
 import {
   getDungeonVaultChoices,
   getUnlockedChoiceCount,
+  buildReadinessExceptions,
   type VaultOptions,
   type WeeklyReadinessRow,
 } from './weeklyReadiness.js';
@@ -168,11 +169,12 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
   }
 
   const dateStr = new Date().toISOString().split('T')[0];
+  const rows = await loadWeeklyReadinessRows(raiders);
 
   // Generate M+ report
   let mplusContent: string;
   try {
-    mplusContent = await generateMythicPlusReport(raiders);
+    mplusContent = await generateMythicPlusReport(rows);
   } catch (error) {
     logger.error('WeeklyReports', 'Failed to generate M+ report', error as Error);
     mplusContent = 'Error generating M+ report';
@@ -182,7 +184,7 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
   let vaultContent: string;
   try {
     const historicalData = await getHistoricalData();
-    vaultContent = await generateGreatVaultReport(raiders, historicalData);
+    vaultContent = await generateGreatVaultReport(rows, historicalData);
   } catch (error) {
     logger.error('WeeklyReports', 'Failed to generate Great Vault report', error as Error);
     vaultContent = 'Error generating Great Vault report';
@@ -212,6 +214,8 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
     return;
   }
 
+  const readinessExceptions = buildReadinessExceptions(rows, new Date());
+
   try {
     await channel.send({
       content: `**Weekly Reports** - ${dateStr}`,
@@ -220,5 +224,14 @@ export async function alertHighestMythicPlusDone(client: Client): Promise<void> 
     logger.info('WeeklyReports', `Sent weekly reports for ${dateStr}`);
   } catch (error) {
     logger.error('WeeklyReports', 'Failed to send weekly reports', error as Error);
+    return;
+  }
+
+  if (!readinessExceptions) return;
+
+  try {
+    await channel.send({ content: readinessExceptions });
+  } catch (error) {
+    logger.error('WeeklyReports', 'Failed to send weekly readiness exceptions', error as Error);
   }
 }

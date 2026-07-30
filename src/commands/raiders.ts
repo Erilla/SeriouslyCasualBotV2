@@ -25,6 +25,7 @@ import { logger } from '../services/logger.js';
 import {
   generateMythicPlusReport,
   generateGreatVaultReport,
+  loadWeeklyReadinessRows,
 } from '../functions/raids/alertHighestMythicPlusDone.js';
 import { getHistoricalData } from '../services/wowaudit.js';
 import type { RaiderRow, IgnoredCharacterRow } from '../types/index.js';
@@ -298,7 +299,8 @@ export default {
             .prepare('SELECT * FROM raiders WHERE inactive_since IS NULL ORDER BY character_name')
             .all() as RaiderRow[];
 
-          const content = await generateMythicPlusReport(raiders);
+          const rows = await loadWeeklyReadinessRows(raiders);
+          const content = await generateMythicPlusReport(rows);
           const dateStr = new Date().toISOString().split('T')[0];
           const file = new AttachmentBuilder(Buffer.from(content), {
             name: `highest_mythicplus_${dateStr}.txt`,
@@ -325,8 +327,9 @@ export default {
             .prepare('SELECT * FROM raiders WHERE inactive_since IS NULL ORDER BY character_name')
             .all() as RaiderRow[];
 
+          const rows = await loadWeeklyReadinessRows(raiders);
           const historicalData = await getHistoricalData();
-          const content = await generateGreatVaultReport(raiders, historicalData);
+          const content = await generateGreatVaultReport(rows, historicalData);
           const dateStr = new Date().toISOString().split('T')[0];
           const file = new AttachmentBuilder(Buffer.from(content), {
             name: `great_vaults_${dateStr}.txt`,
@@ -355,7 +358,11 @@ export default {
             await updateRecruitment(interaction.client);
           } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
-            logger.error('guild-info', `Failed to refresh Recruitment after adding overlord: ${err.message}`, err);
+            logger.error(
+              'guild-info',
+              `Failed to refresh Recruitment after adding overlord: ${err.message}`,
+              err,
+            );
             await audit(interaction.user, 'added overlord', `${name} (<@${user.id}>)`);
             await interaction.reply({
               content: `Added overlord **${name}**, but Recruitment was not refreshed. Run /guildinfo to retry.`,
