@@ -32,6 +32,10 @@ let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 let inFlightToken: Promise<string> | null = null;
 
+function normalizeRealmSlug(realm: string): string {
+  return realm.trim().toLowerCase().replace(/\s+/g, '-');
+}
+
 function getAccessToken(): Promise<string> {
   const now = Date.now();
   if (cachedToken && now < tokenExpiresAt) {
@@ -69,9 +73,10 @@ export async function getCharacterEquipment(
   name: string,
 ): Promise<BlizzardEquipmentProfile> {
   const token = await getAccessToken();
+  const realmSlug = encodeURIComponent(normalizeRealmSlug(realm));
   const url =
     `https://${region}.api.blizzard.com/profile/wow/character/` +
-    `${encodeURIComponent(realm.toLowerCase())}/${encodeURIComponent(name.toLowerCase())}/equipment` +
+    `${realmSlug}/${encodeURIComponent(name.toLowerCase())}/equipment` +
     `?namespace=profile-${region}&locale=en_GB`;
 
   return httpRequest<BlizzardEquipmentProfile>('blizzard', url, {

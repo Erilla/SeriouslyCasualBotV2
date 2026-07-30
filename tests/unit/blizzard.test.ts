@@ -54,11 +54,11 @@ describe('getCharacterEquipment', () => {
 
     const { getCharacterEquipment } = await import('../../src/services/blizzard.js');
 
-    const profile = await getCharacterEquipment('eu', 'SilverMoon', 'TËST CHÀR');
+    const profile = await getCharacterEquipment('eu', 'Tarren Mill', 'TËST CHÀR');
     expect(profile.equipped_items[0].slot.type).toBe('BACK');
     expect(globalThis.fetch).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('/profile/wow/character/silvermoon/t%C3%ABst%20ch%C3%A0r/equipment'),
+      'https://eu.api.blizzard.com/profile/wow/character/tarren-mill/t%C3%ABst%20ch%C3%A0r/equipment?namespace=profile-eu&locale=en_GB',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer token' }),
       }),
