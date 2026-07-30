@@ -5,10 +5,11 @@ import { logger } from '../../services/logger.js';
 export const APPLICATION_LOG_CATEGORY_CONFIG_KEY = 'application_log_category_id';
 
 const LEGACY_CATEGORY_NAME = 'Application-logs';
-const CURRENT_CATEGORY_NAME = /^APPLICATION LOGS · \d+ PENDING$/;
+const CURRENT_CATEGORY_NAME = /^(?:🟥 )?APPLICATION LOGS · \d+ PENDING$/;
 
 export function buildPendingApplicationCategoryName(count: number): string {
-  return `APPLICATION LOGS · ${count} PENDING`;
+  const prefix = count > 0 ? '🟥 ' : '';
+  return `${prefix}APPLICATION LOGS · ${count} PENDING`;
 }
 
 function readCategoryId(): string | undefined {
