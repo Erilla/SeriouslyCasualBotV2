@@ -297,38 +297,47 @@ implying completeness.
 
 ### Merging and provenance
 
-The two sources are unioned and deduplicated by `name-realm`. Every alt carries its
-provenance, since with no declaration question there is nothing to compare against:
+The sources are unioned and deduplicated by `name-realm`. Internally each finding keeps the
+source that produced it, but the message does **not** expose the mechanism — a reviewer only
+needs to know whether the applicant told us about a character or not:
 
-- `raider.io` — from the owner's claimed-character list
-- `declared main` — from `main_character` on the applicant's character
-- `fingerprint (83% match)` — from an achievement match
+| Internal source                  | Displayed as                   | Confidence |
+| -------------------------------- | ------------------------------ | ---------- |
+| The character in the application | `from the application`         | —          |
+| Raider.IO claimed-character list | `undeclared (100% confidence)` | 100%       |
+| `main_character` declared main   | `undeclared (100% confidence)` | 100%       |
+| Achievement fingerprint          | `undeclared (N% confidence)`   | match %    |
 
-Where both find the same character, `raider.io` wins, as it is authoritative.
+Raider.IO-sourced characters are account-authoritative, so they take 100% rather than a
+computed score. This keeps a single sort key across all sources.
+
+"% match" is called **% confidence** in the output.
 
 ### Output
 
-A second follow-up message after the logs block, grouped by guild. Raider.IO returns every
-claimed character including levelling alts — 25 for the tested applicant, 13 of them at ilvl
-102 — so the message leads with raid-relevant characters (max level) and collapses the rest to
-a count:
+A message listing every character found, sorted **application character first, then undeclared
+by descending confidence**. Flat, not grouped by guild — guild is shown inline so the ordering
+can be by confidence. Each character name links to its Raider.IO profile:
 
 ```
-**Alts** — 25 found for raider.io user "Zenfu"
+**Found characters** — 16
 
-**Goodlife** *(Tarren Mill)*
-**Gorre**-Outland · Death Knight · 291 ilvl — raider.io
-**Hitoshura**-Ravencrest · Rogue · 293 ilvl — applicant's main
-
-**No guild**
-**Zenfu**-Kazzak · Monk · 291 ilvl — raider.io
-**Manhwa**-Ravencrest · Warrior · 245 ilvl — raider.io
-
-*+13 characters below max level (not shown)*
+[Regnipaw-Draenor](https://raider.io/characters/eu/draenor/Regnipaw) · Druid · Rancour (Draenor) — from the application
+[Monkni-Draenor](https://raider.io/characters/eu/draenor/Monkni) · Monk · Rancour (Draenor) — undeclared (93% confidence)
+[Regnigrip-Draenor](https://raider.io/characters/eu/draenor/Regnigrip) · Death Knight · Rancour (Draenor) — undeclared (91% confidence)
+[Rainster-Ravencrest](https://raider.io/characters/eu/ravencrest/Rainster) · Warrior · Rancour (Draenor) — undeclared (88% confidence)
+…
 ```
 
-Guilds are resolved per shown alt via `fields=guild` — one cheap documented call each, which
-also bounds that cost to the max-level subset rather than all 25.
+Item level is not shown. An earlier draft displayed it and filtered on it, which was wrong on
+both counts: the threshold was arbitrary, and `Monkni-Draenor` came back at 481 ilvl against
+its siblings' ~290 (a different content type), so the number misleads more than it informs.
+
+**No characters are filtered out.** Every character found is listed. Guild is resolved for
+each via `fields=guild` — one cheap documented call per character.
+
+At ~110 characters per line, 16 entries is ~1,800 characters, so the message goes through the
+existing `splitMessage`; the 25-character account would otherwise exceed Discord's 2,000 limit.
 
 Mythic logs run for the applicant's main plus the **two alts with the most recent raid
 activity**, ranked by one `recentReports(limit: 1)` call each. Remaining alts are listed
@@ -463,13 +472,13 @@ insert a message between existing ones, and the intel takes seconds to minutes, 
 `createForumPost` posts two **placeholders** in position at creation time and the job edits
 them in place:
 
-| #   | Message                            | Posted by         |
-| --- | ---------------------------------- | ----------------- |
-| 1   | Q&A (split as today)               | `createForumPost` |
-| 2   | `**Alts** — searching…`            | `createForumPost` |
-| 3   | `**Mythic raid logs** — fetching…` | `createForumPost` |
-| 4   | Voting embed                       | `createForumPost` |
-| 5   | Accept / Reject buttons            | `createForumPost` |
+| #   | Message                             | Posted by         |
+| --- | ----------------------------------- | ----------------- |
+| 1   | Q&A (split as today)                | `createForumPost` |
+| 2   | `**Found characters** — searching…` | `createForumPost` |
+| 3   | `**Mythic raid logs** — fetching…`  | `createForumPost` |
+| 4   | Voting embed                        | `createForumPost` |
+| 5   | Accept / Reject buttons             | `createForumPost` |
 
 Their ids are written to `alts_message_id` and `logs_message_id` on the job, which the runner
 already needed for resume-and-edit.
