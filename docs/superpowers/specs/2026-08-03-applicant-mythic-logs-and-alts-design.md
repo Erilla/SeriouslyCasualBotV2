@@ -137,6 +137,27 @@ value and the character's own name, each accepted only if the returned profile's
 Where `discord_profile` is present it is recorded in the output and used to corroborate
 fingerprint matches — for Driptinus it independently confirmed one of the three.
 
+#### Declared main (`main_character`)
+
+The same payload may carry `characterCustomizations.main_character`, a full character object
+naming the main this character is an alt of — the "(Alt of X)" shown on the site. It is
+player-declared, free (already in the payload we fetch), and survives when `user` is hidden.
+
+```
+Yawnersw-Silvermoon (Monk) → main_character: Yawnersowo-Draenor (Druid)
+```
+
+When present:
+
+1. Record the main and show it in the output as a declared link.
+2. **Pivot to it** — retry the owner lookup against the main, and seed the fingerprint frontier
+   with the main's guild rather than the alt's. A main is likelier to be claimed, better
+   guilded, and more raid-relevant than the alt someone applied on.
+
+An absent `main_character` on a character that has one elsewhere means nothing; only its
+presence is informative. On the tested pair the fingerprint reached the same main (54%) but
+needed 313 requests and a shared guild to do it, where the declared link needed neither.
+
 These are undocumented internal endpoints with no stability guarantee. They must fail soft
 and must never prevent source 2 from running. They get their own `apiHealth` service key
 (`raiderio-internal`) so a breakage cannot open the circuit for the documented Raider.IO API
@@ -190,9 +211,19 @@ A third sample (Driptinus-Argent Dawn, guild `Rancour-Draenor`, 313 scanned) fou
 `Ictinus` corroborates independently: Driptinus's own `characterCustomizations.discord_profile`
 is `ictinus`, so the fingerprint rediscovered the account's likely main without being told.
 
-**Match rule:** at least 20% identical of at least 200 common achievements. Across three
-samples the observed noise ceiling is 3.0% and the weakest genuine match is 45%, so 20% sits
-mid-gap with an order of magnitude of margin either side.
+A fourth sample (Yawnersw-Silvermoon, same `Rancour-Draenor` roster) found nine, with the
+weakest genuine match of any sample:
+
+```
+56.7%  Yawnersx-Draenor
+54.x%  Yawnersowo-Draenor      ← the declared main, found independently
+31.0%  Yawners-Draenor         ← weakest true match observed
+```
+
+**Match rule:** at least 20% identical of at least 200 common achievements. Across four
+samples the observed noise ceiling is 3.0% and the weakest genuine match is 31%. An earlier
+draft used 30%, which `Yawners-Draenor` would have cleared by one point — 20% keeps a real
+margin below the weakest observed alt while staying an order of magnitude above the noise.
 
 Fingerprints come from
 `GET https://{region}.api.blizzard.com/profile/wow/character/{realm}/{name}/achievements`
@@ -249,6 +280,7 @@ The two sources are unioned and deduplicated by `name-realm`. Every alt carries 
 provenance, since with no declaration question there is nothing to compare against:
 
 - `raider.io` — from the owner's claimed-character list
+- `declared main` — from `main_character` on the applicant's character
 - `fingerprint (83% match)` — from an achievement match
 
 Where both find the same character, `raider.io` wins, as it is authoritative.
