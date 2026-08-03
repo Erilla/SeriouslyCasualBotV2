@@ -406,14 +406,34 @@ is left untouched.
 
 ### Which characters get a log sweep
 
-Mythic logs run for the applicant's character plus the **four alts with the most recent raid
-activity**, ranked by one cheap `recentReports(limit: 20)` call each. Remaining characters are
-listed without a sweep.
+Mythic logs run for the applicant's character (always) plus **four alts**, chosen in two
+stages rather than guessed.
 
-Four rather than two because of players who rotate characters per raid. `Brentpriest-Draenor`
-has 19 claimed characters; sweeping five produced only three tiers, and the applicant's own
-character accounted for just one of them. Two would have hidden most of the account's history.
-Five sweeps is roughly 1,500 WCL points against the 9,000/hour budget.
+**Stage 1 — Raider.IO tells us who has Mythic kills.** `fields=raid_progression` returns
+`mythic_bosses_killed` per raid for one cheap documented call per character, no WCL points
+spent. Characters with any Mythic kill go to the front of the queue, ranked by kill count. On
+`Brentpriest-Draenor`'s 19 claimed characters this flagged exactly `Brenthunter` (7/9 M) and
+`Brentprietwo` (6/9 M) — the same two a WCL probe picks, for free.
+
+**Stage 2 — WCL fills the remaining slots.** Any slots left over are filled by
+`recentReports(limit: 20)` filtered to raid zones, most recent first.
+
+Stage 2 is required because `raid_progression` has three blind spots, all observed:
+
+- **Current expansion only.** Regnipaw's `raid_progression` lists four Midnight raids; his
+  Amirdrassil 9/9 and Nerub'ar Palace kills do not appear. `Brentpriest` reads zero Mythic
+  kills while WCL shows a Nerub'ar Rasha'nan kill.
+- **Crawl lag.** `Brenthunter` was last crawled 11 weeks before this was written. Regnipaw
+  reports `4/9 M` where WCL already has a Midnight Falls kill.
+- **Kills only.** Wipe-only progression is invisible to it, and wipes are explicitly in scope
+  for this feature.
+
+Treating it as a gate would therefore hide exactly the history the three-expansion window
+exists to surface. As a prioritiser it costs nothing and improves the ordering.
+
+Four alts rather than two because of players who rotate characters per raid: `Brentpriest` has
+19 claimed characters, and sweeping five produced only three tiers with the applicant's own
+character contributing one. Five sweeps is roughly 1,500 WCL points against 9,000/hour.
 
 ## Resumable jobs and rate-limit handling
 
@@ -581,7 +601,7 @@ progressively rather than all at once at the end.
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `src/services/warcraftlogs.ts`                                  | `getApplicantMythicProgress`, zone catalogue fetch + cache                         |
 | `src/services/blizzard.ts`                                      | `getCharacterAchievementFingerprint`                                               |
-| `src/services/raiderio.ts`                                      | `getCharacterGuild` (documented API)                                               |
+| `src/services/raiderio.ts`                                      | `getCharacterGuild`, `getRaidProgression` (documented API)                         |
 | `src/services/raiderioInternal.ts`                              | `getCharacterOwner`, `getClaimedCharacters` (internal endpoints, isolated breaker) |
 | `src/utils/concurrency.ts`                                      | Bounded-parallelism helper for fingerprint fetches                                 |
 | `src/functions/applications/mythic-logs/selectMythicReports.ts` | Pure: catalogue filter, boss ranking, dedupe, caps                                 |
@@ -626,6 +646,10 @@ Unit tests cover the pure functions with fixture data:
 - Zone catalogue filtering: `>= 500` rollups, PTR/Beta names, dungeon-only zones, sparse zones
 - Boss ranking with wipes: deeper wipe beats shallower kill
 - Report dedupe across bosses; the three-per-raid and five-raid caps
+- Cross-character merge: kill beats wipe, lower boss % beats higher, recency breaks ties, and
+  each surviving line keeps the right character attribution
+- Sweep selection: Mythic-kill characters ordered first, WCL recency filling the remainder,
+  the applicant's character always included even at zero reported kills
 - Fingerprint comparison: match, non-match, and insufficient-common-achievements cases
 - BFS: multi-guild seeding, guild dedupe, cap enforcement, truncation flag
 - Rate-limit classification: 429 with and without `Retry-After`, `CircuitOpenError`, WCL
