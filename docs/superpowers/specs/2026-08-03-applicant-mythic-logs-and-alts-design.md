@@ -11,7 +11,8 @@ forum thread:
 1. **Mythic raid logs** for the applicant's character — the deepest Mythic bosses reached in
    each of up to five recent raid tiers, wipes included, one report link per boss.
 2. **Alts** — other characters on the same Battle.net account, discovered without asking the
-   applicant, each with its guild, and Mythic logs for the two most raid-active alts.
+   applicant, each with its guild. The four most raid-active are swept for logs too, and their
+   results are merged into the logs message with each line attributed to its character.
 
 Both run in the background after the forum post exists. Neither can fail the application.
 
@@ -107,6 +108,32 @@ Posted as a follow-up message to the application thread, mirroring how
 With no Mythic history, the message is explicit rather than absent:
 `No Mythic raid logs found for **X** in the last 3 expansions.` Silence would be ambiguous to
 a reviewer.
+
+### Attribution across characters
+
+The message merges results from the applicant's character _and_ their swept alts, so **every
+line names the character the report belongs to**. Without it a reviewer cannot tell whose
+progression they are reading:
+
+```
+**Mythic raid logs** — Brentpriest + 4 alts
+
+**VS / DR / MQD** *(Midnight)*
+9/9 **Midnight Falls** — wiping, best 80.5% · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/1rkzLm8jK9x3YCwc)
+7/9 **Chimaerus, the Undreamt God** — 1 kill · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/N7tJvzVBZF2YXQ3d)
+
+**Nerub-ar Palace** *(The War Within)*
+4/8 **Rasha'nan** — 1 kill · **Brentpriest** · [report](https://www.warcraftlogs.com/reports/Q3m2Ly4gZCkFRdBb)
+```
+
+That applicant applied on `Brentpriest`, which reaches 4/8 on its own, while the account is
+9/9-progressing on `Brenthunter`. Both facts matter and neither is legible without the label.
+
+**Merge rule.** Tiers are pooled across characters; within a tier each boss keeps the single
+strongest piece of evidence — a kill beats any wipe, and between two wipes the lower boss
+percentage wins; ties break to the more recent report. The three-links-per-tier and
+five-tiers caps then apply to the pooled result, so an alt's deeper progression can displace
+the applicant's own line rather than being appended to it.
 
 ## Feature 2: Alt Discovery
 
@@ -377,9 +404,16 @@ requested page from `applicant_intel_findings` on demand. Pages are therefore va
 long as the job row exists, and survive a bot restart. The existing cache-based `page:` handler
 is left untouched.
 
-Mythic logs run for the applicant's main plus the **two alts with the most recent raid
-activity**, ranked by one `recentReports(limit: 1)` call each. Remaining alts are listed
-without a log sweep. This bounds the background job at three sweeps rather than one per alt.
+### Which characters get a log sweep
+
+Mythic logs run for the applicant's character plus the **four alts with the most recent raid
+activity**, ranked by one cheap `recentReports(limit: 20)` call each. Remaining characters are
+listed without a sweep.
+
+Four rather than two because of players who rotate characters per raid. `Brentpriest-Draenor`
+has 19 claimed characters; sweeping five produced only three tiers, and the applicant's own
+character accounted for just one of them. Two would have hidden most of the account's history.
+Five sweeps is roughly 1,500 WCL points against the 9,000/hour budget.
 
 ## Resumable jobs and rate-limit handling
 
@@ -535,7 +569,7 @@ Phases run in the order recorded on the job, each resumable independently:
 1. `logs` — Mythic logs for the applicant's character; edits the logs placeholder when ready
 2. `alt_sources` — declared main, owner lookup, claimed characters, guild resolution
 3. `fingerprint` — BFS over every associated guild
-4. `alt_logs` — Mythic logs for the two most raid-active alts
+4. `alt_logs` — Mythic logs for the four most raid-active alts, merged into the logs message
 5. `done` — final edit of both placeholders, footer removed
 
 Each phase edits the relevant placeholder as its results firm up, so the thread fills in
