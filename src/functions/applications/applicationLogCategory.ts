@@ -1,8 +1,17 @@
-import { ChannelType, type CategoryChannel, type Guild, type GuildBasedChannel } from 'discord.js';
+import {
+  ChannelType,
+  type CategoryChannel,
+  type ForumChannel,
+  type Guild,
+  type GuildBasedChannel,
+} from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 
 export const APPLICATION_LOG_CATEGORY_CONFIG_KEY = 'application_log_category_id';
+const APPLICATION_LOG_FORUM_CONFIG_KEY = 'application_log_forum_id';
+// Servers have been seen using both spellings for the forum itself.
+const APPLICATION_LOG_FORUM_NAMES = ['application-log', 'applications-log'];
 
 const LEGACY_CATEGORY_NAME = 'Application-logs';
 const CURRENT_CATEGORY_NAME = /^(?:🟥 )?APPLICATION LOGS · \d+ PENDING$/;
@@ -12,10 +21,10 @@ export function buildPendingApplicationCategoryName(count: number): string {
   return `${prefix}APPLICATION LOGS · ${count} PENDING`;
 }
 
-function readCategoryId(): string | undefined {
-  const row = getDatabase()
-    .prepare('SELECT value FROM config WHERE key = ?')
-    .get(APPLICATION_LOG_CATEGORY_CONFIG_KEY) as { value: string } | undefined;
+function readConfigValue(key: string): string | undefined {
+  const row = getDatabase().prepare('SELECT value FROM config WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
   return row?.value;
 }
 
@@ -42,13 +51,42 @@ function isApplicationLogCategory(channel: GuildBasedChannel): channel is Catego
   );
 }
 
+function isForum(channel: GuildBasedChannel | null | undefined): channel is ForumChannel {
+  return channel?.type === ChannelType.GuildForum;
+}
+
+async function fetchChannel(guild: Guild, id: string): Promise<GuildBasedChannel | null> {
+  return guild.channels.cache.get(id) ?? (await guild.channels.fetch(id).catch(() => null));
+}
+
+/**
+ * Locate the category housing the `application-log` forum. The category itself is
+ * never created by the bot and operators are free to name it whatever they like,
+ * so the forum's parent — not the category's name — is the reliable signal.
+ */
+async function resolveCategoryFromForum(guild: Guild): Promise<CategoryChannel | null> {
+  const forumId = readConfigValue(APPLICATION_LOG_FORUM_CONFIG_KEY);
+  let forum = forumId ? await fetchChannel(guild, forumId) : null;
+
+  if (!isForum(forum)) {
+    forum =
+      [...guild.channels.cache.values()].find(
+        (channel) =>
+          channel.type === ChannelType.GuildForum &&
+          APPLICATION_LOG_FORUM_NAMES.includes(channel.name.toLowerCase()),
+      ) ?? null;
+  }
+  if (!isForum(forum) || !forum.parentId) return null;
+
+  const parent = await fetchChannel(guild, forum.parentId);
+  return isCategory(parent) ? parent : null;
+}
+
 export async function resolveApplicationLogCategory(guild: Guild): Promise<CategoryChannel | null> {
   try {
-    const storedId = readCategoryId();
+    const storedId = readConfigValue(APPLICATION_LOG_CATEGORY_CONFIG_KEY);
     if (storedId) {
-      const channel =
-        guild.channels.cache.get(storedId) ??
-        (await guild.channels.fetch(storedId).catch(() => null));
+      const channel = await fetchChannel(guild, storedId);
       if (isCategory(channel)) return channel;
 
       logger.warn(
@@ -58,7 +96,9 @@ export async function resolveApplicationLogCategory(guild: Guild): Promise<Categ
       clearCategoryId();
     }
 
-    const category = [...guild.channels.cache.values()].find(isApplicationLogCategory);
+    const category =
+      (await resolveCategoryFromForum(guild)) ??
+      [...guild.channels.cache.values()].find(isApplicationLogCategory);
     if (category) {
       saveCategoryId(category.id);
       return category;

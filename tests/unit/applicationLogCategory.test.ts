@@ -114,6 +114,13 @@ import readyEvent from '../../src/events/ready.js';
 import { logger } from '../../src/services/logger.js';
 
 type MockCategory = Pick<CategoryChannel, 'id' | 'name' | 'type' | 'setName'>;
+interface MockForum {
+  id: string;
+  name: string;
+  type: ChannelType.GuildForum;
+  parentId: string | null;
+}
+type MockChannel = MockCategory | MockForum;
 
 function makeCategory({ id, name }: { id: string; name: string }): MockCategory {
   return {
@@ -124,7 +131,19 @@ function makeCategory({ id, name }: { id: string; name: string }): MockCategory 
   };
 }
 
-function makeGuild(categories: MockCategory[]): Guild {
+function makeForum({
+  id,
+  name = 'application-log',
+  parentId = null,
+}: {
+  id: string;
+  name?: string;
+  parentId?: string | null;
+}): MockForum {
+  return { id, name, type: ChannelType.GuildForum, parentId };
+}
+
+function makeGuild(categories: MockChannel[]): Guild {
   const channels = new Map(categories.map((category) => [category.id, category]));
   return {
     id: 'guild-1',
@@ -251,6 +270,62 @@ describe('application log category', () => {
     await expect(resolveApplicationLogCategory(makeGuild([category]))).resolves.toBe(category);
 
     expect(readConfig('application_log_category_id')).toBe('category-2');
+  });
+
+  it('adopts the parent of the stored application-log forum whatever the category is named', async () => {
+    seedConfig('application_log_forum_id', 'forum-1');
+    const category = makeCategory({ id: 'category-7', name: 'Officer stuff' });
+    const forum = makeForum({ id: 'forum-1', parentId: 'category-7' });
+
+    await expect(resolveApplicationLogCategory(makeGuild([category, forum]))).resolves.toBe(
+      category,
+    );
+
+    expect(readConfig('application_log_category_id')).toBe('category-7');
+  });
+
+  it('finds the application-log forum by name when no forum ID is stored', async () => {
+    const category = makeCategory({ id: 'category-7', name: 'Recruitment' });
+    const forum = makeForum({ id: 'forum-1', parentId: 'category-7' });
+
+    await expect(resolveApplicationLogCategory(makeGuild([category, forum]))).resolves.toBe(
+      category,
+    );
+  });
+
+  it('renames the adopted forum parent with the pending count', async () => {
+    seedConfig('application_log_forum_id', 'forum-1');
+    seedApplication('active');
+    const category = makeCategory({ id: 'category-7', name: 'Officer stuff' });
+    const forum = makeForum({ id: 'forum-1', parentId: 'category-7' });
+
+    await refreshPendingApplicationCategory(makeGuild([category, forum]));
+
+    expect(category.setName).toHaveBeenCalledWith('🟥 APPLICATION LOGS · 1 PENDING');
+  });
+
+  it('adopts the "Applications-log" parent of an "applications-log" forum found by name', async () => {
+    // Mirrors the live guild layout: neither the forum nor its parent category
+    // matches the names this module originally looked for.
+    const category = makeCategory({ id: 'category-7', name: 'Applications-log' });
+    const decoy = makeCategory({ id: 'category-8', name: 'applications' });
+    const forum = makeForum({ id: 'forum-1', name: 'applications-log', parentId: 'category-7' });
+
+    await expect(resolveApplicationLogCategory(makeGuild([category, decoy, forum]))).resolves.toBe(
+      category,
+    );
+
+    expect(readConfig('application_log_category_id')).toBe('category-7');
+  });
+
+  it('falls back to the name match when the application-log forum has no parent', async () => {
+    seedConfig('application_log_forum_id', 'forum-1');
+    const category = makeCategory({ id: 'category-1', name: 'Application-logs' });
+    const forum = makeForum({ id: 'forum-1', parentId: null });
+
+    await expect(resolveApplicationLogCategory(makeGuild([category, forum]))).resolves.toBe(
+      category,
+    );
   });
 
   it('discovers an alerted current-format category', async () => {
