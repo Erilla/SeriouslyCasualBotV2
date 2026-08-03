@@ -336,8 +336,25 @@ its siblings' ~290 (a different content type), so the number misleads more than 
 **No characters are filtered out.** Every character found is listed. Guild is resolved for
 each via `fields=guild` — one cheap documented call per character.
 
-At ~110 characters per line, 16 entries is ~1,800 characters, so the message goes through the
-existing `splitMessage`; the 25-character account would otherwise exceed Discord's 2,000 limit.
+### Message size and paging
+
+The list is rendered as an **embed**, not plain content: an embed description allows 4,096
+characters against a message's 2,000. At ~110 characters per line that is ~37 characters
+listed in a single message, so every account tested — including the 25-character one — fits
+without paging. `splitMessage` is deliberately not used here; it would spread the list across
+several messages and push the voting controls further down the thread.
+
+Beyond that, the message pages. The repo already has `paginateLines`, `buildPageEmbed` and
+`buildPageButtons` in `src/functions/pagination.ts`, and they are reused as-is — but **not**
+the accompanying cache. `src/interactions/pagination.ts` resolves pages from an in-memory
+store with a 5-minute TTL and tells the user to "run the command again" when it lapses. That
+is correct for `/raiders` and `/trials`, and wrong for a forum post a reviewer opens days
+later, where there is no command to re-run.
+
+Instead, a durable handler with custom ID `intelpage:{applicationId}:{page}` rebuilds the
+requested page from `applicant_intel_findings` on demand. Pages are therefore valid for as
+long as the job row exists, and survive a bot restart. The existing cache-based `page:` handler
+is left untouched.
 
 Mythic logs run for the applicant's main plus the **two alts with the most recent raid
 activity**, ranked by one `recentReports(limit: 1)` call each. Remaining alts are listed
@@ -488,9 +505,9 @@ them: success writes the results, an empty result writes the explicit "none foun
 failure or abandonment writes what was gathered plus why it stopped.
 
 Report links use markdown (`[report](url)`) rather than bare URLs: a tier with three links
-would otherwise produce three Discord link previews and swamp the thread. The alts message
-goes through the existing `splitMessage`, since 25 alts with guild grouping approaches the
-2,000-character limit.
+would otherwise produce three Discord link previews and swamp the thread. Both messages are
+embeds — see Message size and paging for why, and for the durable page handler the
+found-characters list needs.
 
 Phases run in the order recorded on the job, each resumable independently:
 
@@ -521,6 +538,7 @@ progressively rather than all at once at the end.
 | `src/functions/applications/intel/runJob.ts`                    | Phase sequencing, pause/resume, message editing                                    |
 | `src/functions/applications/intel/rateLimit.ts`                 | Pure: classify an error as pausable, compute `resume_after`                        |
 | `src/functions/applications/intel/resumeJobs.ts`                | Scheduler task: pick up paused/pending jobs, crash recovery                        |
+| `src/interactions/intelPagination.ts`                           | Durable `intelpage:` handler rebuilding pages from `applicant_intel_findings`      |
 
 Selection, ranking and rendering are pure functions taking plain data, matching how
 `extractMatchingCodes` is structured and tested today.
