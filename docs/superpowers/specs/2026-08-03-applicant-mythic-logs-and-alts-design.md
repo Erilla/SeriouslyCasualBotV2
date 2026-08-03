@@ -431,16 +431,19 @@ than empty.
 
 ### Partial results are published, not withheld
 
-When a job pauses, the runner posts (or edits) its messages with whatever it has and a footer:
+Because the placeholders already exist (see Thread layout under Integration), a paused job can
+show its progress rather than sitting blank. On pause the runner edits its messages with whatever it has and a footer:
 
 ```
 *Rate limited on blizzard — 1,240 of ~3,000 characters scanned. Resuming after 14:05.*
 ```
 
-On resume it edits the same message in place, which is why `logs_message_id` and
-`alts_message_id` are on the job. A reviewer looking at a thread mid-sweep sees real findings
-and an honest statement of what is still missing, never a silently truncated list. When the
-job completes the footer is removed.
+On resume it edits the same messages again, and the footer is removed when the job completes.
+A reviewer looking at a thread mid-sweep sees real findings and an honest statement of what is
+still missing, never a silently truncated list that looks complete.
+
+Nothing found is ever lost to a pause: every scanned character, queue item and finding is
+committed to the tables as it happens, so a pause costs time, not work.
 
 ## Integration
 
@@ -453,13 +456,43 @@ later, or minutes later if the runner has to wait out a rate limit.
 Because the job row is written before any API call, a crash between submission and the first
 request loses nothing — the scheduler picks it up as `pending`.
 
+### Thread layout
+
+The required reading order is Q&A → found characters → found logs → voting. Discord cannot
+insert a message between existing ones, and the intel takes seconds to minutes, so
+`createForumPost` posts two **placeholders** in position at creation time and the job edits
+them in place:
+
+| #   | Message                            | Posted by         |
+| --- | ---------------------------------- | ----------------- |
+| 1   | Q&A (split as today)               | `createForumPost` |
+| 2   | `**Alts** — searching…`            | `createForumPost` |
+| 3   | `**Mythic raid logs** — fetching…` | `createForumPost` |
+| 4   | Voting embed                       | `createForumPost` |
+| 5   | Accept / Reject buttons            | `createForumPost` |
+
+Their ids are written to `alts_message_id` and `logs_message_id` on the job, which the runner
+already needed for resume-and-edit.
+
+A placeholder must never be left reading "searching…" forever. Every terminal state edits
+them: success writes the results, an empty result writes the explicit "none found" text, and
+failure or abandonment writes what was gathered plus why it stopped.
+
+Report links use markdown (`[report](url)`) rather than bare URLs: a tier with three links
+would otherwise produce three Discord link previews and swamp the thread. The alts message
+goes through the existing `splitMessage`, since 25 alts with guild grouping approaches the
+2,000-character limit.
+
 Phases run in the order recorded on the job, each resumable independently:
 
-1. `logs` — Mythic logs for the applicant's character; posts as soon as ready
+1. `logs` — Mythic logs for the applicant's character; edits the logs placeholder when ready
 2. `alt_sources` — declared main, owner lookup, claimed characters, guild resolution
 3. `fingerprint` — BFS over every associated guild
 4. `alt_logs` — Mythic logs for the two most raid-active alts
-5. `done`
+5. `done` — final edit of both placeholders, footer removed
+
+Each phase edits the relevant placeholder as its results firm up, so the thread fills in
+progressively rather than all at once at the end.
 
 ## Module layout
 
