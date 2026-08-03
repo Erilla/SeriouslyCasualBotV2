@@ -336,6 +336,24 @@ its siblings' ~290 (a different content type), so the number misleads more than 
 **No characters are filtered out.** Every character found is listed. Guild is resolved for
 each via `fields=guild` — one cheap documented call per character.
 
+### Links
+
+Character names link to `https://raider.io/characters/{region}/{realm-slug}/{Name}` — realm
+lowercased with spaces replaced by hyphens (`Tarren Mill` → `tarren-mill`); name casing is
+irrelevant, both forms return 200.
+
+Two things to know about how these render:
+
+- **Raider.IO serves no per-character OpenGraph data.** Its character pages are
+  client-rendered and expose only static site-wide tags (`og:url` is literally
+  `https://raider.io`). Discord can never produce a meaningful preview for them, so link
+  previews are a non-issue for this message. Warcraft Logs report links _do_ have real OG data,
+  which is why those stay masked.
+- **Masked links only render in embeds and bot-authored messages**, never in a message typed by
+  a user. Both intel messages are bot-authored embeds, so `[Name-Realm](url)` renders as
+  clickable text — but pasting the same markdown into Discord by hand shows it literally, which
+  is not a defect in the output.
+
 ### Message size and paging
 
 The list is rendered as an **embed**, not plain content: an embed description allows 4,096
