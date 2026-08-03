@@ -97,11 +97,11 @@ Posted as a follow-up message to the application thread, mirroring how
 **Mythic raid logs — Nnoggie**
 
 **Manaforge Omega** *(The War Within)*
-6/8 **Fractillus** — 1 kill · [report](https://www.warcraftlogs.com/reports/…)
+6/8 **Fractillus** — 1 kill · [report](https://www.warcraftlogs.com/reports/ZDHVbJdK2yx9nkhf)
 
 **Liberation of Undermine** *(The War Within)*
-6/8 **One-Armed Bandit** — wiping, best 0.7% · [report](…)
-4/8 **Rik Reverb** — 2 kills · [report](…)
+6/8 **One-Armed Bandit** — wiping, best 0.7% · [report](https://www.warcraftlogs.com/reports/v4wVWRhfYyrnCpFT)
+4/8 **Rik Reverb** — 2 kills · [report](https://www.warcraftlogs.com/reports/vWrJFmNHxtQw9pZ8)
 ```
 
 With no Mythic history, the message is explicit rather than absent:
@@ -349,10 +349,13 @@ Two things to know about how these render:
   `https://raider.io`). Discord can never produce a meaningful preview for them, so link
   previews are a non-issue for this message. Warcraft Logs report links _do_ have real OG data,
   which is why those stay masked.
-- **Masked links only render in embeds and bot-authored messages**, never in a message typed by
-  a user. Both intel messages are bot-authored embeds, so `[Name-Realm](url)` renders as
-  clickable text — but pasting the same markdown into Discord by hand shows it literally, which
-  is not a defect in the output.
+- **Masked links must go in an embed.** `[text](url)` is reliably parsed in an embed
+  description; in plain message content it is not, and renders literally as
+  `[report](https://…)`. Both intel messages are therefore embeds — this is a hard requirement
+  of the format, not a stylistic choice, and posting either as plain content will visibly break
+  every link.
+- **URLs must be absolute.** Only a full `https://…` target linkifies. Any elided or
+  relative-looking form (`.../reports/abc123`) renders as literal text.
 
 ### Message size and paging
 
