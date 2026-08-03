@@ -163,12 +163,12 @@ and must never prevent source 2 from running. They get their own `apiHealth` ser
 (`raiderio-internal`) so a breakage cannot open the circuit for the documented Raider.IO API
 that `getGuildRoster` and the achievements image depend on.
 
-### Source 2 — Blizzard achievement fingerprint (fallback)
+### Source 2 — Blizzard achievement fingerprint
 
-Runs **only when source 1 returns nothing** — no claimed user, privacy-hidden owner, or the
-internal endpoints failing. On the Hitoshura sample source 1 found 25 alts in 2 requests while
-a full fingerprint sweep of the same applicant found 1 in 417, so running both unconditionally
-would spend minutes of Blizzard calls to add nothing.
+Finds alts that are not claimed on Raider.IO, and is the only source that works when the owner
+is privacy-hidden — which was the case for four of the five characters tested. It runs
+alongside source 1 rather than only as a fallback, seeded from every guild source 1 reveals
+(see Guild expansion below).
 
 Account-wide achievements share an identical `completed_timestamp` across every character on
 the account. Comparing two characters' `{achievementId → completed_timestamp}` maps therefore
@@ -237,19 +237,34 @@ An alt's guild is both useful to reviewers and a fresh candidate pool: alts comm
 different guilds from the main, and a fingerprint sweep of only the applicant's own guild
 would miss them.
 
-Discovery is therefore a breadth-first search over guilds:
+Discovery is therefore a breadth-first search over **every guild associated with the account**,
+not just the applicant's own. Scanning only the linked character's guild finds only the alts
+that happen to share it — for Hitoshura that was 1 of 25.
 
-1. Seed the frontier with the applicant's guild (from their Raider.IO profile, `fields=guild`).
+1. **Seed with every known character's guild.** Resolve the guild of the applicant's
+   character, the declared main, and every character returned by source 1, each via
+   `GET /api/v1/characters/profile?…&fields=guild` — one cheap documented call per character.
+   Deduplicate guilds by `name-realm`.
+
    **A guild's realm is not the character's realm** — `Driptinus-Argent Dawn` is in
    `Rancour-Draenor`, and querying the roster on the character's realm returns
    `Could not find requested guild`. Always take the realm from the `guild` object.
+
 2. Pop a guild, fetch its roster via the existing `getGuildRoster`, and fingerprint each
    member not already fingerprinted, comparing against the applicant only — N comparisons,
-   not N².
-3. For every confirmed alt (from either source), resolve its guild with
-   `GET /api/v1/characters/profile?…&fields=guild` — one cheap documented call each.
+   not N². Characters already known from source 1 are recorded as alts without being
+   fingerprinted.
+
+3. For every newly confirmed alt, resolve its guild the same way.
+
 4. Push any guild not yet visited onto the frontier.
+
 5. Repeat until the frontier is empty or a cap is hit.
+
+Source 1 and source 2 therefore compose rather than compete: a claimed-character list of 25
+seeds up to 25 guilds, and the fingerprint then finds the _unclaimed_ alts sitting in any of
+them. Because of this, source 2 now runs whenever any guild is known, not only when source 1
+comes back empty.
 
 **Rosters are scanned in full.** An early draft capped this at 50 members per guild; tested
 against `Goodlife` (429 members) the one genuine alt sat well beyond position 50, so the cap
@@ -265,14 +280,20 @@ today, so this is new (small) code.
 
 | Cap                            | Value |
 | ------------------------------ | ----- |
-| Guilds visited                 | 5     |
-| Total characters fingerprinted | 600   |
-| BFS depth                      | 2     |
+| Guilds visited                 | 12    |
+| Total characters fingerprinted | 3,000 |
+| BFS depth                      | 3     |
 | Concurrent Blizzard requests   | 8     |
 
-The Blizzard rate limit is 36,000/hour, so even a maxed-out sweep uses under 2% of it.
-Characters are deduplicated by `name-realm` across rosters. When a cap truncates the sweep,
-the output says so rather than implying completeness.
+Seeding from every associated guild raises the ceiling considerably: 12 guilds the size of
+`Rancour` (315 members) is ~3,800 characters before deduplication. At the measured rate
+(313 in 12s) a maxed-out sweep is roughly two minutes of background work and 3,000 of the
+36,000 hourly Blizzard requests — under 10%, but no longer negligible, which is what makes
+the scheduling below necessary rather than optional.
+
+Characters are deduplicated by `name-realm` across rosters, so overlapping rosters cost
+nothing the second time. When a cap truncates the sweep, the output says so rather than
+implying completeness.
 
 ### Merging and provenance
 
@@ -313,15 +334,132 @@ Mythic logs run for the applicant's main plus the **two alts with the most recen
 activity**, ranked by one `recentReports(limit: 1)` call each. Remaining alts are listed
 without a log sweep. This bounds the background job at three sweeps rather than one per alt.
 
+## Resumable jobs and rate-limit handling
+
+A sweep can now issue thousands of requests across three APIs, so it must survive hitting a
+rate limit — and a bot restart — without losing what it has already found. The work is
+therefore a **persisted job**, not an in-memory background promise.
+
+### Schema (migration v11)
+
+Four tables, normalised so progress is recorded incrementally rather than by rewriting a large
+JSON blob on every step:
+
+```sql
+applicant_intel_jobs (
+  id INTEGER PRIMARY KEY,
+  application_id INTEGER NOT NULL,
+  thread_id TEXT,
+  character_name TEXT NOT NULL,
+  character_realm TEXT NOT NULL,
+  character_region TEXT NOT NULL,
+  phase TEXT NOT NULL,          -- 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'done'
+  status TEXT NOT NULL,         -- 'pending' | 'running' | 'paused' | 'done' | 'failed'
+  resume_after TEXT,            -- ISO timestamp; NULL when not paused
+  paused_service TEXT,          -- which API caused the pause
+  attempts INTEGER NOT NULL DEFAULT 0,
+  logs_message_id TEXT,
+  alts_message_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+
+applicant_intel_queue (
+  job_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,           -- 'guild' | 'report' | 'character_guild'
+  key TEXT NOT NULL,            -- 'Rancour-draenor', a WCL report code, …
+  payload TEXT,                 -- JSON: zone id, BFS depth, …
+  done INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (job_id, kind, key)
+)
+
+applicant_intel_scanned (
+  job_id INTEGER NOT NULL,
+  character_key TEXT NOT NULL,  -- 'name-realm', lowercased
+  PRIMARY KEY (job_id, character_key)
+)
+
+applicant_intel_findings (
+  job_id INTEGER NOT NULL,
+  name TEXT NOT NULL, realm TEXT NOT NULL,
+  class TEXT, item_level INTEGER,
+  guild_name TEXT, guild_realm TEXT,
+  source TEXT NOT NULL,         -- 'raider.io' | 'declared main' | 'fingerprint'
+  match_pct REAL,
+  PRIMARY KEY (job_id, name, realm)
+)
+```
+
+`applicant_intel_scanned` is what makes the fingerprint resumable: 3,000 rows of
+`name-realm` is cheap to insert incrementally and to check on resume, where a JSON array
+rewritten per character would not be.
+
+### Detecting a limit
+
+`httpRequest` already retries 429s and honours `Retry-After` up to 30 seconds, then throws
+`HttpError` with `status`. That covers a brief throttle. What it cannot cover is an exhausted
+hourly budget, where the correct wait is minutes.
+
+Two changes:
+
+1. **Surface the wait.** Add an optional `retryAfterMs` to `HttpError`, populated from the
+   final response's `Retry-After`. Without it the runner can only guess.
+2. **Pre-empt WCL's points budget.** WCL bills by points, not requests, and returns
+   `rateLimitData { limitPerHour, pointsSpentThisHour }` on any query for ~1 point. The runner
+   requests it on each `fights` query it already makes and pauses when spend exceeds 90% of
+   the limit, rather than waiting to be refused.
+
+A pause is triggered by an `HttpError` with status 429, a `CircuitOpenError`, or the WCL
+points pre-empt. Any other error fails only the current work item, which is marked done so a
+resume does not retry it forever.
+
+### Pausing and resuming
+
+On pause the runner writes `status='paused'`, the offending service, and `resume_after`:
+`Retry-After` when known, otherwise a backoff of 5min → 15min → 60min by attempt count, capped
+at one hour (the natural window for both the Blizzard and WCL budgets). Everything completed
+so far is already in the tables, so nothing is lost.
+
+A scheduler interval task (`resumeApplicantIntelJobs`, every 5 minutes) picks up jobs where
+`status='paused' AND resume_after <= now` and continues them from their recorded phase and
+queue. On startup, jobs left `running` by a crash are reset to `pending` and picked up on the
+next tick — the same crash-recovery shape as `resumeSessions`.
+
+Jobs are abandoned after 20 attempts or 7 days, whichever comes first: `status='failed'`, with
+a note appended to the thread message so a reviewer knows the picture is incomplete rather
+than empty.
+
+### Partial results are published, not withheld
+
+When a job pauses, the runner posts (or edits) its messages with whatever it has and a footer:
+
+```
+*Rate limited on blizzard — 1,240 of ~3,000 characters scanned. Resuming after 14:05.*
+```
+
+On resume it edits the same message in place, which is why `logs_message_id` and
+`alts_message_id` are on the job. A reviewer looking at a thread mid-sweep sees real findings
+and an honest statement of what is still missing, never a silently truncated list. When the
+job completes the footer is removed.
+
 ## Integration
 
-`submitApplication` gains a step after the overlord notification that fires the background
-job without awaiting it, wrapped so a rejection cannot surface as an unhandled rejection. The
-forum post, the database record and the overlord notification all complete exactly as they do
-today; the thread simply gains two messages seconds later.
+`submitApplication` gains a step after the overlord notification that inserts an
+`applicant_intel_jobs` row and kicks the runner without awaiting it, wrapped so a rejection
+cannot surface as an unhandled rejection. The forum post, the database record and the overlord
+notification all complete exactly as they do today; the thread gains its messages seconds
+later, or minutes later if the runner has to wait out a rate limit.
 
-Ordering within the job: logs for the main → alt discovery → logs for the top two alts → alts
-message. The logs block posts as soon as it is ready rather than waiting for alt discovery.
+Because the job row is written before any API call, a crash between submission and the first
+request loses nothing — the scheduler picks it up as `pending`.
+
+Phases run in the order recorded on the job, each resumable independently:
+
+1. `logs` — Mythic logs for the applicant's character; posts as soon as ready
+2. `alt_sources` — declared main, owner lookup, claimed characters, guild resolution
+3. `fingerprint` — BFS over every associated guild
+4. `alt_logs` — Mythic logs for the two most raid-active alts
+5. `done`
 
 ## Module layout
 
@@ -337,7 +475,10 @@ message. The logs block posts as soon as it is ready rather than waiting for alt
 | `src/functions/applications/alts/compareFingerprints.ts`        | Pure: match ratio and threshold                                                    |
 | `src/functions/applications/alts/discoverAlts.ts`               | BFS orchestration, caps, merge                                                     |
 | `src/functions/applications/alts/renderAlts.ts`                 | Pure: message text                                                                 |
-| `src/functions/applications/postApplicantIntel.ts`              | Background job: sequencing and posting                                             |
+| `src/functions/applications/intel/jobStore.ts`                  | Job/queue/scanned/findings table access                                            |
+| `src/functions/applications/intel/runJob.ts`                    | Phase sequencing, pause/resume, message editing                                    |
+| `src/functions/applications/intel/rateLimit.ts`                 | Pure: classify an error as pausable, compute `resume_after`                        |
+| `src/functions/applications/intel/resumeJobs.ts`                | Scheduler task: pick up paused/pending jobs, crash recovery                        |
 
 Selection, ranking and rendering are pure functions taking plain data, matching how
 `extractMatchingCodes` is structured and tested today.
@@ -347,15 +488,18 @@ Selection, ranking and rendering are pure functions taking plain data, matching 
 Every external call goes through `httpRequest`, inheriting the circuit breaker and
 `apiHealth` tracking. Failures degrade rather than propagate:
 
-| Failure                             | Behaviour                                                 |
-| ----------------------------------- | --------------------------------------------------------- |
-| No Raider.IO URL in answers         | Both features skipped silently                            |
-| WCL down or circuit open            | `No Mythic raid logs found` message                       |
-| Blizzard down                       | Fingerprint fallback skipped; Raider.IO alts still posted |
-| Raider.IO internal endpoints broken | Source 1 skipped; fingerprint fallback runs               |
-| Character owner privacy-hidden      | Source 1 yields nothing; fingerprint fallback runs        |
-| Applicant guildless and unclaimed   | No alts found; message says so explicitly                 |
-| Any unexpected throw                | Logged at warn; application unaffected                    |
+| Failure                                      | Behaviour                                                       |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| No Raider.IO URL in answers                  | No job created; both features skipped silently                  |
+| Rate limit (429 / WCL points / open circuit) | Job pauses, partial results posted, resumes automatically       |
+| WCL down or circuit open                     | `No Mythic raid logs found` message                             |
+| Blizzard down                                | Fingerprint phase skipped; Raider.IO alts still posted          |
+| Raider.IO internal endpoints broken          | Sources 1 and the declared main skipped; fingerprint still runs |
+| Character owner privacy-hidden               | Source 1 yields nothing; other sources still run                |
+| Applicant guildless and unclaimed            | No alts found; message says so explicitly                       |
+| Bot restart mid-sweep                        | Job resumes from its recorded phase and queue                   |
+| 20 attempts or 7 days elapsed                | Job marked `failed`; thread message notes it is incomplete      |
+| Any unexpected throw                         | Logged at warn; application unaffected                          |
 
 An application must never fail, and a thread must never be left half-built, because a
 third-party API is unavailable.
@@ -368,8 +512,12 @@ Unit tests cover the pure functions with fixture data:
 - Boss ranking with wipes: deeper wipe beats shallower kill
 - Report dedupe across bosses; the three-per-raid and five-raid caps
 - Fingerprint comparison: match, non-match, and insufficient-common-achievements cases
-- BFS: guild dedupe, cap enforcement, truncation flag
-- Both renderers, including the empty cases
+- BFS: multi-guild seeding, guild dedupe, cap enforcement, truncation flag
+- Rate-limit classification: 429 with and without `Retry-After`, `CircuitOpenError`, WCL
+  points pre-empt, and non-pausable errors that must not pause the job
+- Backoff schedule, including the attempt cap and the 7-day abandonment
+- Resume: a job with a half-finished queue continues without redoing `scanned` characters
+- Both renderers, including the empty cases and the rate-limited footer
 
 Service functions are tested against a mocked `httpRequest`. No test performs a live API call.
 No new environment variables are introduced, so the `ci.yml` stub block is unchanged.
