@@ -2,6 +2,11 @@ import { config } from '../config.js';
 import { logger } from './logger.js';
 import { httpRequest, HttpError, CircuitOpenError } from './httpClient.js';
 import { normalizeName } from '../functions/raids/normalizeName.js';
+import {
+  selectMythicRaidZones,
+  type WclExpansion,
+  type WclZone,
+} from '../functions/applications/mythic-logs/zoneCatalogue.js';
 
 // ─── Token Cache ─────────────────────────────────────────────
 
@@ -155,4 +160,52 @@ export async function getTrialLogs(characterName: string): Promise<string[]> {
     }
     throw error;
   }
+}
+
+// ─── Zone Catalogue ──────────────────────────────────────────
+
+const ZONE_CATALOGUE_QUERY = `
+  query zoneCatalogue {
+    worldData {
+      expansions {
+        id
+        name
+        zones {
+          id
+          name
+          difficulties { id name }
+          encounters { id name }
+        }
+      }
+    }
+  }
+`;
+
+let cachedZones: WclZone[] | null = null;
+
+/**
+ * Mythic raid zones for the last three expansions, cached for the process
+ * lifetime — the catalogue changes only on patch day and the query costs ~19
+ * rate-limit points.
+ */
+export async function getZoneCatalogue(): Promise<WclZone[]> {
+  if (cachedZones) return cachedZones;
+  const token = await getAccessToken();
+  const result = await httpRequest<{ data: { worldData: { expansions: WclExpansion[] } } }>(
+    'warcraftlogs',
+    'https://www.warcraftlogs.com/api/v2/client',
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: ZONE_CATALOGUE_QUERY }),
+    },
+  );
+  cachedZones = selectMythicRaidZones(result.data.worldData.expansions);
+  logger.debug('WarcraftLogs', `Zone catalogue: ${cachedZones.length} Mythic raid zones`);
+  return cachedZones;
+}
+
+/** Testing seam — clears the process cache. */
+export function resetZoneCatalogueCache(): void {
+  cachedZones = null;
 }
