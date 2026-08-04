@@ -1,5 +1,6 @@
 import { logger } from '../../../services/logger.js';
 import { mapLimit } from '../../../utils/concurrency.js';
+import { CircuitOpenError, HttpError } from '../../../services/httpClient.js';
 import { normalizeRealmSlug } from '../../../services/blizzard.js';
 import { compareFingerprints, type Fingerprint } from './compareFingerprints.js';
 import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/jobStore.js';
@@ -86,6 +87,10 @@ export async function discoverAlts(
   const maxDepth = deps.maxDepth ?? ALT_CAPS.depth;
   const pace = deps.paceMs ?? 0;
 
+  // Nothing may fail an application: an empty applicant list has no primary to
+  // fingerprint against and no work to do.
+  if (applicants.length === 0) return { truncated: false };
+
   const primary = applicants[0];
   const known = new Map<string, RaiderIoCharacter>();
   const guildFrontier: { guild: CharacterGuild; depth: number }[] = [];
@@ -115,7 +120,12 @@ export async function discoverAlts(
     });
     if (summary?.guild) {
       const gk = key(summary.guild.name, summary.guild.realm);
-      if (!visitedGuilds.has(gk)) guildFrontier.push({ guild: summary.guild, depth: 0 });
+      if (
+        !visitedGuilds.has(gk) &&
+        !guildFrontier.some((g) => key(g.guild.name, g.guild.realm) === gk)
+      ) {
+        guildFrontier.push({ guild: summary.guild, depth: 0 });
+      }
     }
   }
 
@@ -176,17 +186,26 @@ export async function discoverAlts(
   //
   // A null applicant fingerprint is UNKNOWN, not a signal to abandon the sweep:
   // the guilds already surfaced by sources 1/2 (declared main, claimed list, own
-  // guild, kill history) are still worth walking and counting against the caps —
-  // this run simply can't identify NEW characters via fingerprint match. Bailing
-  // out here would also make truncation reporting a lie: rosters left unfetched
-  // because we gave up look identical to rosters that were never truncated.
+  // guild, kill history) are still worth walking — the roster fetches warm the
+  // guild-roster cache for a resumed run — but this run cannot identify NEW
+  // characters via fingerprint match, so every comparison in this walk is work
+  // left undone. Report that honestly rather than letting an empty frontier or
+  // an unmet cap read as "nothing to find here".
   const applicantFingerprint = await deps.getCharacterFingerprint(primary);
   if (!applicantFingerprint) {
     logger.warn(
       'Alts',
       `No fingerprint for ${primary.name}-${primary.realm}; guilds will be walked without matching`,
     );
+    // No comparison can happen this run, so every candidate below is work left
+    // undone by definition — an empty frontier or an unmet cap must never make
+    // that read as "nothing to find here".
+    truncated = true;
   }
+  // Characters already recorded via a stronger source (application/declared
+  // main/claimed list) never need a fingerprint fetch even if a roster surfaces
+  // them again — this is independent of whether the applicant's own fingerprint
+  // is available.
   for (const c of known.values()) markScanned(jobId, key(c.name, c.realm));
 
   let fingerprinted = 0;
@@ -216,22 +235,38 @@ export async function discoverAlts(
 
     const matches = applicantFingerprint
       ? await mapLimit(batch, ALT_CAPS.concurrency, async (member) => {
-          markScanned(jobId, key(member.name, member.realm));
           const candidate: RaiderIoCharacter = {
             region: primary.region,
             realm: member.realm,
             name: member.name,
           };
-          const fingerprint = await deps.getCharacterFingerprint(candidate).catch(() => null);
-          // null is UNKNOWN (private, missing, transient) — never a non-match.
+          let fingerprint: Fingerprint | null;
+          try {
+            fingerprint = await deps.getCharacterFingerprint(candidate);
+          } catch (error) {
+            // A rate limit or an open circuit is not "no alts" — it must propagate
+            // so the job runner pauses and resumes this member later. Swallowing it
+            // here would both under-report and (since markScanned only runs below,
+            // on a determinate outcome) permanently mark the member scanned despite
+            // never having been compared.
+            if (
+              error instanceof CircuitOpenError ||
+              (error instanceof HttpError &&
+                (error.status === 429 || error.retryAfterMs !== undefined))
+            ) {
+              throw error;
+            }
+            // Genuinely unavailable (404/403/500/etc.) — UNKNOWN, never a non-match.
+            fingerprint = null;
+          }
+          // Only a determinate outcome (matched, didn't match, or unavailable-but-
+          // not-rate-limited) may mark a member scanned; never before the fetch.
+          markScanned(jobId, key(member.name, member.realm));
           if (!fingerprint) return null;
           const result = compareFingerprints(applicantFingerprint, fingerprint);
           return result.isMatch ? { candidate, percent: result.percent } : null;
         })
-      : batch.map((member) => {
-          markScanned(jobId, key(member.name, member.realm));
-          return null;
-        });
+      : batch.map(() => null);
 
     for (const match of matches) {
       if (!match) continue;

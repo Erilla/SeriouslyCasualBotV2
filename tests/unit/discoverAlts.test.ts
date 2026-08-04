@@ -6,11 +6,17 @@ vi.mock('../../src/services/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { createJob, getFindings } from '../../src/functions/applications/intel/jobStore.js';
+import {
+  createJob,
+  getFindings,
+  isScanned,
+  scannedCount,
+} from '../../src/functions/applications/intel/jobStore.js';
 import {
   discoverAlts,
   type DiscoverDeps,
 } from '../../src/functions/applications/alts/discoverAlts.js';
+import { HttpError } from '../../src/services/httpClient.js';
 
 const applicant = { region: 'eu', realm: 'draenor', name: 'Brentpriest' };
 
@@ -211,5 +217,82 @@ describe('discoverAlts', () => {
     const matches = getFindings(jobId).filter((f) => f.name === 'Brenthunter');
     expect(matches).toHaveLength(1);
     expect(matches[0].source).toBe('raider.io');
+  });
+
+  it('reports truncated when the applicant fingerprint itself is unavailable, even with nothing left to walk', async () => {
+    // No guild, no roster, nothing left in the frontier — the only reason
+    // truncation could be reported is the missing applicant baseline itself.
+    const result = await discoverAlts(
+      jobId,
+      [applicant],
+      deps({
+        getCharacterFingerprint: vi.fn(async () => null),
+      }),
+    );
+    expect(result.truncated).toBe(true);
+  });
+
+  it('marks nothing scanned for roster members when the applicant fingerprint is unavailable', async () => {
+    await discoverAlts(
+      jobId,
+      [applicant],
+      deps({
+        getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
+        getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
+        getCharacterFingerprint: vi.fn(async () => null),
+      }),
+    );
+    // Only the applicant's own character (recorded via source 0) is scanned;
+    // Brenthunter, walked but never compared, must remain eligible for a later
+    // run once the applicant's fingerprint becomes available.
+    expect(scannedCount(jobId)).toBe(1);
+    expect(isScanned(jobId, 'brenthunter-draenor')).toBe(false);
+  });
+
+  it('propagates a 429 from a member fingerprint fetch rather than swallowing it as unknown', async () => {
+    const getCharacterFingerprint = vi.fn(async (c: { name: string }) => {
+      if (c.name.toLowerCase() === 'brentpriest') return fingerprints.brentpriest;
+      throw new HttpError({
+        service: 'raiderio',
+        status: 429,
+        attempts: 1,
+        message: 'rate limited',
+      });
+    });
+    await expect(
+      discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
+          getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
+          getCharacterFingerprint,
+        }),
+      ),
+    ).rejects.toThrow(HttpError);
+  });
+
+  it('leaves a rate-limited member unmarked scanned so a resume retries it', async () => {
+    const getCharacterFingerprint = vi.fn(async (c: { name: string }) => {
+      if (c.name.toLowerCase() === 'brentpriest') return fingerprints.brentpriest;
+      throw new HttpError({
+        service: 'raiderio',
+        status: 429,
+        attempts: 1,
+        message: 'rate limited',
+      });
+    });
+    await expect(
+      discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
+          getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
+          getCharacterFingerprint,
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(isScanned(jobId, 'brenthunter-draenor')).toBe(false);
   });
 });
