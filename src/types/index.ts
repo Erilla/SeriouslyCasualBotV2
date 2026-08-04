@@ -200,6 +200,26 @@ export interface BuildInfoRow {
   build: number;
 }
 
+export interface IntelJobRow {
+  id: number;
+  application_id: number | null;
+  target_channel_id: string | null;
+  character_name: string;
+  character_realm: string;
+  character_region: string;
+  phase: string;
+  status: string;
+  resume_after: string | null;
+  paused_service: string | null;
+  attempts: number;
+  logs_message_id: string | null;
+  alts_message_id: string | null;
+  guilds_message_id: string | null;
+  applicant_discord: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Scheduler Types ─────────────────────────────────────────
 
 export interface ScheduledTask {
