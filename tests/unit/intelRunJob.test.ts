@@ -56,8 +56,13 @@ function deps(over: Partial<RunDeps> = {}): RunDeps {
 describe('runJob', () => {
   let jobId: number;
   beforeEach(() => {
-    process.env.DATABASE_PATH = ':memory:';
-    createTables(getDatabase());
+    // Each test now gets a fresh in-memory database (see round 3), so
+    // auto-increment ids like jobId restart at 1 every test — the mocked
+    // logger.warn's call history must be cleared alongside it, or a later
+    // test's job-id-scoped log assertion can match an earlier test's call
+    // for the same id.
+    vi.clearAllMocks();
+    createTables(getDatabase(':memory:'));
     jobId = createJob({ applicationId: 1, targetChannelId: 'chan', character });
     setMessageIds(jobId, { alts: 'ALTS', guilds: 'GUILDS', logs: 'LOGS' });
   });
