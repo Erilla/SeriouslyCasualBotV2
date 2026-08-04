@@ -30,6 +30,7 @@ import {
   characterKey,
   type SweepCandidate,
 } from '../mythic-logs/selectMythicReports.js';
+import { mapLimit } from '../../../utils/concurrency.js';
 import type { WclZone } from '../mythic-logs/zoneCatalogue.js';
 import { WclPointsExhausted, type RaidReportRef } from '../../../services/warcraftlogs.js';
 import type { MythicKillDate } from '../../../services/raiderioInternal.js';
@@ -39,6 +40,42 @@ export const MAX_JOB_ATTEMPTS = 20;
 export const MAX_JOB_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Alts given a full log sweep, on top of every application-named character. */
 export const ALT_SWEEP_SLOTS = 4;
+
+/**
+ * Concurrent candidate lookups. Each is an independent getRaidReports (paginated
+ * WarcraftLogs) plus a getMythicKillCount, and serially this measured ~50s across
+ * 24 findings. WCL bills by points rather than requests, so this raises only the
+ * burst rate.
+ */
+const CANDIDATE_CONCURRENCY = 6;
+
+/**
+ * Wall-clock per phase, logged as one line per job.
+ *
+ * Optimising this feature was guesswork until the phases were measured: the
+ * intuitive suspect (the 3,000-fingerprint Blizzard sweep) turned out to be 24% of
+ * a job, while 8 serial calls to a 1,029ms Raider.IO endpoint were 52%. One
+ * summary line keeps that visible per run without spamming the log.
+ */
+class PhaseTimings {
+  private readonly ms = new Map<string, number>();
+  private readonly started = Date.now();
+  private last = Date.now();
+
+  /** Attribute everything since the previous mark to `phase`. */
+  mark(phase: string): void {
+    const now = Date.now();
+    this.ms.set(phase, (this.ms.get(phase) ?? 0) + (now - this.last));
+    this.last = now;
+  }
+
+  /** Whatever phases completed, so a paused job still reports where it got to. */
+  summary(): string {
+    const parts = [...this.ms.entries()].map(([k, v]) => `${k}=${(v / 1000).toFixed(1)}s`);
+    parts.push(`total=${((Date.now() - this.started) / 1000).toFixed(1)}s`);
+    return parts.join(' ');
+  }
+}
 
 /**
  * Paging metadata handed to `editMessage` so the durable `intelpage:` /
@@ -164,6 +201,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   const applicant = applicants[0];
 
   setStatus(jobId, 'running');
+  const timings = new PhaseTimings();
 
   // `terminal` marks an outcome nothing will ever retry (degrade-to-`done`
   // or abandonment): every message is always published on such an outcome,
@@ -272,6 +310,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // paging back to page 1 rebuilds it from the database, where a note that
     // only lived in the published message would be lost.
     setSweepTruncated(jobId, truncated);
+    timings.mark('discover');
     if (truncated) {
       logger.warn('Intel', `Job #${jobId}: alt sweep truncated by caps`);
     }
@@ -299,6 +338,8 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     );
 
     // Phase: which characters deserve a log sweep, then the sweep itself.
+    timings.mark('confirm');
+
     setPhase(jobId, 'alt_logs');
     currentPhase = 'alt_logs';
     const zones = await deps.getZoneCatalogue();
@@ -332,23 +373,29 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     const byCandidate = new Map<string, SweepCandidate>(
       getSweepCandidates<SweepCandidate>(jobId).map((c) => [characterKey(c.name, c.realm), c]),
     );
-    let enumerated = 0;
-    for (const f of findings) {
-      if (f.source === 'application') continue;
-      const ck = characterKey(f.name, f.realm);
-      if (byCandidate.has(ck)) continue;
+    // Enumerated concurrently: each character is an independent pair of lookups,
+    // and serially this was ~50s on 24 findings. mapLimit preserves input order,
+    // so the persisted list is deterministic regardless of completion order.
+    const toEnumerate = findings.filter(
+      (f) => f.source !== 'application' && !byCandidate.has(characterKey(f.name, f.realm)),
+    );
+    const freshCandidates = await mapLimit(toEnumerate, CANDIDATE_CONCURRENCY, async (f) => {
       const c = findingToCharacter(f, applicant.region);
-      const reports = await getRaidReportsOnce(c, zoneIds);
-      byCandidate.set(ck, {
+      const [reports, mythicKills] = await Promise.all([
+        getRaidReportsOnce(c, zoneIds),
+        deps.getMythicKillCount(c),
+      ]);
+      return {
         name: f.name,
         realm: f.realm,
-        mythicKills: await deps.getMythicKillCount(c),
+        mythicKills,
         tiers: [...new Set(reports.map((r) => r.zoneId))],
-      });
-      enumerated++;
-    }
+      };
+    });
+    for (const cand of freshCandidates) byCandidate.set(characterKey(cand.name, cand.realm), cand);
     const candidates = [...byCandidate.values()];
-    if (enumerated > 0) setSweepCandidates(jobId, candidates);
+    if (freshCandidates.length > 0) setSweepCandidates(jobId, candidates);
+    timings.mark('candidates');
 
     const applicantKeys = findings
       .filter((f) => f.source === 'application')
@@ -378,6 +425,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       else killDatesFailed = true;
     }
     guilds = aggregateGuildHistory(killHistory, zones);
+    timings.mark('guildHistory');
 
     if (guilds.length === 0 && killDatesFailed) {
       // An UNMEASURED absence. Leave guildsComputed false so `publish` takes the
@@ -415,6 +463,9 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     });
     logsComputed = true;
 
+    timings.mark('gather');
+
+    logger.info('Intel', `Job #${jobId} timings: ${timings.summary()}`);
     setPhase(jobId, 'done');
     currentPhase = 'done';
     setStatus(jobId, 'done');
@@ -462,6 +513,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       return;
     }
 
+    logger.info('Intel', `Job #${jobId} timings (incomplete): ${timings.summary()}`);
     const decision = classifyError(error, job.attempts + 1);
     const age = now().getTime() - parseUtcTimestamp(job.created_at).getTime();
     const exhausted = job.attempts + 1 >= MAX_JOB_ATTEMPTS || age >= MAX_JOB_AGE_MS;

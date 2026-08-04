@@ -235,3 +235,52 @@ describe('getMythicKillDates — deduplication and raid names', () => {
     expect(dates![0].raid).toBe('sepulcher-of-the-first-ones');
   });
 });
+
+describe('getMythicKillDates — tiers fetched concurrently', () => {
+  const progress = (raid: string, bosses: [string, string][]) => ({
+    characterRaidProgress: {
+      raidProgress: [
+        {
+          raid,
+          encountersDefeated: {
+            mythic: bosses.map(([slug, firstDefeated]) => ({ slug, firstDefeated })),
+          },
+        },
+      ],
+    },
+  });
+
+  /**
+   * The 8 tier requests now run concurrently — that endpoint measured 1,029ms and
+   * 8 serial calls per character were ~52% of a whole job. The UNKNOWN contract
+   * must survive it: a partial set would read as "killed nothing else" and move
+   * first-kill credit to another character.
+   */
+  it('returns null when one tier of several fails, discarding the successes', async () => {
+    mocked
+      .mockResolvedValueOnce(
+        progress('sporefall', [['rotmire', '2026-06-17T00:00:00.000Z']]) as never,
+      )
+      .mockRejectedValueOnce(
+        new HttpError({
+          service: 'raiderio-internal',
+          status: 503,
+          attempts: 1,
+          message: 'nope',
+        }),
+      )
+      .mockResolvedValueOnce(
+        progress('nerubar-palace', [['ulgrax', '2024-09-20T00:00:00.000Z']]) as never,
+      );
+
+    expect(await getMythicKillDates(character, [35, 34, 33])).toBeNull();
+  });
+
+  it('issues one request per tier', async () => {
+    mocked.mockResolvedValue(
+      progress('sporefall', [['rotmire', '2026-06-17T00:00:00.000Z']]) as never,
+    );
+    await getMythicKillDates(character, [35, 34, 33, 32]);
+    expect(mocked).toHaveBeenCalledTimes(4);
+  });
+});

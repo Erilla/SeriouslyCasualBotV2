@@ -5,6 +5,7 @@ import {
   type BossEvidence,
 } from './selectMythicReports.js';
 import type { WclZone } from './zoneCatalogue.js';
+import { mapLimit } from '../../../utils/concurrency.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
 import type { GuildHistoryEntry, GuildStint, RenderedTier } from '../intel/render.js';
 import type {
@@ -16,6 +17,14 @@ import type {
 import type { MythicKillDate } from '../../../services/raiderioInternal.js';
 
 export const MAX_TIERS = 5;
+
+/**
+ * Concurrent WarcraftLogs queries. WCL bills by POINTS, not requests, so raising
+ * this changes only the burst rate, never the total spend — and the 90%
+ * points pre-emption still guards the budget. Kept modest because a burst also
+ * makes the pre-emption trip sooner within a single run.
+ */
+const WCL_CONCURRENCY = 6;
 
 /** Lowercase inside a title, capitalised only when they lead it. */
 const TITLE_PARTICLES = new Set(['of', 'the', 'and', 'in', 'at', 'to', 'a', 'an']);
@@ -196,19 +205,38 @@ export async function gatherMythicLogs(
   for (const zone of zonesNewestFirst) {
     if (producedZones >= MAX_TIERS) break;
 
-    for (const c of swept) {
+    // Characters within a zone run concurrently, and each character's per-boss
+    // getEncounterKills calls do too. Zones stay SERIAL so the MAX_TIERS early
+    // stop above still works — that saving is worth more than parallelising
+    // across zones, since it avoids the WCL calls entirely rather than
+    // overlapping them. Serially this was ~5 characters x (1 + ~8 bosses) x 299ms
+    // ≈ 13s per zone; concurrently it is a couple of round trips.
+    //
+    // mapLimit preserves input order, so evidence is appended in the same
+    // (character, boss) order as the serial version. That matters:
+    // mergeBossEvidence breaks ties on input order, so a non-deterministic
+    // append order would make the chosen line vary between runs.
+    const perCharacter = await mapLimit(swept, WCL_CONCURRENCY, async (c) => {
       const kills = await deps.getZoneKills(c, zone.id);
-      if (kills.length === 0) continue;
+      if (kills.length === 0) return [];
       const dates = datesByCharacter.get(c.name.toLowerCase());
 
-      for (const kill of kills) {
-        const index = zone.encounters.findIndex((e) => e.id === kill.encounterId);
-        if (index < 0) continue;
-        const reports = await deps.getEncounterKills(c, kill.encounterId);
-        const first = reports[0];
-        if (!first) continue;
-        const list = evidenceByZone.get(zone.id) ?? [];
-        list.push({
+      const scored = kills
+        .map((kill) => ({
+          kill,
+          index: zone.encounters.findIndex((e) => e.id === kill.encounterId),
+        }))
+        .filter((k) => k.index >= 0);
+
+      const reportsPerKill = await mapLimit(scored, WCL_CONCURRENCY, ({ kill }) =>
+        deps.getEncounterKills(c, kill.encounterId),
+      );
+
+      const rows: BossEvidence[] = [];
+      scored.forEach(({ kill, index }, i) => {
+        const first = reportsPerKill[i][0];
+        if (!first) return;
+        rows.push({
           encounterId: kill.encounterId,
           bossIndex: index,
           bossName: zone.encounters[index].name,
@@ -218,9 +246,13 @@ export async function gatherMythicLogs(
           reportCode: first.reportCode,
           isApplicantCharacter: applicantNames.has(c.name.toLowerCase()),
         });
-        evidenceByZone.set(zone.id, list);
-      }
-    }
+      });
+      return rows;
+    });
+
+    const list = evidenceByZone.get(zone.id) ?? [];
+    for (const rows of perCharacter) list.push(...rows);
+    if (list.length > 0) evidenceByZone.set(zone.id, list);
 
     if ((evidenceByZone.get(zone.id)?.length ?? 0) > 0) producedZones++;
   }

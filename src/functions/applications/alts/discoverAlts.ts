@@ -17,17 +17,24 @@ import type {
  *
  * With Blizzard rosters (~twice Raider.IO's member count) 12 guilds hold ~7,200
  * candidates, so `characters` binds rather than acting as a safety net — which is
- * intended. 3,000 fingerprints is 8% of Blizzard's 36,000/hour budget; measured
- * throughput at concurrency 8 was 313 characters in 13s ≈ 24 req/s, well under the
- * 100/s ceiling. The budget is HOURLY, not per job: four applicants at the cap in
- * one hour is ~33% of it, so raising these numbers trades reach for other
- * applicants' sweeps pausing.
+ * intended. 3,000 fingerprints is 8% of Blizzard's 36,000/hour budget. That budget
+ * is HOURLY, not per job: four applicants at the cap in one hour is ~33% of it, so
+ * raising `characters` trades reach for other applicants' sweeps pausing.
+ *
+ * `concurrency` is the rate lever, and it is deliberately NOT the same trade-off.
+ * Blizzard's constraint here is 100 requests/second; the achievements endpoint
+ * measured 333ms per call, so concurrency 8 delivered only ~24 req/s and a
+ * 3,000-fingerprint sweep took ~125s. 24 concurrent puts it at ~72 req/s — still
+ * inside the ceiling — for ~42s. Raising it costs no extra requests, only a higher
+ * burst rate, and a 429 now pauses and resumes without losing the matches already
+ * found mid-batch. Do not push past ~30 without re-measuring: 100/s is hard, and
+ * the hourly budget is what actually bounds how many applicants can be swept.
  */
 export const ALT_CAPS = {
   guilds: 12,
   characters: 3000,
   depth: 3,
-  concurrency: 8,
+  concurrency: 24,
 } as const;
 
 export interface RosterMember {
