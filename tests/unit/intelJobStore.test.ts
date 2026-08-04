@@ -24,7 +24,10 @@ import {
   scannedCount,
   addFinding,
   getFindings,
+  setGuildHistory,
+  getGuildHistory,
 } from '../../src/functions/applications/intel/jobStore.js';
+import type { GuildHistoryEntry } from '../../src/functions/applications/intel/render.js';
 
 const character = { region: 'eu', realm: 'draenor', name: 'Brentpriest' };
 
@@ -154,5 +157,24 @@ describe('intel job store', () => {
     expect(found).toHaveLength(1);
     expect(found[0].source).toBe('raider.io');
     expect(found[0].confidence).toBe(100);
+  });
+
+  it('returns an empty guild history for a job with none persisted', () => {
+    const id = createJob({ applicationId: 1, targetChannelId: '1', character });
+    expect(getGuildHistory(id)).toEqual([]);
+  });
+
+  it('replaces a previously persisted guild history rather than keeping the first write', () => {
+    const id = createJob({ applicationId: 1, targetChannelId: '1', character });
+    const first: GuildHistoryEntry[] = [
+      { guildName: 'Rancour', guildRealm: 'Draenor', stints: [] },
+    ];
+    const second: GuildHistoryEntry[] = [];
+
+    setGuildHistory(id, first);
+    expect(getGuildHistory(id)).toEqual(first);
+
+    setGuildHistory(id, second);
+    expect(getGuildHistory(id)).toEqual(second);
   });
 });

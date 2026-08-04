@@ -1,12 +1,12 @@
 import { logger } from '../../../services/logger.js';
 import { backoffMs, classifyError } from './rateLimit.js';
 import {
-  enqueue,
   getApplicantCharacters,
   getFindings,
   getJob,
   pauseJob,
   scannedCount,
+  setGuildHistory,
   setPhase,
   setStatus,
   type IntelFinding,
@@ -257,10 +257,12 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     guilds = aggregateGuildHistory(killHistory, zones);
     guildsComputed = true;
     // Persist BEFORE publishing: a pause between the two must still leave the
-    // data retrievable, since a later task rebuilds durable pagination for
-    // this embed from the database rather than from memory that is thrown
-    // away at the end of this function.
-    enqueue(jobId, 'guild_history', 'entries', guilds);
+    // data retrievable, since durable pagination for this embed rebuilds
+    // from the database rather than from memory that is thrown away at the
+    // end of this function. Uses setGuildHistory (an upsert), not enqueue
+    // (ON CONFLICT DO NOTHING) — a resumed job must overwrite a prior
+    // attempt's history rather than being stuck with the first one forever.
+    setGuildHistory(jobId, guilds);
 
     setPhase(jobId, 'logs');
     currentPhase = 'logs';

@@ -12,7 +12,7 @@ import {
   getJob,
   setMessageIds,
   addFinding,
-  pendingQueue,
+  getGuildHistory,
 } from '../../src/functions/applications/intel/jobStore.js';
 import {
   runJob,
@@ -314,9 +314,23 @@ describe('runJob', () => {
       [{ character: character.name, entries: [killDate] }],
       [zone],
     );
-    const entries = pendingQueue(jobId, 'guild_history');
-    const stored = entries.find((e) => e.key === 'entries');
-    expect(stored?.payload).toEqual(expected);
+    expect(getGuildHistory(jobId)).toEqual(expected);
+  });
+
+  it('replaces a previously persisted guild history rather than keeping the first write', async () => {
+    const killDate: MythicKillDate = {
+      bossName: 'A',
+      firstDefeated: '2026-01-01T00:00:00.000Z',
+      guild: { name: 'Old Guild', realm: 'Draenor' },
+    };
+    await runJob(jobId, deps({ getMythicKillDates: vi.fn(async () => [killDate]) }));
+    expect(getGuildHistory(jobId)).not.toEqual([]);
+
+    // A second attempt (e.g. after a resume) computes an empty history — the
+    // most likely outcome of a swallowed 429 — and it must overwrite, not be
+    // silently dropped by ON CONFLICT DO NOTHING.
+    await runJob(jobId, deps({ getMythicKillDates: vi.fn(async () => []) }));
+    expect(getGuildHistory(jobId)).toEqual([]);
   });
 
   // FINDING 1: a rejected editMessage for one placeholder must not block the

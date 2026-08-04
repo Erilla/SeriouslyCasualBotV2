@@ -1,6 +1,7 @@
 import { getDatabase } from '../../../database/db.js';
 import type { IntelJobRow } from '../../../types/index.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { GuildHistoryEntry } from './render.js';
 
 export type JobPhase = 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'done';
 export type JobStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed';
@@ -169,6 +170,37 @@ export function enqueue(jobId: number, kind: string, key: string, payload?: unkn
        ON CONFLICT(job_id, kind, key) DO NOTHING`,
     )
     .run(jobId, kind, key, payload === undefined ? null : JSON.stringify(payload));
+}
+
+/**
+ * The aggregated guild history is a single row per job (kind 'guild_history',
+ * key 'entries'), not a work queue — but `enqueue` is
+ * `ON CONFLICT DO NOTHING`, so a resumed job whose earlier attempt already
+ * wrote this row would keep that attempt's data forever. That is not an edge
+ * case: the `logs` phase pause happens strictly after this write (so the
+ * common resume path always re-enters here), and `getMythicKillDates`
+ * swallowing a 429 can make a later attempt compute an empty history with no
+ * pause to explain it. `upsertGuildHistory` therefore replaces the row on
+ * every write, so the database always reflects the most recent computation —
+ * exactly what a reader rebuilding a page on demand needs.
+ */
+export function setGuildHistory(jobId: number, entries: GuildHistoryEntry[]): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'guild_history', 'entries', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(entries));
+}
+
+export function getGuildHistory(jobId: number): GuildHistoryEntry[] {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'guild_history' AND key = 'entries'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  return row?.payload ? (JSON.parse(row.payload) as GuildHistoryEntry[]) : [];
 }
 
 export function pendingQueue(jobId: number, kind: string): { key: string; payload: unknown }[] {
