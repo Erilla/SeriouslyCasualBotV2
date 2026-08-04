@@ -86,3 +86,36 @@ describe('shouldPreemptWclPoints', () => {
     expect(shouldPreemptWclPoints(4000, 0)).toBe(false);
   });
 });
+
+describe('classifyError — mixed rate-limit storms', () => {
+  /**
+   * httpRequest's retry-exhaustion path throws with the LAST status it saw, so a
+   * run that was 429'd on early attempts and got a 503 on the final one surfaces
+   * as status 503. Keying only on 429 let that degrade-and-finish, publishing
+   * partial results for a job that really was rate-limited.
+   */
+  it('pauses when a non-429 status still carries a rate-limit wait', () => {
+    const err = new HttpError({
+      service: 'blizzard',
+      status: 503,
+      attempts: 3,
+      message: 'service unavailable',
+      retryAfterMs: 45_000,
+    });
+    expect(classifyError(err, 1)).toEqual({
+      pause: true,
+      service: 'blizzard',
+      resumeAfterMs: 45_000,
+    });
+  });
+
+  it('still does not pause on a plain 5xx with no rate-limit signal', () => {
+    const err = new HttpError({
+      service: 'blizzard',
+      status: 503,
+      attempts: 3,
+      message: 'service unavailable',
+    });
+    expect(classifyError(err, 1)).toEqual({ pause: false });
+  });
+});

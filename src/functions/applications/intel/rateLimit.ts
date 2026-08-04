@@ -24,7 +24,14 @@ export function classifyError(error: unknown, attempts: number): PauseDecision {
   if (error instanceof CircuitOpenError) {
     return { pause: true, service: error.service, resumeAfterMs: backoffMs(attempts) };
   }
-  if (error instanceof HttpError && error.status === 429) {
+  // `status === 429` alone is not sufficient: httpRequest's retry-exhaustion path
+  // throws with the LAST status it saw, so a storm of 429s ending in a single 503
+  // arrives as status 503 and would degrade-and-finish instead of pausing —
+  // publishing partial results for a job that was genuinely rate-limited.
+  // retryAfterMs is set whenever any attempt was rate-limited with a usable wait,
+  // so it catches the mixed case. This mirrors the guards already at the Blizzard
+  // and Raider.IO call sites.
+  if (error instanceof HttpError && (error.status === 429 || error.retryAfterMs !== undefined)) {
     return {
       pause: true,
       service: error.service,

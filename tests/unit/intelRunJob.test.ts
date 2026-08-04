@@ -622,3 +622,65 @@ describe('runJob', () => {
     expect(summary?.[1]).toContain('0 mismatched');
   });
 });
+
+describe('runJob — the log-sweep candidate list is enumerated once', () => {
+  let jobId: number;
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+    jobId = createJob({ applicationId: 1, targetChannelId: 'chan', character });
+    setMessageIds(jobId, { alts: 'ALTS', guilds: 'GUILDS', logs: 'LOGS' });
+    addFinding(jobId, {
+      name: 'Gorre',
+      realm: 'outland',
+      className: 'Death Knight',
+      guildName: null,
+      guildRealm: null,
+      source: 'raider.io',
+      confidence: 100,
+      discordStatus: null,
+      discordProfile: null,
+    });
+  });
+  afterEach(() => closeDatabase());
+
+  /**
+   * Enumerating a candidate costs a paginated getRaidReports plus a
+   * getMythicKillCount. Recomputing it on every attempt meant a resumed job burned
+   * ~100 WarcraftLogs queries on 24 findings before doing any new work — and WCL
+   * bills by points, so it could re-exhaust its budget on re-enumeration alone.
+   */
+  it('does not re-enumerate a candidate on a later attempt', async () => {
+    const getRaidReports = vi.fn(async () => []);
+    const getMythicKillCount = vi.fn(async () => 0);
+
+    await runJob(jobId, deps({ getRaidReports, getMythicKillCount }));
+    expect(getRaidReports).toHaveBeenCalledTimes(1);
+    expect(getMythicKillCount).toHaveBeenCalledTimes(1);
+
+    // A resumed attempt re-runs every phase; the candidate must come from store.
+    await runJob(jobId, deps({ getRaidReports, getMythicKillCount }));
+    expect(getRaidReports).toHaveBeenCalledTimes(1);
+    expect(getMythicKillCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('enumerates a character discovered only on the later attempt', async () => {
+    const getRaidReports = vi.fn(async () => []);
+    await runJob(jobId, deps({ getRaidReports }));
+    expect(getRaidReports).toHaveBeenCalledTimes(1);
+
+    addFinding(jobId, {
+      name: 'Blinktastic',
+      realm: 'outland',
+      className: 'Mage',
+      guildName: null,
+      guildRealm: null,
+      source: 'fingerprint',
+      confidence: 83,
+      discordStatus: null,
+      discordProfile: null,
+    });
+
+    await runJob(jobId, deps({ getRaidReports }));
+    expect(getRaidReports).toHaveBeenCalledTimes(2);
+  });
+});

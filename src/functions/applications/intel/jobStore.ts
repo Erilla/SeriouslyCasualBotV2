@@ -184,6 +184,36 @@ export function enqueue(jobId: number, kind: string, key: string, payload?: unkn
  * every write, so the database always reflects the most recent computation —
  * exactly what a reader rebuilding a page on demand needs.
  */
+/**
+ * The log-sweep candidate list, persisted so a resumed attempt does not
+ * re-enumerate it.
+ *
+ * Building it costs one `getRaidReports` (up to 6 paginated WarcraftLogs queries)
+ * plus one `getMythicKillCount` per discovered character. With 24 findings that is
+ * ~100 WCL queries burned before a resumed attempt does any new work — and WCL
+ * bills by points, so the job could re-exhaust its budget on re-enumeration alone
+ * and abandon without progressing. Callers extend this incrementally, so a
+ * character discovered on a later attempt is still enumerated exactly once.
+ */
+export function setSweepCandidates(jobId: number, candidates: unknown[]): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'candidates', 'list', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(candidates));
+}
+
+export function getSweepCandidates<T>(jobId: number): T[] {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'candidates' AND key = 'list'",
+    )
+    .get(jobId) as { payload: string } | undefined;
+  return row ? (JSON.parse(row.payload) as T[]) : [];
+}
+
 export function setGuildHistory(jobId: number, entries: GuildHistoryEntry[]): void {
   getDatabase()
     .prepare(

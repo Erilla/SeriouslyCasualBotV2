@@ -258,8 +258,18 @@ export async function discoverAlts(
     const batch = pending.slice(0, Math.max(0, budget));
     fingerprinted += batch.length;
 
-    const matches = applicantFingerprint
-      ? await mapLimit(batch, ALT_CAPS.concurrency, async (member) => {
+    // Collected inside the callback rather than from mapLimit's return value.
+    // A rejection discards that whole array, and every member it had already
+    // resolved is by then markScanned — so a rate limit landing mid-batch used to
+    // lose the matches found earlier in the same batch permanently, since the
+    // resumed run skips them as already scanned. This is the narrow survivor of
+    // the same defect that cost two review rounds on the no-fingerprint path.
+    const found: { candidate: RaiderIoCharacter; percent: number }[] = [];
+    let sweepError: unknown;
+
+    try {
+      if (applicantFingerprint) {
+        await mapLimit(batch, ALT_CAPS.concurrency, async (member) => {
           const candidate: RaiderIoCharacter = {
             region: primary.region,
             realm: member.realm,
@@ -287,28 +297,48 @@ export async function discoverAlts(
           // Only a determinate outcome (matched, didn't match, or unavailable-but-
           // not-rate-limited) may mark a member scanned; never before the fetch.
           markScanned(jobId, key(member.name, member.realm));
-          if (!fingerprint) return null;
+          if (!fingerprint) return;
           const result = compareFingerprints(applicantFingerprint, fingerprint);
-          return result.isMatch ? { candidate, percent: result.percent } : null;
-        })
-      : batch.map(() => null);
+          if (result.isMatch) found.push({ candidate, percent: result.percent });
+        });
+      }
+    } catch (error) {
+      // Hold it: everything already found below must be persisted first, or a
+      // pause would discard work the sweep genuinely completed.
+      sweepError = error;
+    }
 
-    for (const match of matches) {
-      if (!match) continue;
+    for (const match of found) {
       if (known.has(key(match.candidate.name, match.candidate.realm))) continue;
-      await record(match.candidate, 'fingerprint', Math.round(match.percent));
+      try {
+        await record(match.candidate, 'fingerprint', Math.round(match.percent));
+      } catch (error) {
+        // record() writes the finding before rethrowing a rate limit, so the
+        // match is safe; keep going so the rest of the batch is persisted too.
+        sweepError ??= error;
+        continue;
+      }
       if (entry.depth + 1 < maxDepth) {
-        // The milder counterpart of record()'s handling: a 429 here propagates
-        // and pauses the job, but `record` above has already committed the
-        // finding, so all that is lost is extending the frontier through this
-        // character. Consistent with record() — nothing is swallowed, and no
-        // discovered character is dropped.
-        const guild = await deps.getCharacterGuild(match.candidate);
-        if (guild && !visitedGuilds.has(key(guild.name, guild.realm))) {
-          guildFrontier.push({ guild, depth: entry.depth + 1 });
+        // The milder counterpart of record()'s handling: a 429 here still pauses
+        // the job, but `record` above has already committed the finding, so all
+        // that is lost is extending the frontier through this character. Held
+        // rather than thrown so the remaining matches in `found` are recorded —
+        // throwing straight from here would drop them exactly as the old
+        // mapLimit return-value path did.
+        try {
+          const guild = await deps.getCharacterGuild(match.candidate);
+          if (guild && !visitedGuilds.has(key(guild.name, guild.realm))) {
+            guildFrontier.push({ guild, depth: entry.depth + 1 });
+          }
+        } catch (error) {
+          sweepError ??= error;
         }
       }
     }
+
+    // Only now, with every match from this batch persisted, may a rate limit
+    // pause the job.
+    if (sweepError) throw sweepError;
 
     if (fingerprinted >= maxCharacters) {
       truncated = true;

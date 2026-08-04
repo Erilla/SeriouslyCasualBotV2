@@ -7,6 +7,8 @@ import {
   pauseJob,
   scannedCount,
   setGuildHistory,
+  setSweepCandidates,
+  getSweepCandidates,
   setPhase,
   setSweepTruncated,
   setStatus,
@@ -303,18 +305,50 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     const zoneIds = new Set(zones.map((z) => z.id));
     const findings = getFindings(jobId);
 
-    const candidates: SweepCandidate[] = [];
+    // One recentReports walk per character per run. getRaidReports paginates
+    // WarcraftLogs and filters by zone client-side, so the candidate enumeration
+    // below and gatherMythicLogs' wipe scan were each paying for the same walk;
+    // fetch the full zone set once and filter locally for both.
+    const reportsByCharacter = new Map<string, RaidReportRef[]>();
+    const getRaidReportsOnce = async (
+      c: RaiderIoCharacter,
+      wanted: Set<number>,
+    ): Promise<RaidReportRef[]> => {
+      const ck = characterKey(c.name, c.realm);
+      let all = reportsByCharacter.get(ck);
+      if (!all) {
+        all = await deps.getRaidReports(c, zoneIds);
+        reportsByCharacter.set(ck, all);
+      }
+      return all.filter((r) => wanted.has(r.zoneId));
+    };
+
+    // Enumerated incrementally and persisted: this is the single most expensive
+    // thing a resumed attempt used to repeat. Each character costs a paginated
+    // getRaidReports plus a getMythicKillCount, so 24 findings meant ~100 WCL
+    // queries before any new work — and WCL bills by points, so a job could
+    // re-exhaust its budget on re-enumeration and abandon without progressing.
+    // Keyed by character, so one discovered on a later attempt is still done once.
+    const byCandidate = new Map<string, SweepCandidate>(
+      getSweepCandidates<SweepCandidate>(jobId).map((c) => [characterKey(c.name, c.realm), c]),
+    );
+    let enumerated = 0;
     for (const f of findings) {
       if (f.source === 'application') continue;
+      const ck = characterKey(f.name, f.realm);
+      if (byCandidate.has(ck)) continue;
       const c = findingToCharacter(f, applicant.region);
-      const reports = await deps.getRaidReports(c, zoneIds);
-      candidates.push({
+      const reports = await getRaidReportsOnce(c, zoneIds);
+      byCandidate.set(ck, {
         name: f.name,
         realm: f.realm,
         mythicKills: await deps.getMythicKillCount(c),
         tiers: [...new Set(reports.map((r) => r.zoneId))],
       });
+      enumerated++;
     }
+    const candidates = [...byCandidate.values()];
+    if (enumerated > 0) setSweepCandidates(jobId, candidates);
 
     const applicantKeys = findings
       .filter((f) => f.source === 'application')
@@ -372,7 +406,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     lastTiers = await deps.gather(applicants, swept.length > 0 ? swept : applicants, zones, {
       getZoneKills: (await import('../../../services/warcraftlogs.js')).getZoneKills,
       getEncounterKills: (await import('../../../services/warcraftlogs.js')).getEncounterKills,
-      getRaidReports: deps.getRaidReports,
+      getRaidReports: getRaidReportsOnce,
       getReportWipes: (await import('../../../services/warcraftlogs.js')).getReportWipes,
       getMythicKillDates: (await import('../../../services/raiderioInternal.js'))
         .getMythicKillDates,

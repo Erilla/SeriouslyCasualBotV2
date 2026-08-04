@@ -361,3 +361,53 @@ describe('discoverAlts', () => {
     expect(getFindings(jobId).map((f) => f.name)).toEqual(['Brentpriest']);
   });
 });
+
+describe('discoverAlts — a mid-batch rate limit keeps the matches already found', () => {
+  let jobId: number;
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+    jobId = createJob({ applicationId: 1, targetChannelId: '1', character: applicant });
+  });
+  afterEach(() => closeDatabase());
+
+  /**
+   * markScanned lands per member as each fingerprint resolves, but mapLimit
+   * discards its whole result array when a sibling worker rejects. So a 429
+   * arriving part-way through a ~600-member guild roster used to lose every match
+   * found earlier in that same batch, while leaving those characters marked
+   * scanned — permanently excluded from the resumed run. Same defect class as the
+   * no-fingerprint path, just narrower.
+   */
+  it('records an earlier match even though a later member is rate limited', async () => {
+    const getCharacterFingerprint = vi.fn(async (c: { name: string }) => {
+      if (c.name === 'Ratelimited') {
+        throw new HttpError({
+          service: 'blizzard',
+          status: 429,
+          attempts: 1,
+          message: 'slow down',
+          retryAfterMs: 60_000,
+        });
+      }
+      return fingerprints[c.name.toLowerCase()] ?? null;
+    });
+
+    await expect(
+      discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
+          getGuildRoster: vi.fn(async () => [
+            { name: 'Brenthunter', realm: 'Draenor' },
+            { name: 'Ratelimited', realm: 'Draenor' },
+          ]),
+          getCharacterFingerprint,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(HttpError);
+
+    // The match found before the rate limit must survive the pause.
+    expect(getFindings(jobId).map((f) => f.name)).toContain('Brenthunter');
+  });
+});
