@@ -75,6 +75,14 @@ export function flushCache(): void {
  * number removed. Prefix-scoped so pruning bulky fingerprints cannot evict the
  * achievements-image entries, which are FOREVER by design.
  */
+/** Total rows in api_cache — logged next to a prune so volume growth is
+ *  observable in production rather than only visible once the disk is full. */
+export function cacheRowCount(): number {
+  const db = getDatabase();
+  const row = db.prepare('SELECT COUNT(*) AS n FROM api_cache').get() as { n: number };
+  return row.n;
+}
+
 export function pruneCache(prefix: string, olderThanMs: number): number {
   const db = getDatabase();
   const cutoff = new Date(Date.now() - olderThanMs).toISOString();

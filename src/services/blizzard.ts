@@ -96,10 +96,22 @@ type FingerprintEntries = [number, number][];
 
 /**
  * Achievement timestamps are immutable once earned, so the only staleness is a
- * character earning more. A week keeps a sweep cheap without letting a fresh
- * alt stay invisible for long.
+ * character earning more — correctness alone would tolerate a much longer TTL.
+ *
+ * 48 hours is a DISK-PRESSURE limit, not a freshness one. DO NOT RAISE IT BACK
+ * TO A WEEK without re-doing this arithmetic: each fingerprint is ~85 KB of
+ * JSON in `api_cache` and a maxed sweep caches 3,000 of them, so one applicant
+ * is ~255 MB. `dailyBackup` then copies the whole database and keeps 7 copies
+ * on the same Railway volume, an 8x amplification — three applicants in a
+ * recruitment week at a 7-day TTL reached ~750 MB live and up to ~6 GB of
+ * backups, and exhausting that volume fails EVERY SQLite write in the bot, not
+ * just this feature's.
+ *
+ * 48 hours still delivers what the cache is actually for: a recruitment burst
+ * shares warm guild rosters across applicants, which happens within a day or
+ * two, not across a week.
  */
-export const FINGERPRINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const FINGERPRINT_TTL_MS = 48 * 60 * 60 * 1000;
 
 /**
  * Rosters change slowly — new members trickle in, few leave same-day — so a
