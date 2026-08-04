@@ -363,10 +363,14 @@ describe('httpRequest — Retry-After', () => {
 });
 
 describe('httpRequest — circuit breaker integration', () => {
+  // 501 rather than 404: a 404 is a definitive answer about a resource and no
+  // longer counts as a service fault, so it cannot open the breaker. The intent
+  // of these two cases — repeated genuine faults open it, and an open breaker
+  // fast-fails — is unchanged.
   it('opens the breaker after 5 consecutive failed calls', async () => {
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'x' }));
+      .mockResolvedValue(mockResponse({ ok: false, status: 501, statusText: 'x' }));
 
     for (let i = 0; i < 5; i++) {
       await httpRequest('raiderio', 'https://x.test/').catch(() => {});
@@ -377,7 +381,7 @@ describe('httpRequest — circuit breaker integration', () => {
   it('fast-fails with CircuitOpenError while open, without calling fetch', async () => {
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'x' }));
+      .mockResolvedValue(mockResponse({ ok: false, status: 501, statusText: 'x' }));
     for (let i = 0; i < 5; i++) {
       await httpRequest('raiderio', 'https://x.test/').catch(() => {});
     }
@@ -409,5 +413,85 @@ describe('httpRequest — circuit breaker integration', () => {
 
     await httpRequest('raiderio', 'https://x.test/');
     expect(getSummary('raiderio').breaker).toBe('closed');
+  });
+});
+
+describe('httpRequest — a definitive 404/403 is not a service fault', () => {
+  /**
+   * Regression: the applicant-intel fingerprint sweep reads the Blizzard
+   * achievements endpoint for every member of a guild roster, and roughly a
+   * third of them legitimately 404 (below the achievement floor, private, or
+   * recently renamed). Counting those toward the breaker's consecutive-failure
+   * count tripped it on a perfectly healthy API — measured live at 201 ok /
+   * 100 failed, all 404s, with the breaker stuck half_open because every
+   * half-open trial that landed on an absent character re-opened it.
+   */
+  it('does not open the breaker after five consecutive 404s', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'Not Found' }));
+
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        httpRequest('blizzard', 'https://x.test/', undefined, { maxRetries: 0 }),
+      ).rejects.toBeInstanceOf(HttpError);
+    }
+
+    expect(isBreakerOpen('blizzard')).toBe(false);
+    expect(getSummary('blizzard').breaker).toBe('closed');
+  });
+
+  it('does not open the breaker after five consecutive 403s', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 403, statusText: 'Forbidden' }));
+
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        httpRequest('blizzard', 'https://x.test/', undefined, { maxRetries: 0 }),
+      ).rejects.toBeInstanceOf(HttpError);
+    }
+
+    expect(isBreakerOpen('blizzard')).toBe(false);
+  });
+
+  it('still opens the breaker after five consecutive genuine faults', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 501, statusText: 'Not Implemented' }));
+
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        httpRequest('blizzard', 'https://x.test/', undefined, { maxRetries: 0 }),
+      ).rejects.toBeInstanceOf(HttpError);
+    }
+
+    expect(isBreakerOpen('blizzard')).toBe(true);
+  });
+
+  it('lets a 404 close a half-open breaker instead of re-opening it', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 501, statusText: 'Not Implemented' }));
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        httpRequest('blizzard', 'https://x.test/', undefined, { maxRetries: 0 }),
+      ).rejects.toBeInstanceOf(HttpError);
+    }
+    expect(isBreakerOpen('blizzard')).toBe(true);
+
+    // Cooldown elapses, so the next call is the half-open trial.
+    vi.setSystemTime(new Date('2026-04-19T12:02:00Z'));
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 404, statusText: 'Not Found' }));
+
+    await expect(
+      httpRequest('blizzard', 'https://x.test/', undefined, { maxRetries: 0 }),
+    ).rejects.toBeInstanceOf(HttpError);
+
+    // The service answered, so it has proven itself healthy.
+    expect(getSummary('blizzard').breaker).toBe('closed');
+    expect(isBreakerOpen('blizzard')).toBe(false);
   });
 });

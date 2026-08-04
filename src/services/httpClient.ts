@@ -55,6 +55,20 @@ export class CircuitOpenError extends Error {
 }
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+/**
+ * A definitive answer ABOUT A RESOURCE, not evidence the service is unhealthy —
+ * so these must not count toward the breaker's consecutive-failure tally.
+ *
+ * The applicant-intel fingerprint sweep reads the Blizzard achievements endpoint
+ * for every member of a guild roster, and roughly a third legitimately 404 or
+ * 403: below the achievement floor, profile privacy, or a recent rename. Counting
+ * those as service faults tripped the breaker on a perfectly healthy API —
+ * measured live at 201 ok / 100 failed, every failure a 404 — and left it stuck
+ * half_open, because each half-open trial that happened to land on an absent
+ * character re-opened it. 401 and 5xx are deliberately NOT here: a credential
+ * problem or a server error is a genuine reason to stop hammering.
+ */
+const RESOURCE_ABSENT_STATUSES = new Set([403, 404, 410]);
 const RETRY_AFTER_CAP_MS = 30_000;
 // NOTE: httpRequest assumes all calls are idempotent. All current callers
 // (Raider.io/wowaudit GETs, WarcraftLogs OAuth client_credentials POST and
@@ -196,8 +210,16 @@ export async function httpRequest<T>(
             : `${response.status} ${response.statusText}`,
           status: response.status,
         });
-        noteFailure(service);
-        onFinalFailure(service, breakerWasHalfOpen);
+        if (RESOURCE_ABSENT_STATUSES.has(response.status)) {
+          // The service answered correctly; the resource simply is not there.
+          // Treat it as a healthy response for breaker purposes, which also
+          // lets a half-open trial close the breaker rather than re-open it.
+          noteSuccess(service);
+          if (breakerWasHalfOpen) onBreakerTrialResult(service, true);
+        } else {
+          noteFailure(service);
+          onFinalFailure(service, breakerWasHalfOpen);
+        }
         throw new HttpError({
           service,
           attempts: attempt,
