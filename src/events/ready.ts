@@ -19,6 +19,7 @@ import {
   resumeApplicantIntelJobs,
   recoverInterruptedJobs,
   pruneFingerprintCache,
+  INTEL_TICK_INTERVAL_MS,
 } from '../functions/applications/intel/resumeJobs.js';
 
 export const scheduler = new Scheduler();
@@ -138,7 +139,7 @@ export default {
 
     scheduler.registerInterval({
       name: 'resumeApplicantIntelJobs',
-      intervalMs: 5 * 60_000,
+      intervalMs: INTEL_TICK_INTERVAL_MS,
       handler: () => resumeApplicantIntelJobs(client).then(() => undefined),
     });
 

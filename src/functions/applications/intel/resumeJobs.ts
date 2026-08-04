@@ -21,6 +21,25 @@ import type { PagingMeta } from './runJob.js';
 const TIER_ORDINALS = [35, 34, 33, 32, 31, 30, 29, 28];
 
 /**
+ * How often to look for due jobs.
+ *
+ * This dominated the latency a reviewer actually experiences. Measured on the
+ * test bot, sweeps took 56s–5m of real work but 3m–10m end to end, because ticks
+ * are aligned to wall-clock boundaries: a job queued at :06 sat idle until :10 on
+ * a 5-minute interval. A minute puts the wait within a minute of submission.
+ *
+ * It also tightens pause recovery. `backoffMs` starts at 5 minutes, and that
+ * expiry rarely lands on a boundary — on a 5-minute interval a 5-minute backoff
+ * really meant up to 10. Now a resume happens within a minute of `resume_after`.
+ *
+ * Cheap to do this often: a tick with nothing due is one small SELECT, and the
+ * scheduler's per-name running guard means a sweep that outlives its interval is
+ * skipped rather than re-entered, so shortening this cannot stack concurrent
+ * sweeps or double-run a job.
+ */
+export const INTEL_TICK_INTERVAL_MS = 60_000;
+
+/**
  * The one legitimately Discord-bound half of publishing. runJob deliberately
  * imports no discord.js, so it passes paging METADATA and this function turns it
  * into the concrete `Page x/y` footer and the Previous/Next row — without which
