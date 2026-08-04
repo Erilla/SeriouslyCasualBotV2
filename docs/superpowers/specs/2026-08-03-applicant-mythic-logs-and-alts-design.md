@@ -81,8 +81,9 @@ Discord-display-name fallback is not a character identity and cannot be looked u
    Omega, `33` Liberation of Undermine, `30` Aberrus. One call per character per tier, no WCL
    points.
 
-   `encountersDefeated` is **per character and correctly attributed**, which makes it the
-   primary source for kills (see Attribution below).
+   `encountersDefeated` is **per character and correctly attributed**, so it is trusted for
+   _dates_. Whether a boss was killed is decided by WCL `zoneRankings` instead — see
+   Cross-source boss matching.
 
    **A failed fetch is not "no kills".** Calling the internal API in rapid succession dropped one
    character's payload during testing, which silently reassigned five first kills from
@@ -102,9 +103,37 @@ difficulty: 5)` returns that character's own kills with `report.code`, `report.f
    also contain Mythic+ fights and trash fights with `difficulty: null` — and keep only pulls
    whose `friendlyPlayers` include one of the account's characters.
 
-   **Boss slugs need prefix matching.** Raider.IO truncates some: `dimensius` against WCL's
-   `Dimensius, the All-Devouring`. Exact normalised comparison silently dropped the tier's final
-   boss during testing, so compare with prefix matching in either direction.
+### Cross-source boss matching, and why naming carries no structural weight
+
+Raider.IO and WCL name the same boss differently. Raider.IO's static data gives
+`dimensius => Dimensius`; WCL calls it `Dimensius, the All-Devouring`. It is not a slug-format
+problem that `getRaidStaticData` (already in `src/services/raiderio.ts`) can resolve — the two
+sources genuinely disagree on the name, and there is no shared identifier:
+Raider.IO's `loggedEncounterId` (1890302) and encounter `id` (197132) are unrelated to WCL's
+`encounterID` (3135).
+
+Exact matching silently dropped Manaforge Omega's final boss during testing — the most
+important line in that tier. Prefix matching recovered it, but any heuristic over a third
+party's naming will eventually break on a new tier, which is the failure this design must not
+depend on.
+
+**So WCL is the structural source and Raider.IO is decorative.**
+
+- **Which bosses a character killed** comes from `zoneRankings(zoneID, difficulty: 5)`, one call
+  per character per zone (~5 points), returning `encounter.id` and `totalKills`. Keyed on WCL
+  ids end to end, no naming involved.
+- **Report links** come from `encounterRankings(encounterID)` — WCL ids again.
+- **First-kill dates** come from Raider.IO, matched by name.
+
+A naming mismatch in a future tier therefore costs a _date_, never a boss: the line still
+renders, just without `first kill <date>`. Matching requires a unique hit within the zone;
+ambiguous or unmatched names are logged at warn so a new tier's drift is visible rather than
+silent.
+
+Two further naming traps to expect: Dragonflight static data lists both
+`aberrus-the-shadowed-crucible` and `awakened-aberrus-the-shadowed-crucible`, and the current
+tier's raid slug is `tier-mn-1` while WCL calls the zone `VS / DR / MQD`. Zones are matched by
+encounter-set overlap rather than by raid name for this reason.
 
 7. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
    report per boss, skipping any report already linked for a deeper boss, and stop at three
@@ -768,6 +797,9 @@ Unit tests cover the pure functions with fixture data:
 - Zone catalogue filtering: `>= 500` rollups, PTR/Beta names, dungeon-only zones, sparse zones
 - Boss ranking with wipes: deeper wipe beats shallower kill
 - Report dedupe across bosses; the three-per-raid and five-raid caps
+- Boss matching: a name WCL and Raider.IO spell differently still renders (without a date), an
+  ambiguous name is logged rather than guessed, and zone matching survives `tier-mn-1`-style
+  raid slugs and `awakened-` duplicates
 - Cross-character merge: earliest kill wins over a later re-kill on an alt; a wipe-only boss
   takes the most recent wipe report; each surviving line keeps the right attribution
 - Application-named characters: all URLs in the answers are collected, all are swept, and
