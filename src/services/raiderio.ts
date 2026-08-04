@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { httpRequest } from './httpClient.js';
+import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
 
 const BASE_URL = 'https://raider.io/api/v1';
 const ROSTER_RANKS = [0, 1, 3, 4, 5, 7];
@@ -179,4 +180,70 @@ export async function getLiveRaidProgress(
     `&guild=${encodeURIComponent(identity.name)}&period=until_kill`;
   const data = await httpRequest<{ bosses?: LiveBossProgress[] }>('raiderio', url);
   return data.bosses ?? [];
+}
+
+export interface CharacterGuild {
+  name: string;
+  realm: string;
+}
+
+export interface CharacterSummary {
+  className: string | null;
+  guild: CharacterGuild | null;
+}
+
+interface ProfileResponse {
+  class?: string;
+  guild?: { name: string; realm: string };
+  raid_progression?: Record<string, { mythic_bosses_killed?: number }>;
+}
+
+function profileUrl(c: RaiderIoCharacter, fields: string): string {
+  return (
+    `${BASE_URL}/characters/profile?region=${encodeURIComponent(c.region)}` +
+    `&realm=${encodeURIComponent(c.realm)}&name=${encodeURIComponent(c.name)}&fields=${fields}`
+  );
+}
+
+/**
+ * The guild carries its OWN realm, frequently not the character's:
+ * Driptinus-Argent Dawn is in Rancour-Draenor, and querying the roster on the
+ * character's realm returns "Could not find requested guild".
+ */
+export async function getCharacterGuild(c: RaiderIoCharacter): Promise<CharacterGuild | null> {
+  try {
+    const data = await httpRequest<ProfileResponse>('raiderio', profileUrl(c, 'guild'));
+    return data.guild ? { name: data.guild.name, realm: data.guild.realm } : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getCharacterSummary(c: RaiderIoCharacter): Promise<CharacterSummary | null> {
+  try {
+    const data = await httpRequest<ProfileResponse>('raiderio', profileUrl(c, 'guild'));
+    return {
+      className: data.class ?? null,
+      guild: data.guild ? { name: data.guild.name, realm: data.guild.realm } : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mythic bosses killed in the CURRENT expansion — a cheap prioritiser for which
+ * alts deserve a WCL sweep. It cannot gate the sweep: the field covers one
+ * expansion, lags the crawl, and counts kills but not wipe progress.
+ */
+export async function getMythicKillCount(c: RaiderIoCharacter): Promise<number> {
+  try {
+    const data = await httpRequest<ProfileResponse>('raiderio', profileUrl(c, 'raid_progression'));
+    return Object.values(data.raid_progression ?? {}).reduce(
+      (sum, raid) => sum + (raid.mythic_bosses_killed ?? 0),
+      0,
+    );
+  } catch {
+    return 0;
+  }
 }
