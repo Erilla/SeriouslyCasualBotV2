@@ -69,3 +69,17 @@ export function flushCache(): void {
   db.prepare('DELETE FROM api_cache').run();
   db.prepare('DELETE FROM icon_cache').run();
 }
+
+/**
+ * Delete cache entries under `prefix` older than `olderThanMs`, returning the
+ * number removed. Prefix-scoped so pruning bulky fingerprints cannot evict the
+ * achievements-image entries, which are FOREVER by design.
+ */
+export function pruneCache(prefix: string, olderThanMs: number): number {
+  const db = getDatabase();
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+  const result = db
+    .prepare("DELETE FROM api_cache WHERE key LIKE ? || '%' AND fetched_at < ?")
+    .run(prefix, cutoff);
+  return result.changes;
+}
