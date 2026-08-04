@@ -103,6 +103,10 @@ difficulty: 5)` returns that character's own kills with `report.code`, `report.f
    also contain Mythic+ fights and trash fights with `difficulty: null` — and keep only pulls
    whose `friendlyPlayers` include one of the account's characters.
 
+7. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
+   report per boss, skipping any report already linked for a deeper boss, and stop at three
+   links. A single report covering bosses 6–8 therefore produces one link, not three.
+
 ### Cross-source boss matching, and why naming carries no structural weight
 
 Raider.IO and WCL name the same boss differently. Raider.IO's static data gives
@@ -134,10 +138,6 @@ Two further naming traps to expect: Dragonflight static data lists both
 `aberrus-the-shadowed-crucible` and `awakened-aberrus-the-shadowed-crucible`, and the current
 tier's raid slug is `tier-mn-1` while WCL calls the zone `VS / DR / MQD`. Zones are matched by
 encounter-set overlap rather than by raid name for this reason.
-
-7. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
-   report per boss, skipping any report already linked for a deeper boss, and stop at three
-   links. A single report covering bosses 6–8 therefore produces one link, not three.
 
 ### Attribution: per fight, never per report
 
