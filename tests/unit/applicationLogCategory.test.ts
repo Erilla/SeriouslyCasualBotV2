@@ -72,6 +72,7 @@ vi.mock('../../src/deploy-commands.js', () => ({ deployCommands: mockedDeployCom
 vi.mock('../../src/scheduler/scheduler.js', () => ({
   Scheduler: class {
     registerCron(): void {}
+    registerInterval(): void {}
     start() {
       return { intervals: 0, crons: 0 };
     }

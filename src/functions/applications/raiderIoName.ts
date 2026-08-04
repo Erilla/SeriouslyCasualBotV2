@@ -11,6 +11,14 @@
 
 const RAIDER_IO_CHARACTER_URL = /raider\.io\/characters\/[^/\s]+\/[^/\s]+\/([^/?#\s]+)/i;
 
+const RAIDER_IO_CHARACTER_URL_G = /raider\.io\/characters\/([^/\s]+)\/([^/\s]+)\/([^/?#\s]+)/gi;
+
+export interface RaiderIoCharacter {
+  region: string;
+  realm: string;
+  name: string;
+}
+
 /**
  * Extract a character name from a single piece of text containing a Raider.IO
  * profile URL. Returns the decoded, capitalised name, or null if no Raider.IO
@@ -45,4 +53,52 @@ export function deriveCharacterNameFromAnswers(answers: { answer: string }[]): s
     if (name) return name;
   }
   return null;
+}
+
+function decodeName(raw: string): string | null {
+  let name: string;
+  try {
+    name = decodeURIComponent(raw);
+  } catch {
+    name = raw;
+  }
+  name = name.trim();
+  if (!name) return null;
+  return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+}
+
+/**
+ * Region, realm slug and name from the first Raider.IO character URL in `text`.
+ * WarcraftLogs and Blizzard both need all three, so unlike
+ * parseRaiderIoCharacterName this keeps the path segments.
+ */
+export function parseRaiderIoCharacter(text: string): RaiderIoCharacter | null {
+  const match = new RegExp(RAIDER_IO_CHARACTER_URL_G.source, 'i').exec(text);
+  if (!match) return null;
+  const name = decodeName(match[3]);
+  if (!name) return null;
+  return { region: match[1].toLowerCase(), realm: match[2].toLowerCase(), name };
+}
+
+/**
+ * Every distinct character named anywhere in the answers, in order of
+ * appearance. Applicants routinely link a second character ("I can also play
+ * <link>") and those are always swept, so we cannot stop at the first URL the
+ * way deriveCharacterNameFromAnswers does.
+ */
+export function collectRaiderIoCharacters(answers: { answer: string }[]): RaiderIoCharacter[] {
+  const seen = new Set<string>();
+  const out: RaiderIoCharacter[] = [];
+  for (const a of answers) {
+    for (const m of a.answer.matchAll(RAIDER_IO_CHARACTER_URL_G)) {
+      const name = decodeName(m[3]);
+      if (!name) continue;
+      const realm = m[2].toLowerCase();
+      const key = `${realm}/${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ region: m[1].toLowerCase(), realm, name });
+    }
+  }
+  return out;
 }

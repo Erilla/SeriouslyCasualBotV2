@@ -15,6 +15,11 @@ import { dailyBackup } from '../functions/backups/dailyBackup.js';
 import { runDailyMaintenance } from '../functions/maintenance/runDailyMaintenance.js';
 import { recordTaskRun } from '../services/statusTracker.js';
 import { refreshPendingApplicationCategory } from '../functions/applications/applicationLogCategory.js';
+import {
+  resumeApplicantIntelJobs,
+  recoverInterruptedJobs,
+  pruneFingerprintCache,
+} from '../functions/applications/intel/resumeJobs.js';
 
 export const scheduler = new Scheduler();
 
@@ -115,7 +120,26 @@ export default {
     scheduler.registerCron({
       name: 'dailyBackup',
       expression: '0 4 * * *',
-      handler: () => dailyBackup(),
+      handler: async () => {
+        // BEFORE the backup, deliberately: the fingerprint cache is the largest
+        // thing on the volume (~85 KB an entry, up to 3,000 per applicant) and
+        // the backup keeps 7 copies of whatever it finds, so pruning first is
+        // what stops an 8x amplification of a recruitment week's growth.
+        // Pruning at boot alone left a long-running container growing all week.
+        try {
+          pruneFingerprintCache();
+        } catch (error) {
+          // Never let a prune failure skip the backup.
+          logger.warn('Intel', `Fingerprint cache prune failed: ${error}`);
+        }
+        await dailyBackup();
+      },
+    });
+
+    scheduler.registerInterval({
+      name: 'resumeApplicantIntelJobs',
+      intervalMs: 5 * 60_000,
+      handler: () => resumeApplicantIntelJobs(client).then(() => undefined),
     });
 
     const schedulerStats = scheduler.start();
@@ -125,6 +149,10 @@ export default {
 
     // Resume any in-progress DM application sessions from before restart
     const sessionsResumed = await resumeSessions(client);
+
+    // A job left 'running' by a crash can never resume itself; reset it, and
+    // prune expired fingerprint cache entries once per boot.
+    recoverInterruptedJobs();
 
     // One summary line instead of five — logged after setDiscordChannel, so
     // it reaches #bot-logs and carries the build number (cached lookup).

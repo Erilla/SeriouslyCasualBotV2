@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Message, User } from 'discord.js';
 import { closeDatabase, getDatabase } from '../../src/database/db.js';
 import { createTables } from '../../src/database/schema.js';
+import {
+  parseRaiderIoCharacter,
+  collectRaiderIoCharacters,
+} from '../../src/functions/applications/raiderIoName.js';
 
 vi.mock('../../src/services/logger.js', () => ({
   logger: {
@@ -72,5 +76,66 @@ describe('application character_name source', () => {
 
     expect(app.character_name).toBe('RyanW');
     expect(app.character_name).not.toBe('DK');
+  });
+});
+
+describe('parseRaiderIoCharacter', () => {
+  it('returns region, realm and name', () => {
+    expect(parseRaiderIoCharacter('https://raider.io/characters/eu/draenor/Brentpriest')).toEqual({
+      region: 'eu',
+      realm: 'draenor',
+      name: 'Brentpriest',
+    });
+  });
+
+  it('keeps multi-word realm slugs intact', () => {
+    expect(parseRaiderIoCharacter('https://raider.io/characters/eu/argent-dawn/Driptinus')).toEqual(
+      { region: 'eu', realm: 'argent-dawn', name: 'Driptinus' },
+    );
+  });
+
+  it('decodes percent-encoded names', () => {
+    expect(parseRaiderIoCharacter('https://raider.io/characters/eu/silvermoon/Sk%C3%A2di')).toEqual(
+      { region: 'eu', realm: 'silvermoon', name: 'Skâdi' },
+    );
+  });
+
+  it('returns null when there is no character URL', () => {
+    expect(parseRaiderIoCharacter('I raid on Tuesdays')).toBeNull();
+  });
+});
+
+describe('collectRaiderIoCharacters', () => {
+  it('collects a character from every answer, in order', () => {
+    const answers = [
+      { answer: 'https://raider.io/characters/eu/draenor/Brentpriest' },
+      { answer: 'my alt https://raider.io/characters/eu/draenor/Brenthunter too' },
+    ];
+    expect(collectRaiderIoCharacters(answers).map((c) => c.name)).toEqual([
+      'Brentpriest',
+      'Brenthunter',
+    ]);
+  });
+
+  it('collects multiple characters from a single answer', () => {
+    const answers = [
+      {
+        answer:
+          'https://raider.io/characters/eu/draenor/Brentpriest and https://raider.io/characters/eu/draenor/Brenthunter',
+      },
+    ];
+    expect(collectRaiderIoCharacters(answers)).toHaveLength(2);
+  });
+
+  it('deduplicates case-insensitively on realm and name', () => {
+    const answers = [
+      { answer: 'https://raider.io/characters/eu/draenor/Brentpriest' },
+      { answer: 'https://raider.io/characters/EU/draenor/brentpriest' },
+    ];
+    expect(collectRaiderIoCharacters(answers)).toHaveLength(1);
+  });
+
+  it('returns an empty array when no answer contains a URL', () => {
+    expect(collectRaiderIoCharacters([{ answer: 'none here' }])).toEqual([]);
   });
 });

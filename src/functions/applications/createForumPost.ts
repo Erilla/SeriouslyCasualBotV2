@@ -14,10 +14,14 @@ import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { splitMessage } from './splitMessage.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { resolveApplicationLogCategory } from './applicationLogCategory.js';
+import { placeholderEmbed } from './intel/placeholders.js';
 
 export interface CreateForumPostResult {
   forumPost: { id: string };
   threadId: string;
+  altsMessageId?: string;
+  guildsMessageId?: string;
+  logsMessageId?: string;
 }
 
 export async function createForumPost(
@@ -91,6 +95,29 @@ export async function createForumPost(
   // (addOverlordsToThread swallows per-overlord errors, so this won't throw.)
   await addOverlordsToThread(thread);
 
+  // Reserve the intel positions before the voting controls, in reading order
+  // (characters, then guild history, then logs); the background job edits
+  // these in place as each phase completes. Discord cannot insert a message
+  // between existing ones, so these three must be posted now even though the
+  // sweep itself runs later, in the background.
+  let altsMessageId: string | undefined;
+  let guildsMessageId: string | undefined;
+  let logsMessageId: string | undefined;
+  try {
+    const altsMessage = await thread.send({ embeds: [placeholderEmbed('alts')] });
+    altsMessageId = altsMessage.id;
+    const guildsMessage = await thread.send({ embeds: [placeholderEmbed('guilds')] });
+    guildsMessageId = guildsMessage.id;
+    const logsMessage = await thread.send({ embeds: [placeholderEmbed('logs')] });
+    logsMessageId = logsMessage.id;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.warn(
+      'Applications',
+      `Failed to post intel placeholders for application #${applicationId}: ${error.message}`,
+    );
+  }
+
   try {
     const votingData = generateVotingEmbed(applicationId);
     await thread.send(votingData);
@@ -122,5 +149,11 @@ export async function createForumPost(
     );
   }
 
-  return { forumPost: { id: forum.id }, threadId: thread.id };
+  return {
+    forumPost: { id: forum.id },
+    threadId: thread.id,
+    altsMessageId,
+    guildsMessageId,
+    logsMessageId,
+  };
 }

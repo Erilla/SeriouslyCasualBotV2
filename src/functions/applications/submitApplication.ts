@@ -14,7 +14,8 @@ import { config } from '../../config.js';
 import { createForumPost } from './createForumPost.js';
 import { splitMessage } from './splitMessage.js';
 import { buildQAText } from './buildQAText.js';
-import { deriveCharacterNameFromAnswers } from './raiderIoName.js';
+import { deriveCharacterNameFromAnswers, collectRaiderIoCharacters } from './raiderIoName.js';
+import { startIntelJob } from './intel/placeholders.js';
 import { linkCharacterIdentity } from '../raids/linkCharacterIdentity.js';
 import { getOverlords } from '../raids/overlords.js';
 import { buildOverlordNotification } from './overlordNotification.js';
@@ -94,10 +95,16 @@ export async function submitApplication(
   // Step 2: Create forum post
   let forumPost: { id: string } | null = null;
   let threadId: string | null = null;
+  let altsMessageId: string | undefined;
+  let guildsMessageId: string | undefined;
+  let logsMessageId: string | undefined;
   try {
     const result = await createForumPost(guild, characterName, user, qaText, applicationId);
     forumPost = result.forumPost;
     threadId = result.threadId;
+    altsMessageId = result.altsMessageId;
+    guildsMessageId = result.guildsMessageId;
+    logsMessageId = result.logsMessageId;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error(
@@ -155,6 +162,37 @@ export async function submitApplication(
       logger.warn(
         'Applications',
         `Failed to notify overlords for application #${applicationId}: ${error.message}`,
+      );
+    }
+  }
+
+  // Step 5: kick off the applicant intel sweep. This only QUEUES the job —
+  // the scheduler runs it later — so submission stays fast and a problem
+  // here can never fail the application. The job row is written before any
+  // API call, so a crash mid-queue loses nothing; the scheduler picks it up.
+  if (threadId) {
+    try {
+      const named = collectRaiderIoCharacters(answers);
+      if (named.length > 0) {
+        const jobId = startIntelJob({
+          applicationId,
+          targetChannelId: threadId,
+          // Every character the applicant named, not just the first — all of
+          // them are always swept and labelled "from the application".
+          characters: named,
+          // Drives the Discord confirmation pass on discovered characters.
+          applicantDiscord: user.username,
+          altsMessageId,
+          guildsMessageId,
+          logsMessageId,
+        });
+        logger.info('Applications', `Queued intel job #${jobId} for application #${applicationId}`);
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn(
+        'Applications',
+        `Failed to queue intel job for #${applicationId}: ${error.message}`,
       );
     }
   }

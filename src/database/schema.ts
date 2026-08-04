@@ -223,5 +223,57 @@ export function createTables(db: Database.Database): void {
       raid_slug TEXT PRIMARY KEY,
       cutoff_at TEXT NOT NULL
     );
+
+    -- 29. applicant intel: resumable per-applicant sweep (jobs, work queue,
+    -- scanned characters, findings). Normalised rather than a JSON blob
+    -- because the scanned set reaches thousands of rows written one at a time.
+    CREATE TABLE IF NOT EXISTS applicant_intel_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      application_id INTEGER,
+      target_channel_id TEXT,
+      character_name TEXT NOT NULL,
+      character_realm TEXT NOT NULL,
+      character_region TEXT NOT NULL,
+      phase TEXT NOT NULL DEFAULT 'logs',
+      status TEXT NOT NULL DEFAULT 'pending',
+      resume_after TEXT,
+      paused_service TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      logs_message_id TEXT,
+      alts_message_id TEXT,
+      guilds_message_id TEXT,
+      applicant_discord TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS applicant_intel_queue (
+      job_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      key TEXT NOT NULL,
+      payload TEXT,
+      done INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (job_id, kind, key)
+    );
+
+    CREATE TABLE IF NOT EXISTS applicant_intel_scanned (
+      job_id INTEGER NOT NULL,
+      character_key TEXT NOT NULL,
+      PRIMARY KEY (job_id, character_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS applicant_intel_findings (
+      job_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      realm TEXT NOT NULL,
+      class TEXT,
+      guild_name TEXT,
+      guild_realm TEXT,
+      source TEXT NOT NULL,
+      confidence REAL,
+      discord_status TEXT,
+      discord_profile TEXT,
+      PRIMARY KEY (job_id, name, realm)
+    );
   `);
 }
