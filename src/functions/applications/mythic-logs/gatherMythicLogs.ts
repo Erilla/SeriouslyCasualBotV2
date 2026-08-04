@@ -29,6 +29,22 @@ const TITLE_PARTICLES = new Set(['of', 'the', 'and', 'in', 'at', 'to', 'a', 'an'
  * exactly that reason. Dropping the raid entirely would lose real evidence, so
  * this only makes the slug readable — it never decides whether a raid appears.
  */
+/**
+ * Which slug to name an unmatched raid after. Raider.IO's raid slug is the right
+ * answer — it groups a whole raid's bosses under one heading, so a tier older than
+ * the WCL catalogue's three-expansion window reads as
+ * "Sepulcher of the First Ones · 11 Mythic kills" rather than eleven one-kill rows.
+ *
+ * Except for the CURRENT tier, where the slug is an opaque code (`tier-mn-1`)
+ * that would render as "Tier Mn 1". Those bosses are inside the catalogue window
+ * and match a zone anyway, so the boss slug is the safer fallback for them.
+ */
+function raidSlugFor(entry: MythicKillDate): string {
+  const raid = entry.raid;
+  if (!raid || /^tier-/.test(raid)) return entry.bossName;
+  return raid;
+}
+
 function readableRaidName(slug: string): string {
   return slug
     .split('-')
@@ -68,7 +84,7 @@ export function aggregateGuildHistory(
       };
       byGuild.set(gk, guild);
 
-      let raidName = readableRaidName(entry.bossName);
+      let raidName = readableRaidName(raidSlugFor(entry));
       for (const zone of zones) {
         if (matchBossName(zone, entry.bossName)) {
           raidName = zone.name;

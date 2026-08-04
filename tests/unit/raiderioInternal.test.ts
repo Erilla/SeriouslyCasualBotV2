@@ -149,8 +149,18 @@ describe('getMythicKillDates', () => {
 
     const dates = await getMythicKillDates(character, [35, 34]);
     expect(dates).toEqual([
-      { bossName: 'crown-of-the-cosmos', firstDefeated: '2026-04-23T19:00:00.000Z', guild: null },
-      { bossName: 'dimensius', firstDefeated: '2025-10-30T20:00:00.000Z', guild: null },
+      {
+        bossName: 'crown-of-the-cosmos',
+        firstDefeated: '2026-04-23T19:00:00.000Z',
+        guild: null,
+        raid: 'tier-mn-1',
+      },
+      {
+        bossName: 'dimensius',
+        firstDefeated: '2025-10-30T20:00:00.000Z',
+        guild: null,
+        raid: 'manaforge-omega',
+      },
     ]);
   });
 
@@ -159,5 +169,69 @@ describe('getMythicKillDates', () => {
       new HttpError({ service: 'raiderio-internal', status: 503, attempts: 1, message: 'nope' }),
     );
     expect(await getMythicKillDates(character, [35])).toBeNull();
+  });
+});
+
+describe('getMythicKillDates — deduplication and raid names', () => {
+  const progress = (raid: string, bosses: [string, string][]) => ({
+    characterRaidProgress: {
+      raidProgress: [
+        {
+          raid,
+          encountersDefeated: {
+            mythic: bosses.map(([slug, firstDefeated]) => ({ slug, firstDefeated })),
+          },
+        },
+      ],
+    },
+  });
+
+  /**
+   * Raider.IO's raid-progress endpoint returns the same raid under EVERY tier
+   * ordinal at or after it, verified live: `tier-mn-1`'s 9 Mythic kills came back
+   * under tiers 35 through 28, and `sporefall`'s single kill under seven of them.
+   * Flattening 8 tier queries therefore counted each kill up to 8 times, which
+   * published "72 Mythic kills" for 9 real ones in the guild history.
+   */
+  it('returns one entry per boss when a raid repeats across tiers', async () => {
+    mocked
+      .mockResolvedValueOnce(
+        progress('sporefall', [['rotmire', '2026-06-17T18:38:09.000Z']]) as never,
+      )
+      .mockResolvedValueOnce(
+        progress('sporefall', [['rotmire', '2026-06-17T18:38:09.000Z']]) as never,
+      )
+      .mockResolvedValueOnce(
+        progress('sporefall', [['rotmire', '2026-06-17T18:38:09.000Z']]) as never,
+      );
+
+    const dates = await getMythicKillDates(character, [35, 34, 33]);
+    expect(dates).toHaveLength(1);
+    expect(dates![0].bossName).toBe('rotmire');
+  });
+
+  it('keeps the earliest first-kill date when tiers disagree', async () => {
+    mocked
+      .mockResolvedValueOnce(
+        progress('sporefall', [['rotmire', '2026-07-01T00:00:00.000Z']]) as never,
+      )
+      .mockResolvedValueOnce(
+        progress('sporefall', [['rotmire', '2026-06-17T18:38:09.000Z']]) as never,
+      );
+
+    const dates = await getMythicKillDates(character, [35, 34]);
+    expect(dates).toHaveLength(1);
+    expect(dates![0].firstDefeated).toBe('2026-06-17T18:38:09.000Z');
+  });
+
+  it('carries the raid slug so a caller can name the raid', async () => {
+    mocked.mockResolvedValueOnce(
+      progress('sepulcher-of-the-first-ones', [
+        ['vigilant-guardian', '2022-03-27T00:00:00.000Z'],
+      ]) as never,
+    );
+
+    const dates = await getMythicKillDates(character, [28]);
+    expect(dates![0].raid).toBe('sepulcher-of-the-first-ones');
   });
 });

@@ -112,6 +112,15 @@ export interface MythicKillDate {
   firstDefeated: string;
   /** The guild this kill happened with — dated guild history, free of charge. */
   guild: { name: string; realm: string } | null;
+  /**
+   * Raider.IO's raid slug (`sepulcher-of-the-first-ones`). The caller needs it to
+   * name a raid whose bosses predate the WCL zone catalogue's three-expansion
+   * window and so can never be matched to a zone — without it each such boss
+   * renders as its own one-kill "raid". Note the CURRENT tier uses an opaque code
+   * (`tier-mn-1`) rather than a name, which is why the caller only falls back to
+   * this after a zone match fails.
+   */
+  raid: string | null;
 }
 
 interface RaidProgressResponse {
@@ -138,7 +147,13 @@ export async function getMythicKillDates(
   c: RaiderIoCharacter,
   tierOrdinals: number[],
 ): Promise<MythicKillDate[] | null> {
-  const out: MythicKillDate[] = [];
+  // Keyed by boss slug, because the endpoint returns the same raid under EVERY
+  // tier ordinal at or after it — verified live: `tier-mn-1`'s 9 kills came back
+  // under all of tiers 35..28, and `sporefall`'s single kill under seven of them.
+  // Flattening the 8 tier queries counted each kill up to 8 times, which
+  // published "72 Mythic kills" for 9 real ones in the guild history. A boss has
+  // exactly one first kill, so the earliest date across tiers is the right one.
+  const byBoss = new Map<string, MythicKillDate>();
   for (const tier of tierOrdinals) {
     const url =
       `${SITE}/api/characters/${encodeURIComponent(c.region)}/${encodeURIComponent(c.realm)}/` +
@@ -149,10 +164,13 @@ export async function getMythicKillDates(
         for (const e of raid.encountersDefeated?.mythic ?? []) {
           if (!e.slug || !e.firstDefeated) continue;
           const guildRealm = e.guild?.realm?.slug ?? e.guild?.realm?.name ?? null;
-          out.push({
+          const existing = byBoss.get(e.slug);
+          if (existing && existing.firstDefeated <= e.firstDefeated) continue;
+          byBoss.set(e.slug, {
             bossName: e.slug,
             firstDefeated: e.firstDefeated,
             guild: e.guild?.name && guildRealm ? { name: e.guild.name, realm: guildRealm } : null,
+            raid: raid.raid ?? null,
           });
         }
       }
@@ -164,5 +182,5 @@ export async function getMythicKillDates(
       return null;
     }
   }
-  return out;
+  return [...byBoss.values()];
 }

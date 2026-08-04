@@ -241,3 +241,52 @@ describe('gatherMythicLogs', () => {
     expect(getZoneKills.mock.calls.length).toBe(5);
   });
 });
+
+describe('aggregateGuildHistory — naming raids outside the WCL window', () => {
+  const kill = (
+    bossName: string,
+    firstDefeated: string,
+    raid: string | null,
+    guildName = 'Nightshade',
+  ) => ({
+    character: 'Hitoshura',
+    entries: [{ bossName, firstDefeated, raid, guild: { name: guildName, realm: 'ravencrest' } }],
+  });
+
+  /**
+   * Bosses from a tier older than the catalogue's three-expansion window can
+   * never match a zone. Before the raid slug was carried through, each one became
+   * its own one-kill "raid": the live sweep published ten separate rows
+   * (Rygelon, Lords of Dread, Anduin Wrynn …) that are all Sepulcher bosses.
+   */
+  it('groups unmatched bosses under their raid name', () => {
+    const out = aggregateGuildHistory(
+      [
+        kill('vigilant-guardian', '2022-03-27T00:00:00.000Z', 'sepulcher-of-the-first-ones'),
+        kill('rygelon', '2022-07-24T00:00:00.000Z', 'sepulcher-of-the-first-ones'),
+        kill('anduin-wrynn', '2022-07-04T00:00:00.000Z', 'sepulcher-of-the-first-ones'),
+      ],
+      [zone],
+    );
+
+    expect(out[0].stints).toHaveLength(1);
+    expect(out[0].stints[0].raidName).toBe('Sepulcher of the First Ones');
+    expect(out[0].stints[0].kills).toBe(3);
+  });
+
+  it('ignores the current tier’s opaque slug and uses the boss name', () => {
+    const out = aggregateGuildHistory(
+      [kill('imperator-averzian', '2026-04-23T00:00:00.000Z', 'tier-mn-1')],
+      [{ ...zone, encounters: [] }],
+    );
+    expect(out[0].stints[0].raidName).toBe('Imperator Averzian');
+  });
+
+  it('still prefers the WCL zone name when the boss matches one', () => {
+    const out = aggregateGuildHistory(
+      [kill('imperator-averzian', '2026-04-23T00:00:00.000Z', 'tier-mn-1')],
+      [zone],
+    );
+    expect(out[0].stints[0].raidName).toBe('VS / DR / MQD');
+  });
+});
