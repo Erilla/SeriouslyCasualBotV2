@@ -96,10 +96,15 @@ difficulty: 5)` returns that character's own kills with `report.code`, `report.f
    `startTime`. It is authoritative per character, so it both confirms the kill and supplies the
    link. Queried only for the bosses actually being displayed, not every boss.
 
-6. **Wipes.** For a boss with no kill, scan the tier's reports newest-first with
-   `fights(killType: All, difficulty: 5)` to find wipe pulls, filtering to `encounterID`s in the
-   zone catalogue — raid reports also contain Mythic+ fights and trash fights with
-   `difficulty: null`. Then confirm the character was actually in the pull (see Attribution).
+6. **Wipes.** For a boss with no kill, scan the tier's reports newest-first, requesting
+   `fights(killType: All, difficulty: 5) { id encounterID fightPercentage friendlyPlayers }`
+   alongside `masterData.actors`. Filter to `encounterID`s in the zone catalogue — raid reports
+   also contain Mythic+ fights and trash fights with `difficulty: null` — and keep only pulls
+   whose `friendlyPlayers` include one of the account's characters.
+
+   **Boss slugs need prefix matching.** Raider.IO truncates some: `dimensius` against WCL's
+   `Dimensius, the All-Devouring`. Exact normalised comparison silently dropped the tier's final
+   boss during testing, so compare with prefix matching in either direction.
 
 7. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
    report per boss, skipping any report already linked for a deeper boss, and stop at three
@@ -130,9 +135,16 @@ Two consequences:
 
 - **Kills** are taken from Raider.IO `encountersDefeated` (per character by construction) and
   linked via `encounterRankings` (per character by construction). Neither can misattribute.
-- **Wipes** have no per-character API, so a candidate wipe pull is confirmed with
-  `playerDetails(fightIDs: [n])` before it is displayed — one call per displayed line, not per
-  report scanned, since at most three lines per tier are shown.
+- **Wipes** have no per-character API, so presence is resolved from the report itself:
+  `fights { id encounterID fightPercentage friendlyPlayers }` together with
+  `masterData { actors(type: "Player") { id name } }` gives the roster of every pull in **one
+  query per report**. `playerDetails(fightIDs: [n])` returns the same answer one pull at a time
+  and is not worth it — the report above had 43 pulls on a single boss.
+
+Applied to that report, zero of its 43 Midnight Falls pulls contained any of the account's
+characters, despite `Brenthunter` appearing in the report. An earlier draft displayed
+`Midnight Falls — wiping, best 80.5% · Brenthunter` on exactly that basis; it was an artefact of
+report-level attribution, and the corrected pipeline omits the line.
 
 This also makes the account-first-kill rule behave correctly: Crown's first kill is
 `Brentprietwo` on 2026-04-23, and a later kill on `Brenthunter` would not displace it.
