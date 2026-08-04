@@ -538,6 +538,31 @@ Characters are deduplicated by `name-realm` across rosters, so overlapping roste
 nothing the second time. When a cap truncates the sweep, the output says so rather than
 implying completeness.
 
+### Discord confirmation
+
+Every character page carries `characterCustomizations.discord_profile`, and an application
+arrives attached to a Discord account — so for a character already found, comparing the two
+either **proves** ownership or **contradicts** it.
+
+This is a confirmation pass over the found characters only, never a search: the relationship runs
+one way (character → Discord handle), no site offers a Discord→character lookup, so it cannot
+replace the fingerprint. Nor can it be a sweep — one internal-API call per candidate, paced at
+700 ms, is ~35 minutes across 3,000 roster candidates against ~2 minutes for the fingerprint.
+Across the 5–20 characters actually found it costs ~15 seconds.
+
+| `discord_profile` vs the applicant's Discord username | Status      | Meaning                         |
+| ----------------------------------------------------- | ----------- | ------------------------------- |
+| Equal (case-insensitive)                              | `confirmed` | Same person, beyond doubt       |
+| Present and different                                 | `mismatch`  | Someone else's character        |
+| Absent                                                | unset       | No information; nothing changes |
+
+`confirmed` turns a 45%-confidence fingerprint hit into a certainty. `mismatch` is what the
+design previously could not see: a guildmate who scores high but demonstrably belongs to someone
+else. A mismatch is displayed rather than silently dropped — the fingerprint evidence still
+stands, and a reviewer is better served by the contradiction than by our arbitration of it.
+
+The applicant's own named characters are exempt; they told us about those.
+
 ### Merging and provenance
 
 The sources are unioned and deduplicated by `name-realm`. Internally each finding keeps the
@@ -550,6 +575,9 @@ needs to know whether the applicant told us about a character or not:
 | Raider.IO claimed-character list | `undeclared (100% confidence)` | 100%       |
 | `main_character` declared main   | `undeclared (100% confidence)` | 100%       |
 | Achievement fingerprint          | `undeclared (N% confidence)`   | match %    |
+
+Each finding also carries an optional Discord status from the confirmation pass above, which the
+renderer appends: `· Discord verified`, or `· ⚠ Discord mismatch: <handle>`.
 
 Raider.IO-sourced characters are account-authoritative, so they take 100% rather than a
 computed score. This keeps a single sort key across all sources.
@@ -566,7 +594,8 @@ can be by confidence. Each character name links to its Raider.IO profile:
 **Found characters** — 16
 
 [Regnipaw-Draenor](https://raider.io/characters/eu/draenor/Regnipaw) · Druid · Rancour (Draenor) — from the application
-[Monkni-Draenor](https://raider.io/characters/eu/draenor/Monkni) · Monk · Rancour (Draenor) — undeclared (93% confidence)
+[Monkni-Draenor](https://raider.io/characters/eu/draenor/Monkni) · Monk · Rancour (Draenor) — undeclared (93% confidence · Discord verified)
+[Someoneelse-Draenor](https://raider.io/characters/eu/draenor/Someoneelse) · Mage · Rancour (Draenor) — undeclared (31% confidence · ⚠ Discord mismatch: notthem)
 [Regnigrip-Draenor](https://raider.io/characters/eu/draenor/Regnigrip) · Death Knight · Rancour (Draenor) — undeclared (91% confidence)
 [Rainster-Ravencrest](https://raider.io/characters/eu/ravencrest/Rainster) · Warrior · Rancour (Draenor) — undeclared (88% confidence)
 …
@@ -732,6 +761,7 @@ applicant_intel_jobs (
   logs_message_id TEXT,
   alts_message_id TEXT,
   guilds_message_id TEXT,
+  applicant_discord TEXT,       -- drives the Discord confirmation pass
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 )
@@ -756,8 +786,10 @@ applicant_intel_findings (
   name TEXT NOT NULL, realm TEXT NOT NULL,
   class TEXT, item_level INTEGER,
   guild_name TEXT, guild_realm TEXT,
-  source TEXT NOT NULL,         -- 'raider.io' | 'declared main' | 'fingerprint'
+  source TEXT NOT NULL,         -- 'application' | 'raider.io' | 'declared main' | 'fingerprint'
   match_pct REAL,
+  discord_status TEXT,          -- 'confirmed' | 'mismatch' | NULL (unknown)
+  discord_profile TEXT,         -- the handle observed, shown on a mismatch
   PRIMARY KEY (job_id, name, realm)
 )
 ```

@@ -657,6 +657,7 @@ git commit -m "feat(intel): classify rate-limit errors and compute resume backof
   - `enqueue(jobId, kind, key, payload?)`, `pendingQueue(jobId, kind)`, `markQueueDone(jobId, kind, key)`
   - `markScanned(jobId, characterKey)`, `isScanned(jobId, characterKey)`, `scannedCount(jobId)`
   - `addFinding(jobId, f: IntelFinding)`, `getFindings(jobId): IntelFinding[]`
+  - `setDiscordStatus(jobId, name, realm, status: 'confirmed' | 'mismatch', profile: string | null)`
   - `IntelJobRow` exported from `src/types/index.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -709,6 +710,21 @@ describe('intel job store', () => {
     expect(job?.application_id).toBe(7);
     expect(job?.target_channel_id).toBe('123');
     expect(job?.character_name).toBe('Brentpriest');
+  });
+
+  it('stores the applicant Discord handle when given', () => {
+    const id = createJob({
+      applicationId: 1,
+      targetChannelId: '1',
+      character,
+      applicantDiscord: 'binded',
+    });
+    expect(getJob(id)?.applicant_discord).toBe('binded');
+  });
+
+  it('leaves the Discord handle null when not given', () => {
+    const id = createJob({ applicationId: 1, targetChannelId: '1', character });
+    expect(getJob(id)?.applicant_discord).toBeNull();
   });
 
   it('allows a null application_id for ad-hoc /test runs', () => {
@@ -795,6 +811,8 @@ describe('intel job store', () => {
       className: 'Death Knight',
       guildName: 'Goodlife',
       guildRealm: 'Tarren Mill',
+      discordStatus: null,
+      discordProfile: null,
     };
     addFinding(id, { ...base, source: 'fingerprint', confidence: 83 });
     addFinding(id, { ...base, source: 'raider.io', confidence: 100 });
@@ -836,6 +854,7 @@ In `src/database/schema.ts`, following the existing numbered-comment style:
       logs_message_id TEXT,
       alts_message_id TEXT,
       guilds_message_id TEXT,
+      applicant_discord TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -864,6 +883,8 @@ In `src/database/schema.ts`, following the existing numbered-comment style:
       guild_realm TEXT,
       source TEXT NOT NULL,
       confidence REAL,
+      discord_status TEXT,
+      discord_profile TEXT,
       PRIMARY KEY (job_id, name, realm)
     );
 ```
@@ -894,6 +915,7 @@ if (currentVersion < 11) {
           logs_message_id TEXT,
           alts_message_id TEXT,
           guilds_message_id TEXT,
+          applicant_discord TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -919,6 +941,8 @@ if (currentVersion < 11) {
           guild_realm TEXT,
           source TEXT NOT NULL,
           confidence REAL,
+          discord_status TEXT,
+          discord_profile TEXT,
           PRIMARY KEY (job_id, name, realm)
         );
       `);
@@ -945,6 +969,7 @@ export interface IntelJobRow {
   logs_message_id: string | null;
   alts_message_id: string | null;
   guilds_message_id: string | null;
+  applicant_discord: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -963,6 +988,8 @@ export type JobPhase = 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'do
 export type JobStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed';
 export type FindingSource = 'application' | 'raider.io' | 'declared main' | 'fingerprint';
 
+export type DiscordStatus = 'confirmed' | 'mismatch';
+
 export interface IntelFinding {
   name: string;
   realm: string;
@@ -971,6 +998,10 @@ export interface IntelFinding {
   guildRealm: string | null;
   source: FindingSource;
   confidence: number | null;
+  /** Set by the Discord confirmation pass; null means no information. */
+  discordStatus: DiscordStatus | null;
+  /** The handle observed on the character — shown when it contradicts. */
+  discordProfile: string | null;
 }
 
 /** Strongest-first: a later fingerprint hit must never downgrade a Raider.IO
@@ -992,12 +1023,15 @@ export function createJob(input: {
   applicationId: number | null;
   targetChannelId: string;
   character: RaiderIoCharacter;
+  /** Discord username of the applicant, for the confirmation pass. */
+  applicantDiscord?: string | null;
 }): number {
   const result = getDatabase()
     .prepare(
       `INSERT INTO applicant_intel_jobs
-         (application_id, target_channel_id, character_name, character_realm, character_region)
-       VALUES (?, ?, ?, ?, ?)`,
+         (application_id, target_channel_id, character_name, character_realm, character_region,
+          applicant_discord)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.applicationId,
@@ -1005,6 +1039,7 @@ export function createJob(input: {
       input.character.name,
       input.character.realm,
       input.character.region,
+      input.applicantDiscord ?? null,
     );
   return result.lastInsertRowid as number;
 }
@@ -1169,15 +1204,47 @@ export function addFinding(jobId: number, f: IntelFinding): void {
 
   db.prepare(
     `INSERT INTO applicant_intel_findings
-       (job_id, name, realm, class, guild_name, guild_realm, source, confidence)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       (job_id, name, realm, class, guild_name, guild_realm, source, confidence,
+        discord_status, discord_profile)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(job_id, name, realm) DO UPDATE SET
        class = excluded.class,
        guild_name = excluded.guild_name,
        guild_realm = excluded.guild_realm,
        source = excluded.source,
-       confidence = excluded.confidence`,
-  ).run(jobId, f.name, f.realm, f.className, f.guildName, f.guildRealm, f.source, f.confidence);
+       confidence = excluded.confidence,
+       -- A later, weaker source must never erase a Discord verdict already recorded.
+       discord_status = COALESCE(excluded.discord_status, applicant_intel_findings.discord_status),
+       discord_profile = COALESCE(excluded.discord_profile, applicant_intel_findings.discord_profile)`,
+  ).run(
+    jobId,
+    f.name,
+    f.realm,
+    f.className,
+    f.guildName,
+    f.guildRealm,
+    f.source,
+    f.confidence,
+    f.discordStatus,
+    f.discordProfile,
+  );
+}
+
+/** Record the outcome of the Discord confirmation pass for one character. */
+export function setDiscordStatus(
+  jobId: number,
+  name: string,
+  realm: string,
+  status: DiscordStatus,
+  profile: string | null,
+): void {
+  getDatabase()
+    .prepare(
+      `UPDATE applicant_intel_findings
+         SET discord_status = ?, discord_profile = ?
+       WHERE job_id = ? AND name = ? AND realm = ?`,
+    )
+    .run(status, profile, jobId, name, realm);
 }
 
 export function getFindings(jobId: number): IntelFinding[] {
@@ -1191,6 +1258,8 @@ export function getFindings(jobId: number): IntelFinding[] {
     guild_realm: string | null;
     source: FindingSource;
     confidence: number | null;
+    discord_status: DiscordStatus | null;
+    discord_profile: string | null;
   }[];
   return rows.map((r) => ({
     name: r.name,
@@ -1200,6 +1269,8 @@ export function getFindings(jobId: number): IntelFinding[] {
     guildRealm: r.guild_realm,
     source: r.source,
     confidence: r.confidence,
+    discordStatus: r.discord_status,
+    discordProfile: r.discord_profile,
   }));
 }
 ```
@@ -3542,6 +3613,8 @@ const finding = (over: Partial<IntelFinding>): IntelFinding => ({
   guildRealm: 'Draenor',
   source: 'fingerprint',
   confidence: 93,
+  discordStatus: null,
+  discordProfile: null,
   ...over,
 });
 
@@ -3588,6 +3661,25 @@ describe('renderFoundCharacters', () => {
   it('labels non-application characters undeclared with a confidence', () => {
     const pages = renderFoundCharacters([finding({})], 'Regnipaw', 'eu');
     expect(pages[0]).toContain('undeclared (93% confidence)');
+  });
+
+  it('appends the Discord verdict when the handle was confirmed', () => {
+    const pages = renderFoundCharacters(
+      [finding({ discordStatus: 'confirmed', discordProfile: 'binded' })],
+      'Regnipaw',
+      'eu',
+    );
+    expect(pages[0]).toContain('undeclared (93% confidence · Discord verified)');
+  });
+
+  it('shows the contradicting handle on a mismatch rather than hiding the character', () => {
+    const pages = renderFoundCharacters(
+      [finding({ discordStatus: 'mismatch', discordProfile: 'notthem' })],
+      'Regnipaw',
+      'eu',
+    );
+    expect(pages[0]).toContain('⚠ Discord mismatch: notthem');
+    expect(pages[0]).toContain('Monkni');
   });
 
   it('links the name to Raider.IO and shows class and guild inline', () => {
@@ -3860,10 +3952,16 @@ export function discordDate(iso: string): string {
 function findingLine(f: IntelFinding, region: string): string {
   const link = `[${f.name}-${f.realm}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
   const guild = f.guildName ? `${f.guildName} (${f.guildRealm ?? '?'})` : 'No guild';
+  const discord =
+    f.discordStatus === 'confirmed'
+      ? ' · Discord verified'
+      : f.discordStatus === 'mismatch'
+        ? ` · ⚠ Discord mismatch: ${f.discordProfile ?? 'unknown'}`
+        : '';
   const provenance =
     f.source === 'application'
       ? 'from the application'
-      : `undeclared (${Math.round(f.confidence ?? 100)}% confidence)`;
+      : `undeclared (${Math.round(f.confidence ?? 100)}% confidence${discord})`;
   return `${link} · ${f.className ?? 'Unknown'} · ${guild} — ${provenance}`;
 }
 
@@ -4362,6 +4460,9 @@ export async function discoverAlts(
       guildRealm: summary?.guild?.realm ?? null,
       source,
       confidence,
+      // The confirmation pass fills these in afterwards.
+      discordStatus: null,
+      discordProfile: null,
     });
     if (summary?.guild) {
       const gk = key(summary.guild.name, summary.guild.realm);
@@ -5130,6 +5231,8 @@ describe('runJob', () => {
       guildRealm: null,
       source: 'application',
       confidence: null,
+      discordStatus: null,
+      discordProfile: null,
     });
 
     const editMessage = vi.fn(async () => {});
@@ -5544,6 +5647,8 @@ export function startIntelJob(input: {
   targetChannelId: string;
   /** Every character the applicant named; the first is the primary for identity. */
   characters: RaiderIoCharacter[];
+  /** Discord username, for the confirmation pass. Null disables it. */
+  applicantDiscord?: string | null;
   altsMessageId?: string;
   guildsMessageId?: string;
   logsMessageId?: string;
@@ -5552,6 +5657,7 @@ export function startIntelJob(input: {
     applicationId: input.applicationId,
     targetChannelId: input.targetChannelId,
     character: input.characters[0],
+    applicantDiscord: input.applicantDiscord ?? null,
   });
   setApplicantCharacters(jobId, input.characters);
   setMessageIds(jobId, {
@@ -5633,6 +5739,8 @@ if (named.length > 0 && threadId) {
       // Every character the applicant named, not just the first — all of them are
       // always swept and labelled "from the application".
       characters: named,
+      // Drives the Discord confirmation pass on discovered characters.
+      applicantDiscord: user.username,
       altsMessageId,
       guildsMessageId,
       logsMessageId,
@@ -5945,6 +6053,8 @@ describe('buildIntelPage', () => {
         guildRealm: 'Draenor',
         source: 'fingerprint',
         confidence: 50,
+        discordStatus: null,
+        discordProfile: null,
       });
     }
   });
@@ -6206,7 +6316,272 @@ git commit -m "feat(test): add /test applicant_intel to run the sweep in-channel
 
 ---
 
-### Task 20: Full verification
+### Task 20: Discord confirmation pass
+
+**Files:**
+
+- Create: `src/functions/applications/alts/confirmDiscord.ts`
+- Modify: `src/functions/applications/intel/runJob.ts`, `src/functions/applications/intel/resumeJobs.ts`
+- Test: `tests/unit/confirmDiscord.test.ts`
+
+**Interfaces:**
+
+- Consumes: `getCharacterOwner` + `RAIDERIO_INTERNAL_PACE_MS` (Task 9), `getFindings` + `setDiscordStatus` (Task 5)
+- Produces:
+  - `export interface ConfirmDeps { getCharacterOwner: (c: RaiderIoCharacter) => Promise<CharacterOwner | null>; paceMs?: number }`
+  - `confirmDiscord(jobId: number, region: string, applicantDiscord: string | null, deps: ConfirmDeps): Promise<{ confirmed: number; mismatched: number }>`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/unit/confirmDiscord.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { closeDatabase, getDatabase } from '../../src/database/db.js';
+import { createTables } from '../../src/database/schema.js';
+
+vi.mock('../../src/services/logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+import {
+  createJob,
+  addFinding,
+  getFindings,
+  type IntelFinding,
+} from '../../src/functions/applications/intel/jobStore.js';
+import {
+  confirmDiscord,
+  type ConfirmDeps,
+} from '../../src/functions/applications/alts/confirmDiscord.js';
+
+const applicant = { region: 'eu', realm: 'draenor', name: 'Regnipaw' };
+
+const finding = (name: string, over: Partial<IntelFinding> = {}): IntelFinding => ({
+  name,
+  realm: 'Draenor',
+  className: 'Monk',
+  guildName: 'Rancour',
+  guildRealm: 'Draenor',
+  source: 'fingerprint',
+  confidence: 93,
+  discordStatus: null,
+  discordProfile: null,
+  ...over,
+});
+
+function deps(handles: Record<string, string | null>): ConfirmDeps {
+  return {
+    getCharacterOwner: vi.fn(async (c) => ({
+      user: null,
+      discordProfile: handles[c.name] ?? null,
+      declaredMain: null,
+    })),
+    paceMs: 0,
+  };
+}
+
+describe('confirmDiscord', () => {
+  let jobId: number;
+  beforeEach(() => {
+    process.env.DATABASE_PATH = ':memory:';
+    createTables(getDatabase());
+    jobId = createJob({ applicationId: 1, targetChannelId: 'c', character: applicant });
+  });
+  afterEach(() => closeDatabase());
+
+  it('confirms a character whose Discord handle matches, case-insensitively', async () => {
+    addFinding(jobId, finding('Monkni'));
+    const result = await confirmDiscord(jobId, 'eu', 'Binded', deps({ Monkni: 'binded' }));
+
+    expect(result).toEqual({ confirmed: 1, mismatched: 0 });
+    const stored = getFindings(jobId).find((f) => f.name === 'Monkni')!;
+    expect(stored.discordStatus).toBe('confirmed');
+    expect(stored.discordProfile).toBe('binded');
+  });
+
+  it('flags a mismatch and records the handle it saw', async () => {
+    addFinding(jobId, finding('Someoneelse'));
+    const result = await confirmDiscord(jobId, 'eu', 'binded', deps({ Someoneelse: 'notthem' }));
+
+    expect(result).toEqual({ confirmed: 0, mismatched: 1 });
+    const stored = getFindings(jobId).find((f) => f.name === 'Someoneelse')!;
+    expect(stored.discordStatus).toBe('mismatch');
+    expect(stored.discordProfile).toBe('notthem');
+  });
+
+  it('leaves the status unset when the character exposes no handle', async () => {
+    addFinding(jobId, finding('Quiet'));
+    await confirmDiscord(jobId, 'eu', 'binded', deps({ Quiet: null }));
+    expect(getFindings(jobId).find((f) => f.name === 'Quiet')!.discordStatus).toBeNull();
+  });
+
+  it('skips characters the applicant named themselves', async () => {
+    addFinding(jobId, finding('Regnipaw', { source: 'application', confidence: null }));
+    const d = deps({ Regnipaw: 'binded' });
+    await confirmDiscord(jobId, 'eu', 'binded', d);
+    expect(d.getCharacterOwner).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the applicant Discord handle is unknown', async () => {
+    addFinding(jobId, finding('Monkni'));
+    const d = deps({ Monkni: 'binded' });
+    const result = await confirmDiscord(jobId, 'eu', null, d);
+
+    expect(result).toEqual({ confirmed: 0, mismatched: 0 });
+    expect(d.getCharacterOwner).not.toHaveBeenCalled();
+  });
+
+  it('keeps going when one lookup throws', async () => {
+    addFinding(jobId, finding('Broken'));
+    addFinding(jobId, finding('Fine'));
+    const getCharacterOwner = vi.fn(async (c: { name: string }) => {
+      if (c.name === 'Broken') throw new Error('boom');
+      return { user: null, discordProfile: 'binded', declaredMain: null };
+    });
+
+    const result = await confirmDiscord(jobId, 'eu', 'binded', {
+      getCharacterOwner: getCharacterOwner as ConfirmDeps['getCharacterOwner'],
+      paceMs: 0,
+    });
+
+    expect(result.confirmed).toBe(1);
+    expect(getFindings(jobId).find((f) => f.name === 'Broken')!.discordStatus).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npx vitest run tests/unit/confirmDiscord.test.ts`
+Expected: FAIL — cannot resolve the module
+
+- [ ] **Step 3: Implement**
+
+Create `src/functions/applications/alts/confirmDiscord.ts`:
+
+```typescript
+import { logger } from '../../../services/logger.js';
+import { getFindings, setDiscordStatus } from '../intel/jobStore.js';
+import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { CharacterOwner } from '../../../services/raiderioInternal.js';
+
+export interface ConfirmDeps {
+  getCharacterOwner: (c: RaiderIoCharacter) => Promise<CharacterOwner | null>;
+  /** Pace between internal-API calls; 0 in tests. */
+  paceMs?: number;
+}
+
+const sleep = (ms: number): Promise<void> =>
+  ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
+
+/**
+ * Compare each found character's `discord_profile` against the applicant's Discord
+ * username: equal proves the account, different proves someone else's.
+ *
+ * A confirmation pass, never a search — the relationship runs one way (character →
+ * handle) and no site offers a Discord→character lookup. Nor can it be a sweep: one
+ * paced internal-API call per candidate is ~35 minutes across 3,000 roster
+ * candidates, against ~2 minutes for the fingerprint. Over the 5–20 characters
+ * actually found it costs ~15 seconds.
+ *
+ * A mismatch is recorded, not dropped. The fingerprint evidence still stands, and a
+ * reviewer is better served by the contradiction than by our arbitration of it.
+ */
+export async function confirmDiscord(
+  jobId: number,
+  region: string,
+  applicantDiscord: string | null,
+  deps: ConfirmDeps,
+): Promise<{ confirmed: number; mismatched: number }> {
+  if (!applicantDiscord) return { confirmed: 0, mismatched: 0 };
+
+  const wanted = applicantDiscord.toLowerCase();
+  const pace = deps.paceMs ?? 0;
+  let confirmed = 0;
+  let mismatched = 0;
+
+  for (const finding of getFindings(jobId)) {
+    // The applicant told us about these; there is nothing to confirm.
+    if (finding.source === 'application') continue;
+
+    let owner: CharacterOwner | null = null;
+    try {
+      owner = await deps.getCharacterOwner({
+        region,
+        realm: finding.realm,
+        name: finding.name,
+      });
+    } catch (error) {
+      // One unreadable character must not abort the rest of the pass.
+      logger.warn(
+        'Alts',
+        `Discord confirmation failed for ${finding.name}-${finding.realm}: ${error}`,
+      );
+    }
+    await sleep(pace);
+
+    const handle = owner?.discordProfile;
+    if (!handle) continue;
+
+    if (handle.toLowerCase() === wanted) {
+      setDiscordStatus(jobId, finding.name, finding.realm, 'confirmed', handle);
+      confirmed++;
+    } else {
+      setDiscordStatus(jobId, finding.name, finding.realm, 'mismatch', handle);
+      mismatched++;
+    }
+  }
+
+  return { confirmed, mismatched };
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npx vitest run tests/unit/confirmDiscord.test.ts && npx tsc --noEmit`
+Expected: PASS
+
+- [ ] **Step 5: Wire it into the runner**
+
+In `src/functions/applications/intel/runJob.ts` add `confirm: typeof confirmDiscord;` to `RunDeps`,
+import `confirmDiscord` from `../alts/confirmDiscord.js`, and run it immediately after the
+discovery phase — before the log sweep, so the found-characters message carries verdicts the
+first time it is edited:
+
+```typescript
+const discord = await deps.confirm(jobId, applicant.region, job.applicant_discord, {
+  getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
+  paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
+});
+if (discord.confirmed > 0 || discord.mismatched > 0) {
+  logger.info(
+    'Intel',
+    `Job #${jobId}: ${discord.confirmed} Discord-confirmed, ${discord.mismatched} mismatched`,
+  );
+}
+```
+
+Pass `confirm: confirmDiscord` in `resumeJobs.ts` alongside `discover` and `gather`, and add
+`confirm: vi.fn(async () => ({ confirmed: 0, mismatched: 0 }))` to the `deps()` stub in
+`tests/unit/intelRunJob.test.ts`.
+
+- [ ] **Step 6: Run the full suite**
+
+Run: `npx vitest run && npx tsc --noEmit`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+npx prettier --write src/functions/applications/alts/confirmDiscord.ts src/functions/applications/intel/runJob.ts src/functions/applications/intel/resumeJobs.ts tests/unit/confirmDiscord.test.ts tests/unit/intelRunJob.test.ts
+git add src/functions/applications/alts/confirmDiscord.ts src/functions/applications/intel/runJob.ts src/functions/applications/intel/resumeJobs.ts tests/unit/confirmDiscord.test.ts tests/unit/intelRunJob.test.ts
+git commit -m "feat(alts): confirm found characters against the applicant Discord handle"
+```
+
+---
+
+### Task 21: Full verification
 
 **Files:**
 
