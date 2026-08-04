@@ -318,6 +318,34 @@ value and the character's own name, each accepted only if the returned profile's
 Where `discord_profile` is present it is recorded in the output and used to corroborate
 fingerprint matches — for Driptinus it independently confirmed one of the three.
 
+#### Guild history (free, from the kill-date payload)
+
+Each `encountersDefeated.mythic[]` entry names the **guild the kill happened with**, so the
+payload already fetched for first-kill dates also yields a dated guild history at no extra
+request:
+
+```
+Dödsleif:
+  Hindsight-kazzak             56 kills  2026-04-23 → 2026-06-22
+  Rancour-draenor              24 kills  2026-03-29
+  WashedUp-twisting-nether      1 kill   2024-12-27
+  SeriouslyCasual-silvermoon    3 kills  2024-12-05
+```
+
+Two uses:
+
+1. **Extra fingerprint seeds.** Former guilds join the BFS frontier. Alts are routinely left
+   behind in a guild the main has since left, and no other source reveals those guilds.
+2. **Vetting context.** A reviewer can see guild movement, with dates, evidenced by kills.
+
+It only sees guilds the character killed Mythic bosses with — casual or Heroic-only membership is
+invisible. WCL's `Character.guilds` is not an alternative: it returned `null`, `[]` and a single
+current guild for the three characters tested.
+
+WoWProgress does publish fuller guild history, but it is unreachable: every route, including its
+documented `/export/ranks/` path, returns a Cloudflare JS challenge (403) to server-side
+requests, and solving that from a headless Railway container would mean shipping a browser.
+
 #### Declared main (`main_character`)
 
 The same payload may carry `characterCustomizations.main_character`, a full character object
@@ -422,10 +450,14 @@ Discovery is therefore a breadth-first search over **every guild associated with
 not just the applicant's own. Scanning only the linked character's guild finds only the alts
 that happen to share it — for Hitoshura that was 1 of 25.
 
-1. **Seed with every known character's guild.** Resolve the guild of the applicant's
-   character, the declared main, and every character returned by source 1, each via
-   `GET /api/v1/characters/profile?…&fields=guild` — one cheap documented call per character.
-   Deduplicate guilds by `name-realm`.
+1. **Seed with every known character's guild, current and former.** Resolve the current guild of
+   the applicant's character, the declared main, and every character returned by source 1, each
+   via `GET /api/v1/characters/profile?…&fields=guild` — one cheap documented call per character.
+   Add every guild named in their kill history (see Guild history above), which costs nothing
+   extra. Deduplicate guilds by `name-realm`.
+
+   Former guilds matter: on a tested account the main had raided with four guilds across the
+   window, and an alt left behind in any of them is reachable only through that guild's roster.
 
    **A guild's realm is not the character's realm** — `Driptinus-Argent Dawn` is in
    `Rancour-Draenor`, and querying the roster on the character's realm returns
@@ -906,14 +938,16 @@ No new environment variables are introduced, so the `ci.yml` stub block is uncha
 
 ## Rejected alternatives
 
-| Approach                                    | Why rejected                                                                                                                                                  |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| WCL `User.characters` / `Character.claimed` | Permission denied even for the report owner                                                                                                                   |
-| Raider.IO documented API (`/api/v1`)        | No alts field and no owner field; profile returns name/race/class/spec/faction/points only. The internal API is used instead                                  |
-| Raider.IO warband endpoint                  | `/api/mythic-plus/rankings/warbands` is a region leaderboard, not a per-character lookup                                                                      |
-| Raider.IO `/api/search`                     | Indexes guilds and characters only — no user matches, so a username cannot be searched for                                                                    |
-| WoWProgress `json_alts`                     | 403 behind Cloudflare; data is consent-gated by character confirmation                                                                                        |
-| check-pvp.fr                                | No documented API, 403 to automated fetch, undocumented mechanism                                                                                             |
-| Battle.net OAuth (`/profile/user/wow`)      | Authoritative, but needs a public HTTP callback, redirect URI registration and token lifecycle — a web surface this bot does not have. Viable future upgrade. |
-| `zoneRankings` instead of `fights`          | Ranked kills only; cannot see wipes                                                                                                                           |
-| Asking the applicant to declare alts        | Explicitly declined — no new application questions                                                                                                            |
+| Approach                                    | Why rejected                                                                                                                                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| WCL `User.characters` / `Character.claimed` | Permission denied even for the report owner                                                                                                                                               |
+| Raider.IO documented API (`/api/v1`)        | No alts field and no owner field; profile returns name/race/class/spec/faction/points only. The internal API is used instead                                                              |
+| Raider.IO warband endpoint                  | `/api/mythic-plus/rankings/warbands` is a region leaderboard, not a per-character lookup                                                                                                  |
+| Raider.IO `/api/search`                     | Indexes guilds and characters only — no user matches, so a username cannot be searched for                                                                                                |
+| WoWProgress `json_alts`                     | 403 behind Cloudflare; data is consent-gated by character confirmation                                                                                                                    |
+| WoWProgress guild history                   | Fuller than ours, but every route including `/export/ranks/` returns a Cloudflare JS challenge to server-side requests. Raider.IO's per-kill `guild` gives dated history for free instead |
+| WCL `Character.guilds` for guild history    | Unreliable — returned `null`, `[]` and current-guild-only across three tested characters                                                                                                  |
+| check-pvp.fr                                | No documented API, 403 to automated fetch, undocumented mechanism                                                                                                                         |
+| Battle.net OAuth (`/profile/user/wow`)      | Authoritative, but needs a public HTTP callback, redirect URI registration and token lifecycle — a web surface this bot does not have. Viable future upgrade.                             |
+| `zoneRankings` instead of `fights`          | Ranked kills only; cannot see wipes                                                                                                                                                       |
+| Asking the applicant to declare alts        | Explicitly declined — no new application questions                                                                                                                                        |

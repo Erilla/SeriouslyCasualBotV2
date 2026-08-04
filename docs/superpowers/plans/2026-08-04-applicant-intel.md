@@ -17,6 +17,8 @@
 - **A failed fetch is never "no data".** Record unknown; a failure must never read as an absence.
 - **Nothing may fail an application.** Every path fails soft.
 - **Masked links only render in embeds** — both messages are embeds, URLs absolute `https://`.
+- **Cache the expensive fetches by entity, never by job.** An achievement fingerprint belongs to a character and a roster belongs to a guild; neither depends on who asked. Both go through `getCachedOrFetch` keyed on `region/realm/name` or `name-realm`, so overlapping guilds across applicants are already warm. `applicant_intel_scanned` stays job-scoped — it is resume state, not data.
+- **Never cache a negative.** `null` from a fingerprint means "unavailable", and caching it would freeze a transient failure into a lasting absence, which the constraint above forbids.
 - Imports use `.js` specifiers; ephemeral replies use `MessageFlags.Ephemeral`.
 - Every task ends prettier-clean: `npx prettier --write <files>` before commit (CI runs `format:check`).
 
@@ -1875,20 +1877,30 @@ git commit -m "feat(logs): add per-character WCL kill, report and wipe queries"
 
 **Interfaces:**
 
-- Consumes: existing `BASE_URL` and `httpRequest` in `raiderio.ts`; `RaiderIoCharacter`
+- Consumes: existing `BASE_URL` and `httpRequest` in `raiderio.ts`; `RaiderIoCharacter`; `getCachedOrFetch` and `ttl` from `src/services/apiCache.ts`
 - Produces:
   - `export interface CharacterGuild { name: string; realm: string }`
   - `export interface CharacterSummary { className: string | null; guild: CharacterGuild | null }`
+  - `export interface FullRosterMember { name: string; realm: string; className: string | null }`
   - `getCharacterGuild(c): Promise<CharacterGuild | null>`
   - `getCharacterSummary(c): Promise<CharacterSummary | null>`
   - `getMythicKillCount(c): Promise<number>`
+  - `getFullGuildRoster(name: string, realm: string): Promise<FullRosterMember[]>`
+  - `GUILD_ROSTER_TTL_MS`
+
+**Why `getFullGuildRoster` is a new function and not a widened `getGuildRoster`.** The existing `getGuildRoster()` hardcodes our own guild _and_ filters to `ROSTER_RANKS = [0, 1, 3, 4, 5, 7]`. Both are correct for the raider auto-match, and both are wrong here:
+
+- Guild ranks are per-guild labels with no shared meaning. Applying our rank filter to a stranger's guild drops arbitrary members — reintroducing exactly the false negative the spec's "rosters are scanned in full" rule exists to prevent, and doing it invisibly.
+- The sweep needs every member, so this function must not filter at all.
+
+Widening the existing function would put a footgun behind a default argument. Keep them separate; `getGuildRoster()` is untouched.
 
 - [ ] **Step 1: Write the failing test**
 
 Create `tests/unit/raiderioIntel.test.ts`:
 
 ```typescript
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../src/services/httpClient.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/services/httpClient.js')>();
@@ -1896,10 +1908,13 @@ vi.mock('../../src/services/httpClient.js', async (importOriginal) => {
 });
 
 import { httpRequest, HttpError } from '../../src/services/httpClient.js';
+import { closeDatabase, getDatabase } from '../../src/database/db.js';
+import { createTables } from '../../src/database/schema.js';
 import {
   getCharacterGuild,
   getCharacterSummary,
   getMythicKillCount,
+  getFullGuildRoster,
 } from '../../src/services/raiderio.js';
 
 const mocked = vi.mocked(httpRequest);
@@ -1959,6 +1974,50 @@ describe('getMythicKillCount', () => {
       new HttpError({ service: 'raiderio', status: 500, attempts: 3, message: 'boom' }),
     );
     expect(await getMythicKillCount(character)).toBe(0);
+  });
+});
+
+describe('getFullGuildRoster', () => {
+  /** Rank 8 is outside ROSTER_RANKS and must still be returned. */
+  const members = [
+    {
+      rank: 0,
+      character: { name: 'Driptinus', realm: 'Argent Dawn', region: 'eu', class: 'Monk' },
+    },
+    { rank: 8, character: { name: 'Boptinus', realm: 'Tarren Mill', region: 'eu', class: 'Mage' } },
+  ];
+
+  beforeEach(() => createTables(getDatabase(':memory:')));
+  afterEach(() => closeDatabase());
+
+  it('returns every member, including ranks the own-guild roster filters out', async () => {
+    mocked.mockResolvedValueOnce({ members } as never);
+    const roster = await getFullGuildRoster('Rancour', 'Draenor');
+    expect(roster.map((m) => m.name)).toEqual(['Driptinus', 'Boptinus']);
+    expect(roster[1]).toEqual({ name: 'Boptinus', realm: 'Tarren Mill', className: 'Mage' });
+  });
+
+  it("slugifies the guild's realm", async () => {
+    mocked.mockResolvedValueOnce({ members: [] } as never);
+    await getFullGuildRoster('Rancour', 'Argent Dawn');
+    expect(mocked.mock.calls[0]![1]).toContain('realm=argent-dawn');
+  });
+
+  it('serves a second request for the same guild from the cache', async () => {
+    mocked.mockResolvedValueOnce({ members } as never);
+    await getFullGuildRoster('Rancour', 'Draenor');
+    await getFullGuildRoster('rancour', 'draenor');
+    expect(mocked).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cache a failure as an empty guild', async () => {
+    mocked.mockRejectedValueOnce(
+      new HttpError({ service: 'raiderio', status: 500, attempts: 3, message: 'boom' }),
+    );
+    expect(await getFullGuildRoster('Rancour', 'Draenor')).toEqual([]);
+
+    mocked.mockResolvedValueOnce({ members } as never);
+    expect(await getFullGuildRoster('Rancour', 'Draenor')).toHaveLength(2);
   });
 });
 ```
@@ -2040,6 +2099,70 @@ export async function getMythicKillCount(c: RaiderIoCharacter): Promise<number> 
     return 0;
   }
 }
+
+export interface FullRosterMember {
+  name: string;
+  realm: string;
+  className: string | null;
+}
+
+/** Rosters change slowly, and a stale member costs one wasted fingerprint. */
+export const GUILD_ROSTER_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Realm slug for a guild's own realm: lowercased, spaces to hyphens
+ * ("Argent Dawn" -> "argent-dawn"). Apostrophes are dropped, which covers
+ * every EU/US realm currently in use.
+ */
+function realmSlug(realm: string): string {
+  return realm.toLowerCase().replace(/'/g, '').replace(/\s+/g, '-');
+}
+
+/**
+ * EVERY member of an arbitrary guild, unfiltered and cached by `name-realm`.
+ *
+ * Deliberately NOT the existing `getGuildRoster()`, which is hardcoded to our
+ * own guild and filters to ROSTER_RANKS. Guild ranks mean different things in
+ * different guilds, so filtering a stranger's roster by our rank list silently
+ * drops members — the spec requires full rosters because the one genuine alt in
+ * the 429-member `Goodlife` sample sat well beyond the first 50.
+ *
+ * The realm MUST be the guild's own realm, not the character's: Driptinus-Argent
+ * Dawn is in Rancour-Draenor, and the character's realm returns
+ * "Could not find requested guild".
+ *
+ * Cached by entity, so overlapping guilds across applicants cost one fetch.
+ *
+ * The fetcher THROWS on failure rather than returning [] — `getCachedOrFetch`
+ * stores whatever the fetcher returns, so an empty array returned from inside it
+ * would cache a transient 500 as "this guild has no members" for a full day. The
+ * catch sits outside the cache call, so a failure yields [] for this sweep only
+ * and is retried next time.
+ */
+export async function getFullGuildRoster(name: string, realm: string): Promise<FullRosterMember[]> {
+  const key = `guild-roster:${realmSlug(realm)}:${name.toLowerCase()}`;
+  const url =
+    `${BASE_URL}/guilds/profile?region=eu&realm=${encodeURIComponent(realmSlug(realm))}` +
+    `&name=${encodeURIComponent(name)}&fields=members`;
+  try {
+    return await getCachedOrFetch<FullRosterMember[]>(key, ttl(GUILD_ROSTER_TTL_MS), async () => {
+      const data = await httpRequest<{ members: RaiderIoMember[] }>('raiderio', url);
+      return data.members.map((m) => ({
+        name: m.character.name,
+        realm: m.character.realm,
+        className: m.character.class ?? null,
+      }));
+    });
+  } catch {
+    return [];
+  }
+}
+```
+
+Add the cache import at the top of `raiderio.ts`:
+
+```typescript
+import { getCachedOrFetch, ttl } from './apiCache.js';
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -2177,6 +2300,30 @@ describe('getClaimedCharacters', () => {
 });
 
 describe('getMythicKillDates', () => {
+  it('carries the guild each kill happened with, for guild history', async () => {
+    mocked.mockResolvedValueOnce({
+      characterRaidProgress: {
+        raidProgress: [
+          {
+            raid: 'tier-mn-1',
+            encountersDefeated: {
+              mythic: [
+                {
+                  slug: 'imperator-averzian',
+                  firstDefeated: '2026-04-23T19:00:00.000Z',
+                  guild: { name: 'Hindsight', realm: { slug: 'kazzak' } },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    } as never);
+
+    const dates = await getMythicKillDates(character, [35]);
+    expect(dates?.[0].guild).toEqual({ name: 'Hindsight', realm: 'kazzak' });
+  });
+
   it('flattens encountersDefeated across the requested tiers', async () => {
     mocked
       .mockResolvedValueOnce({
@@ -2208,8 +2355,8 @@ describe('getMythicKillDates', () => {
 
     const dates = await getMythicKillDates(character, [35, 34]);
     expect(dates).toEqual([
-      { bossName: 'crown-of-the-cosmos', firstDefeated: '2026-04-23T19:00:00.000Z' },
-      { bossName: 'dimensius', firstDefeated: '2025-10-30T20:00:00.000Z' },
+      { bossName: 'crown-of-the-cosmos', firstDefeated: '2026-04-23T19:00:00.000Z', guild: null },
+      { bossName: 'dimensius', firstDefeated: '2025-10-30T20:00:00.000Z', guild: null },
     ]);
   });
 
@@ -2344,13 +2491,21 @@ export interface MythicKillDate {
   /** Raider.IO's boss slug, matched to a WCL encounter name by the caller. */
   bossName: string;
   firstDefeated: string;
+  /** The guild this kill happened with — dated guild history, free of charge. */
+  guild: { name: string; realm: string } | null;
 }
 
 interface RaidProgressResponse {
   characterRaidProgress?: {
     raidProgress?: {
       raid?: string;
-      encountersDefeated?: { mythic?: { slug?: string; firstDefeated?: string }[] };
+      encountersDefeated?: {
+        mythic?: {
+          slug?: string;
+          firstDefeated?: string;
+          guild?: { name?: string; realm?: { slug?: string; name?: string } };
+        }[];
+      };
     }[];
   };
 }
@@ -2373,9 +2528,13 @@ export async function getMythicKillDates(
       const data = await httpRequest<RaidProgressResponse>(SERVICE, url);
       for (const raid of data.characterRaidProgress?.raidProgress ?? []) {
         for (const e of raid.encountersDefeated?.mythic ?? []) {
-          if (e.slug && e.firstDefeated) {
-            out.push({ bossName: e.slug, firstDefeated: e.firstDefeated });
-          }
+          if (!e.slug || !e.firstDefeated) continue;
+          const guildRealm = e.guild?.realm?.slug ?? e.guild?.realm?.name ?? null;
+          out.push({
+            bossName: e.slug,
+            firstDefeated: e.firstDefeated,
+            guild: e.guild?.name && guildRealm ? { name: e.guild.name, realm: guildRealm } : null,
+          });
         }
       }
     } catch (error) {
@@ -2411,17 +2570,32 @@ git commit -m "feat(intel): add Raider.IO internal owner, claimed and kill-date 
 
 - Create: `src/functions/applications/alts/compareFingerprints.ts` (pure)
 - Modify: `src/services/blizzard.ts`
+- Modify: `src/services/apiCache.ts` (add `pruneCache`)
 - Test: `tests/unit/compareFingerprints.test.ts`
+- Test: `tests/unit/blizzardFingerprint.test.ts`
 
 **Interfaces:**
 
-- Consumes: existing `getAccessToken` and `httpRequest` inside `blizzard.ts`
+- Consumes: existing `getAccessToken`, `httpRequest` and `normalizeRealmSlug` inside `blizzard.ts`; `getCachedOrFetch` and `ttl` from `apiCache.ts`; `HttpError` and `CircuitOpenError` from `httpClient.ts`
 - Produces:
   - `export type Fingerprint = Map<number, number>` (achievement id → completed timestamp)
   - `export interface FingerprintMatch { identical: number; common: number; percent: number; isMatch: boolean }`
   - `compareFingerprints(a: Fingerprint, b: Fingerprint): FingerprintMatch`
   - `MATCH_PERCENT_THRESHOLD = 20`, `MIN_COMMON_ACHIEVEMENTS = 200`
   - `getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fingerprint | null>` in `blizzard.ts` (`null` = unavailable, not "no match")
+  - `FINGERPRINT_TTL_MS` in `blizzard.ts`
+  - `pruneCache(prefix: string, olderThanMs: number): number` in `apiCache.ts`
+
+**The fingerprint is cached per character, and this is what makes the feature affordable.** A fingerprint depends only on the character, so it is the same answer whoever asked. Applicants share guilds — a second applicant from `Rancour` re-walks a roster already fingerprinted — so an entity-keyed cache turns a 3,000-request sweep into a few hundred. It is also the single expensive call in the whole design, at roughly 300 requests per second of wall clock under the concurrency limiter.
+
+**Two failure contracts must not be conflated:**
+
+| Error                                            | Behaviour                      | Why                                                                                                                                                                                                       |
+| ------------------------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 429, or an open circuit                          | **rethrow**                    | The runner pauses and resumes on these. Swallowing them turns a rate limit into "this account has no alts" and silently empties the sweep — the exact failure the resumable-job design exists to prevent. |
+| 404, 403, 500, character below achievement floor | **return `null`** (not cached) | Genuinely unavailable. `null` already means "unknown, not a non-match" to `discoverAlts`.                                                                                                                 |
+
+This also fixes a live contradiction in the plan: the doc comment on `getCharacterFingerprint` promises `null` on failure while the body lets `httpRequest` throw, and `discoverAlts` calls it unguarded for the applicant's own character (`const applicantFingerprint = await deps.getCharacterFingerprint(primary)` — it null-checks but does not catch). A renamed or transferred applicant character would 404 and fail the phase instead of skipping the sweep. Honouring the documented contract here fixes it at the source; the roster loop's existing `.catch(() => null)` stays as it is.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2562,12 +2736,18 @@ interface AchievementsProfile {
   achievements?: { id: number; completed_timestamp?: number }[];
 }
 
+/** Cache wire format. A Map JSON.stringifies to `{}`, so entries are stored. */
+type FingerprintEntries = [number, number][];
+
 /**
- * The character's completed achievements as id -> timestamp. Returns null when
- * the character cannot be read (404, private, transient failure) — null means
- * "unknown", and callers must not treat it as "no match".
+ * Achievement timestamps are immutable once earned, so the only staleness is a
+ * character earning more. A week keeps a sweep cheap without letting a fresh
+ * alt stay invisible for long.
  */
-export async function getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fingerprint | null> {
+export const FINGERPRINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Throws on any failure so nothing is cached; the caller decides what is fatal. */
+async function fetchFingerprintEntries(c: RaiderIoCharacter): Promise<FingerprintEntries> {
   const token = await getAccessToken();
   const realmSlug = encodeURIComponent(normalizeRealmSlug(c.realm));
   const url =
@@ -2579,25 +2759,196 @@ export async function getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fin
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  const map: Fingerprint = new Map();
+  const entries: FingerprintEntries = [];
   for (const a of data.achievements ?? []) {
-    if (a.completed_timestamp) map.set(a.id, a.completed_timestamp);
+    if (a.completed_timestamp) entries.push([a.id, a.completed_timestamp]);
   }
-  return map.size > 0 ? map : null;
+  return entries;
+}
+
+/**
+ * The character's completed achievements as id -> timestamp, cached per
+ * character for FINGERPRINT_TTL_MS. Returns null when the character cannot be
+ * read (404, private, below the achievement floor) — null means "unknown", and
+ * callers must not treat it as "no match".
+ *
+ * A 429 or open circuit is RETHROWN, not swallowed: the job runner pauses and
+ * resumes on those, and turning a rate limit into null would report an
+ * account as having no alts. Neither case is cached, so a retry re-fetches.
+ *
+ * An empty-but-successful fetch IS cached — "this character has earned no
+ * achievements" is a real answer, and the TTL bounds how long it lasts.
+ */
+export async function getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fingerprint | null> {
+  const key = `fingerprint:${c.region}:${normalizeRealmSlug(c.realm)}:${c.name.toLowerCase()}`;
+
+  let entries: FingerprintEntries;
+  try {
+    entries = await getCachedOrFetch<FingerprintEntries>(key, ttl(FINGERPRINT_TTL_MS), () =>
+      fetchFingerprintEntries(c),
+    );
+  } catch (error) {
+    if (error instanceof CircuitOpenError) throw error;
+    if (error instanceof HttpError && error.status === 429) throw error;
+    return null;
+  }
+
+  return entries.length > 0 ? new Map(entries) : null;
 }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+Add to the imports at the top of `blizzard.ts`:
 
-Run: `npx vitest run tests/unit/compareFingerprints.test.ts && npx tsc --noEmit`
+```typescript
+import { getCachedOrFetch, ttl } from './apiCache.js';
+import { CircuitOpenError, HttpError } from './httpClient.js';
+```
+
+- [ ] **Step 5: Add cache pruning**
+
+Fingerprints are large: ~4,000 achievements per character serialises to roughly 85 KB, so a single maxed 3,000-character sweep can add ~250 MB to the volume. Nothing currently deletes from `api_cache` except `flushCache`, which drops everything including the achievements-image entries.
+
+Append to `src/services/apiCache.ts`:
+
+```typescript
+/**
+ * Delete cache entries under `prefix` older than `olderThanMs`, returning the
+ * number removed. Prefix-scoped so pruning bulky fingerprints cannot evict the
+ * achievements-image entries, which are FOREVER by design.
+ */
+export function pruneCache(prefix: string, olderThanMs: number): number {
+  const db = getDatabase();
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+  const result = db
+    .prepare("DELETE FROM api_cache WHERE key LIKE ? || '%' AND fetched_at < ?")
+    .run(prefix, cutoff);
+  return result.changes;
+}
+```
+
+No migration is needed — `api_cache` already exists from schema v9.
+
+- [ ] **Step 6: Test the caching and failure contracts**
+
+Create `tests/unit/blizzardFingerprint.test.ts`:
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+vi.mock('../../src/services/httpClient.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/httpClient.js')>();
+  return { ...actual, httpRequest: vi.fn() };
+});
+vi.mock('../../src/services/logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+import { httpRequest, HttpError, CircuitOpenError } from '../../src/services/httpClient.js';
+import { closeDatabase, getDatabase } from '../../src/database/db.js';
+import { createTables } from '../../src/database/schema.js';
+import { getCharacterFingerprint } from '../../src/services/blizzard.js';
+import { pruneCache } from '../../src/services/apiCache.js';
+
+const mocked = vi.mocked(httpRequest);
+const character = { region: 'eu', realm: 'argent-dawn', name: 'Driptinus' };
+const achievements = {
+  achievements: [
+    { id: 1, completed_timestamp: 1_700_000_000_000 },
+    { id: 2, completed_timestamp: 1_700_000_000_001 },
+    { id: 3 }, // incomplete — excluded
+  ],
+};
+
+describe('getCharacterFingerprint', () => {
+  beforeEach(() => {
+    mocked.mockReset();
+    createTables(getDatabase(':memory:'));
+  });
+  afterEach(() => closeDatabase());
+
+  it('maps completed achievements to timestamps', async () => {
+    mocked.mockResolvedValueOnce(achievements as never);
+    const fp = await getCharacterFingerprint(character);
+    expect([...fp!.entries()]).toEqual([
+      [1, 1_700_000_000_000],
+      [2, 1_700_000_000_001],
+    ]);
+  });
+
+  it('serves the same character from the cache, surviving the Map round-trip', async () => {
+    mocked.mockResolvedValueOnce(achievements as never);
+    await getCharacterFingerprint(character);
+    const cached = await getCharacterFingerprint(character);
+    expect(mocked).toHaveBeenCalledTimes(1);
+    expect(cached).toBeInstanceOf(Map);
+    expect(cached!.get(1)).toBe(1_700_000_000_000);
+  });
+
+  it('returns null for an unreadable character without caching it', async () => {
+    mocked.mockRejectedValueOnce(
+      new HttpError({ service: 'blizzard', status: 404, attempts: 1, message: 'gone' }),
+    );
+    expect(await getCharacterFingerprint(character)).toBeNull();
+
+    mocked.mockResolvedValueOnce(achievements as never);
+    expect(await getCharacterFingerprint(character)).not.toBeNull();
+  });
+
+  it('rethrows a 429 so the job pauses instead of reporting no alts', async () => {
+    mocked.mockRejectedValueOnce(
+      new HttpError({ service: 'blizzard', status: 429, attempts: 3, message: 'slow down' }),
+    );
+    await expect(getCharacterFingerprint(character)).rejects.toBeInstanceOf(HttpError);
+  });
+
+  it('rethrows an open circuit', async () => {
+    mocked.mockRejectedValueOnce(new CircuitOpenError('blizzard'));
+    await expect(getCharacterFingerprint(character)).rejects.toBeInstanceOf(CircuitOpenError);
+  });
+
+  it('returns null when the character has no completed achievements', async () => {
+    mocked.mockResolvedValueOnce({ achievements: [] } as never);
+    expect(await getCharacterFingerprint(character)).toBeNull();
+  });
+});
+
+describe('pruneCache', () => {
+  beforeEach(() => createTables(getDatabase(':memory:')));
+  afterEach(() => closeDatabase());
+
+  it('removes only stale entries under the given prefix', () => {
+    const db = getDatabase();
+    const old = new Date(Date.now() - 60_000).toISOString();
+    const insert = db.prepare('INSERT INTO api_cache (key, payload, fetched_at) VALUES (?, ?, ?)');
+    insert.run('fingerprint:eu:draenor:old', '[]', old);
+    insert.run('fingerprint:eu:draenor:fresh', '[]', new Date().toISOString());
+    insert.run('static-data:10', '{}', old);
+
+    expect(pruneCache('fingerprint:', 30_000)).toBe(1);
+    const keys = (db.prepare('SELECT key FROM api_cache').all() as { key: string }[]).map(
+      (r) => r.key,
+    );
+    expect(keys).toEqual(
+      expect.arrayContaining(['fingerprint:eu:draenor:fresh', 'static-data:10']),
+    );
+    expect(keys).toHaveLength(2);
+  });
+});
+```
+
+`CircuitOpenError`'s constructor signature comes from Task 3 — match whatever it takes there.
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+Run: `npx vitest run tests/unit/compareFingerprints.test.ts tests/unit/blizzardFingerprint.test.ts && npx tsc --noEmit`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-npx prettier --write src/functions/applications/alts/compareFingerprints.ts src/services/blizzard.ts tests/unit/compareFingerprints.test.ts
-git add src/functions/applications/alts/compareFingerprints.ts src/services/blizzard.ts tests/unit/compareFingerprints.test.ts
-git commit -m "feat(alts): add Blizzard achievement fingerprint and comparison"
+npx prettier --write src/functions/applications/alts/compareFingerprints.ts src/services/blizzard.ts src/services/apiCache.ts tests/unit/compareFingerprints.test.ts tests/unit/blizzardFingerprint.test.ts
+git add src/functions/applications/alts/compareFingerprints.ts src/services/blizzard.ts src/services/apiCache.ts tests/unit/compareFingerprints.test.ts tests/unit/blizzardFingerprint.test.ts
+git commit -m "feat(alts): add cached Blizzard achievement fingerprint and comparison"
 ```
 
 ---
@@ -3411,6 +3762,8 @@ function deps(over: Partial<DiscoverDeps> = {}): DiscoverDeps {
     getCharacterGuild: vi.fn(async () => null),
     getGuildRoster: vi.fn(async () => []),
     getCharacterFingerprint: vi.fn(async (c) => fingerprints[c.name.toLowerCase()] ?? null),
+    getMythicKillDates: vi.fn(async () => []),
+    tierOrdinals: [35],
     paceMs: 0,
     ...over,
   };
@@ -3482,6 +3835,28 @@ describe('discoverAlts', () => {
     const names = getFindings(jobId).map((f) => f.name);
     expect(names).toContain('Brenthunter');
     expect(names).not.toContain('Stranger');
+  });
+
+  it('seeds the BFS from former guilds named in the kill history', async () => {
+    const getGuildRoster = vi.fn(async () => []);
+    await discoverAlts(
+      jobId,
+      [applicant],
+      deps({
+        getCharacterGuild: vi.fn(async () => null),
+        getGuildRoster,
+        getMythicKillDates: vi.fn(async () => [
+          {
+            bossName: 'imperator-averzian',
+            firstDefeated: '2024-12-05T00:00:00.000Z',
+            guild: { name: 'SeriouslyCasual', realm: 'silvermoon' },
+          },
+        ]),
+      }),
+    );
+    expect(getGuildRoster).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'SeriouslyCasual', realm: 'silvermoon' }),
+    );
   });
 
   it("seeds the BFS from a guild's own realm, not the character's", async () => {
@@ -3565,7 +3940,11 @@ import { compareFingerprints, type Fingerprint } from './compareFingerprints.js'
 import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/jobStore.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
 import type { CharacterGuild, CharacterSummary } from '../../../services/raiderio.js';
-import type { CharacterOwner, ClaimedCharacter } from '../../../services/raiderioInternal.js';
+import type {
+  CharacterOwner,
+  ClaimedCharacter,
+  MythicKillDate,
+} from '../../../services/raiderioInternal.js';
 
 export const ALT_CAPS = {
   guilds: 12,
@@ -3587,6 +3966,12 @@ export interface DiscoverDeps {
   getCharacterGuild: (c: RaiderIoCharacter) => Promise<CharacterGuild | null>;
   getGuildRoster: (guild: CharacterGuild) => Promise<RosterMember[]>;
   getCharacterFingerprint: (c: RaiderIoCharacter) => Promise<Fingerprint | null>;
+  /** Kill history, used here only for the guilds it names. */
+  getMythicKillDates: (
+    c: RaiderIoCharacter,
+    tierOrdinals: number[],
+  ) => Promise<MythicKillDate[] | null>;
+  tierOrdinals: number[];
   /** Pace between internal-API calls; 0 in tests. */
   paceMs?: number;
   maxGuilds?: number;
@@ -3679,6 +4064,23 @@ export async function discoverAlts(
       !guildFrontier.some((g) => key(g.guild.name, g.guild.realm) === gk)
     ) {
       guildFrontier.push({ guild, depth: 0 });
+    }
+  }
+
+  // FORMER guilds too: every guild named in a known character's kill history.
+  // Alts are routinely left behind in a guild the main has since left, and no
+  // other readable source reveals those guilds. The data rides along with the
+  // kill dates, so it costs nothing extra.
+  for (const c of [...known.values()]) {
+    const history = await deps.getMythicKillDates(c, deps.tierOrdinals);
+    await sleep(pace);
+    if (!history) continue;
+    for (const past of history) {
+      if (!past.guild) continue;
+      const pk = key(past.guild.name, past.guild.realm);
+      if (visitedGuilds.has(pk)) continue;
+      if (guildFrontier.some((g) => key(g.guild.name, g.guild.realm) === pk)) continue;
+      guildFrontier.push({ guild: past.guild, depth: 0 });
     }
   }
 
@@ -4397,13 +4799,19 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         .getClaimedCharacters,
       getCharacterSummary: (await import('../../../services/raiderio.js')).getCharacterSummary,
       getCharacterGuild: (await import('../../../services/raiderio.js')).getCharacterGuild,
+      // getFullGuildRoster, NOT getGuildRoster: the latter is hardcoded to our
+      // own guild and filters to ROSTER_RANKS, which would silently drop members
+      // of a stranger's guild. See Task 8.
       getGuildRoster: async (guild) => {
-        const { getGuildRoster } = await import('../../../services/raiderio.js');
-        const roster = await getGuildRoster(guild.name, guild.realm);
+        const { getFullGuildRoster } = await import('../../../services/raiderio.js');
+        const roster = await getFullGuildRoster(guild.name, guild.realm);
         return roster.map((m) => ({ name: m.name, realm: m.realm }));
       },
       getCharacterFingerprint: (await import('../../../services/blizzard.js'))
         .getCharacterFingerprint,
+      getMythicKillDates: (await import('../../../services/raiderioInternal.js'))
+        .getMythicKillDates,
+      tierOrdinals: deps.tierOrdinals,
       paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
     });
     if (truncated) {
@@ -4737,7 +5145,7 @@ git commit -m "feat(applications): post intel placeholders and queue the sweep o
 
 **Interfaces:**
 
-- Consumes: `dueJobs`, `resetRunningJobs` (Task 5); `runJob` (Task 15)
+- Consumes: `dueJobs`, `resetRunningJobs` (Task 5); `runJob` (Task 15); `pruneCache` (Task 10); `FINGERPRINT_TTL_MS` (Task 10)
 - Produces: `resumeApplicantIntelJobs(client: Client, run?: (jobId: number) => Promise<void>): Promise<number>`; `recoverInterruptedJobs(): number`
 
 - [ ] **Step 1: Write the failing test**
@@ -4893,8 +5301,23 @@ export async function resumeApplicantIntelJobs(
 export function recoverInterruptedJobs(): number {
   const reset = resetRunningJobs();
   if (reset > 0) logger.info('Intel', `Reset ${reset} interrupted intel job(s) to pending`);
+
+  // Fingerprints are ~85 KB each and a maxed sweep caches 3,000 of them, so
+  // expired entries are dropped at boot rather than left to grow the volume.
+  // Prefix-scoped: the achievements-image cache entries are FOREVER and must
+  // survive. Once per start is enough — the TTL is a week.
+  const pruned = pruneCache('fingerprint:', FINGERPRINT_TTL_MS);
+  if (pruned > 0) logger.info('Intel', `Pruned ${pruned} expired fingerprint cache entries`);
+
   return reset;
 }
+```
+
+Imports for `resumeJobs.ts`:
+
+```typescript
+import { pruneCache } from '../../../services/apiCache.js';
+import { FINGERPRINT_TTL_MS } from '../../../services/blizzard.js';
 ```
 
 - [ ] **Step 4: Wire it into `ready.ts`**
@@ -5285,6 +5708,17 @@ This is the only way to confirm masked links render, since masked links do **not
 3. Within ~5 minutes (the scheduler tick), confirm both embeds fill in.
 4. Check that character names are clickable and report links are clickable.
 5. Expect attribution across several characters — that account's first kills are split between `Brentprietwo` and `Brenthunter`, and the applicant's own `Brentpriest` holds the Nerub'ar Palace lines.
+6. Re-run the same command and confirm the second sweep is visibly faster and the cache is populated. This is the only check that the entity-keyed caching actually works end to end:
+
+   ```bash
+   railway ssh "node" <<'EOF'
+   const db = require('better-sqlite3')(process.env.DB_PATH, { readonly: true });
+   const q = (p) => db.prepare("SELECT COUNT(*) n FROM api_cache WHERE key LIKE ?").get(p).n;
+   console.log('fingerprints', q('fingerprint:%'), 'rosters', q('guild-roster:%'));
+   EOF
+   ```
+
+   Expected: both counts non-zero after the first run, and the second run adds few or none for the same guilds.
 
 - [ ] **Step 6: Commit any documentation change**
 
@@ -5300,7 +5734,9 @@ Skip this commit entirely if Step 4 found nothing to change.
 
 ## Notes for the implementer
 
-- **`getGuildRoster`'s real signature** — Task 13 assumes `getGuildRoster(name, realm)` returning members with `name` and `realm`. Check `src/services/raiderio.ts` and adapt the adapter in `resumeJobs.ts`; the roster shape there is the only place that knows it.
+- **Never call `getGuildRoster()` for someone else's guild.** It is hardcoded to our own guild and filters to `ROSTER_RANKS`. Task 8 adds `getFullGuildRoster(name, realm)` for the sweep — unfiltered and cached — and the adapter in Task 15 wires it. Reaching for the existing function here reintroduces a truncated-roster false negative that looks identical to "no alts found".
+- **The caches are keyed by entity, so they outlive the job.** A fingerprint is keyed by character and a roster by guild, which is what makes a second applicant from the same guild cheap. Do not move either into the job tables to make resume simpler — `applicant_intel_scanned` already covers resume, and job-scoping the data would restore the full request cost on every sweep.
 - **Raider.IO tier ordinals** are numeric and were verified live: `35` current, `34` Manaforge Omega, `33` Liberation of Undermine, `30` Aberrus. They shift when a tier is added — the constant lives in `resumeJobs.ts`.
 - **Do not "fix" the wipe path to use `playerDetails`.** It answers per pull; a single boss had 43 pulls in one night. `friendlyPlayers` + `masterData.actors` answers for the whole report in one query.
+- **Keep the services and pure functions free of `discord.js` imports.** They already are, for testability. It also happens to be the seam along which this feature could later become a standalone service — only `runJob.ts`'s message editing, the two renderers and `intelPagination.ts` are Discord-bound. Not a goal of this plan, but cheap to preserve and expensive to recover once a `Client` leaks into the sweep.
 - **Never let a failed fetch mean "no data".** `getMythicKillDates` returns `null` for unknown, `getCharacterFingerprint` returns `null` for unavailable, and both must stay distinct from an empty result.
