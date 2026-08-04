@@ -15,6 +15,10 @@ import { dailyBackup } from '../functions/backups/dailyBackup.js';
 import { runDailyMaintenance } from '../functions/maintenance/runDailyMaintenance.js';
 import { recordTaskRun } from '../services/statusTracker.js';
 import { refreshPendingApplicationCategory } from '../functions/applications/applicationLogCategory.js';
+import {
+  resumeApplicantIntelJobs,
+  recoverInterruptedJobs,
+} from '../functions/applications/intel/resumeJobs.js';
 
 export const scheduler = new Scheduler();
 
@@ -118,6 +122,12 @@ export default {
       handler: () => dailyBackup(),
     });
 
+    scheduler.registerInterval({
+      name: 'resumeApplicantIntelJobs',
+      intervalMs: 5 * 60_000,
+      handler: () => resumeApplicantIntelJobs(client).then(() => undefined),
+    });
+
     const schedulerStats = scheduler.start();
 
     // Reschedule trial alerts from DB (must happen after scheduler.start)
@@ -125,6 +135,10 @@ export default {
 
     // Resume any in-progress DM application sessions from before restart
     const sessionsResumed = await resumeSessions(client);
+
+    // A job left 'running' by a crash can never resume itself; reset it, and
+    // prune expired fingerprint cache entries once per boot.
+    recoverInterruptedJobs();
 
     // One summary line instead of five — logged after setDiscordChannel, so
     // it reaches #bot-logs and carries the build number (cached lookup).
