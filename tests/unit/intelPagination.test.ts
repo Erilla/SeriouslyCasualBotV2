@@ -10,6 +10,7 @@ import {
   createJob,
   addFinding,
   setGuildHistory,
+  setSweepTruncated,
 } from '../../src/functions/applications/intel/jobStore.js';
 import {
   buildIntelPage,
@@ -69,6 +70,36 @@ describe('buildIntelPage', () => {
   // rather than falling through the bounds check.
   it('returns null for a NaN page', () => {
     expect(buildIntelPage(jobId, NaN, 'Regnipaw', 'eu')).toBeNull();
+  });
+
+  // RE-REVIEW ITEM 2: M4's "search incomplete" note only existed in the message
+  // runJob published; M3 then made the Next/Previous buttons work for the first
+  // time, and paging back to page 1 rebuilds from the database — silently
+  // dropping the note and turning an incomplete sweep into a complete-looking
+  // one. It is now derived from the persisted sweep verdict.
+  it('keeps the truncation note on page 1 when the sweep was incomplete', () => {
+    setSweepTruncated(jobId, true);
+    expect(buildIntelPage(jobId, 1, 'Regnipaw', 'eu')?.description).toContain('Search incomplete');
+  });
+
+  it('does not put the truncation note on later pages', () => {
+    setSweepTruncated(jobId, true);
+    expect(buildIntelPage(jobId, 2, 'Regnipaw', 'eu')?.description).not.toContain(
+      'Search incomplete',
+    );
+  });
+
+  it('omits the truncation note when the sweep was complete', () => {
+    setSweepTruncated(jobId, false);
+    expect(buildIntelPage(jobId, 1, 'Regnipaw', 'eu')?.description).not.toContain(
+      'Search incomplete',
+    );
+  });
+
+  it('omits the truncation note when nothing was ever recorded about the sweep', () => {
+    expect(buildIntelPage(jobId, 1, 'Regnipaw', 'eu')?.description).not.toContain(
+      'Search incomplete',
+    );
   });
 });
 

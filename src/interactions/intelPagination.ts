@@ -1,11 +1,17 @@
 import { MessageFlags, EmbedBuilder, Colors } from 'discord.js';
 import type { ButtonInteraction } from 'discord.js';
 import type { ButtonHandler } from './registry.js';
-import { getFindings, getGuildHistory, getJob } from '../functions/applications/intel/jobStore.js';
+import {
+  getFindings,
+  getGuildHistory,
+  getJob,
+  getSweepTruncated,
+} from '../functions/applications/intel/jobStore.js';
 import {
   renderFoundCharacters,
   renderGuildHistory,
 } from '../functions/applications/intel/render.js';
+import { TRUNCATED_NOTE } from '../functions/applications/intel/runJob.js';
 import { buildPageButtons } from '../functions/pagination.js';
 
 /**
@@ -25,7 +31,14 @@ export function buildIntelPage(
   const pages = renderFoundCharacters(findings, applicantName, region);
   const index = page - 1;
   if (!Number.isInteger(index) || index < 0 || index >= pages.length) return null;
-  return { description: pages[index], page, totalPages: pages.length };
+  // The "search incomplete" note lives on page 1, exactly where runJob puts it.
+  // Derived from the persisted sweep verdict rather than threaded through the
+  // renderer (which is shared and separately tested), so paging away from page
+  // 1 and back cannot silently turn an incomplete sweep into a complete-looking
+  // one.
+  const description =
+    index === 0 && getSweepTruncated(jobId) ? `${pages[index]}\n\n${TRUNCATED_NOTE}` : pages[index];
+  return { description, page, totalPages: pages.length };
 }
 
 /**

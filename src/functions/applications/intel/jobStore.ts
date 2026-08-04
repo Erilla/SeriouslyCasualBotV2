@@ -203,6 +203,34 @@ export function getGuildHistory(jobId: number): GuildHistoryEntry[] {
   return row?.payload ? (JSON.parse(row.payload) as GuildHistoryEntry[]) : [];
 }
 
+/**
+ * Whether the alt sweep left work undone. Persisted for the same reason the
+ * guild history is: the found-characters embed is PAGED, and a reviewer
+ * clicking Next then Previous rebuilds page 1 from the database days later —
+ * so a note that only ever existed in the message runJob happened to write
+ * would silently disappear on the way back. Stored, like the guild history, as
+ * a single upserted row so a later attempt's verdict replaces an earlier one
+ * (a resumed run that completes must be able to clear the note).
+ */
+export function setSweepTruncated(jobId: number, truncated: boolean): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'sweep', 'truncated', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(truncated));
+}
+
+export function getSweepTruncated(jobId: number): boolean {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'sweep' AND key = 'truncated'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  return row?.payload ? (JSON.parse(row.payload) as boolean) : false;
+}
+
 export function pendingQueue(jobId: number, kind: string): { key: string; payload: unknown }[] {
   const rows = getDatabase()
     .prepare(

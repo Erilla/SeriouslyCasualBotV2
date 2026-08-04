@@ -14,6 +14,7 @@ import {
   addFinding,
   getGuildHistory,
   setApplicantCharacters,
+  getSweepTruncated,
 } from '../../src/functions/applications/intel/jobStore.js';
 import {
   runJob,
@@ -563,6 +564,16 @@ describe('runJob', () => {
     expect(alts?.[2]).toContain('Search incomplete');
     // Distinguishable from the rate-limit footer, which is a different signal.
     expect(alts?.[2]).not.toContain('Rate limited');
+  });
+
+  // RE-REVIEW ITEM 2: the note must also survive a rebuild from the database,
+  // so the verdict is persisted — and a resumed run that completes must clear it.
+  it('persists the truncation verdict, and a later complete run clears it', async () => {
+    await runJob(jobId, deps({ discover: vi.fn(async () => ({ truncated: true })) }));
+    expect(getSweepTruncated(jobId)).toBe(true);
+
+    await runJob(jobId, deps());
+    expect(getSweepTruncated(jobId)).toBe(false);
   });
 
   it('says nothing about truncation when the sweep was complete', async () => {

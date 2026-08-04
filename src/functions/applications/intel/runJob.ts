@@ -8,6 +8,7 @@ import {
   scannedCount,
   setGuildHistory,
   setPhase,
+  setSweepTruncated,
   setStatus,
   type IntelFinding,
 } from './jobStore.js';
@@ -115,7 +116,7 @@ const UNRUN_TERMINAL_NOTE = '*Incomplete — this part did not complete this run
  * applicant has no alts". Deliberately worded so it is not mistaken for the
  * rate-limit footer, which may appear alongside it.
  */
-const TRUNCATED_NOTE =
+export const TRUNCATED_NOTE =
   '*Search incomplete — not every candidate character could be checked, so undeclared characters may be missing.*';
 
 /**
@@ -265,6 +266,10 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // all", which a bare "Found characters — 1" misreports as a measured
     // absence. See TRUNCATED_NOTE.
     sweepTruncated = truncated;
+    // Persisted as well as rendered: the found-characters embed is paged, and
+    // paging back to page 1 rebuilds it from the database, where a note that
+    // only lived in the published message would be lost.
+    setSweepTruncated(jobId, truncated);
     if (truncated) {
       logger.warn('Intel', `Job #${jobId}: alt sweep truncated by caps`);
     }
