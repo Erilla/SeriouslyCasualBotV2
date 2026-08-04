@@ -2629,6 +2629,8 @@ git commit -m "feat(intel): add Raider.IO internal owner, claimed and kill-date 
   - `compareFingerprints(a: Fingerprint, b: Fingerprint): FingerprintMatch`
   - `MATCH_PERCENT_THRESHOLD = 20`, `MIN_COMMON_ACHIEVEMENTS = 200`
   - `getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fingerprint | null>` in `blizzard.ts` (`null` = unavailable, not "no match")
+  - `export interface BlizzardRosterMember { name: string; realm: string }`
+  - `getBlizzardGuildRoster(region: string, guildRealm: string, guildName: string): Promise<BlizzardRosterMember[]>`
   - `FINGERPRINT_TTL_MS` in `blizzard.ts`
   - `pruneCache(prefix: string, olderThanMs: number): number` in `apiCache.ts`
 
@@ -2648,13 +2650,25 @@ This also fixes a live contradiction in the plan: the doc comment on `getCharact
 Create `tests/unit/compareFingerprints.test.ts`:
 
 ```typescript
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   compareFingerprints,
   MATCH_PERCENT_THRESHOLD,
   MIN_COMMON_ACHIEVEMENTS,
   type Fingerprint,
 } from '../../src/functions/applications/alts/compareFingerprints.js';
+import { getBlizzardGuildRoster } from '../../src/services/blizzard.js';
+
+// blizzard.ts reads credentials at import time via config.required().
+vi.mock('../../src/config.js', () => ({
+  config: { blizzardClientId: 'id', blizzardClientSecret: 'secret' },
+}));
+
+const originalFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  vi.restoreAllMocks();
+});
 
 /** `identical` achievements share a timestamp; `differing` overlap by id only. */
 function build(identical: number, differing: number, offset = 0): [Fingerprint, Fingerprint] {
@@ -2705,6 +2719,36 @@ describe('compareFingerprints', () => {
   it('handles empty fingerprints without dividing by zero', () => {
     const result = compareFingerprints(new Map(), new Map());
     expect(result).toEqual({ identical: 0, common: 0, percent: 0, isMatch: false });
+  });
+
+  it('slugifies guild name and realm, mapping members to name/realm', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          members: [
+            { character: { name: 'Dodsleif', realm: { slug: 'silvermoon' } } },
+            { character: { name: 'Skogslisa', realm: { slug: 'silvermoon' } } },
+            { character: { name: 'NoRealm' } },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const roster = await getBlizzardGuildRoster('eu', 'Tarren Mill', 'Seriously Casual');
+
+    expect(roster).toEqual([
+      { name: 'Dodsleif', realm: 'silvermoon' },
+      { name: 'Skogslisa', realm: 'silvermoon' },
+    ]);
+    const url = String(fetchSpy.mock.calls.at(-1)?.[0]);
+    expect(url).toContain('/data/wow/guild/tarren-mill/seriously-casual/roster');
+    expect(url).toContain('namespace=profile-eu');
+  });
+
+  it('returns an empty array rather than throwing when a guild cannot be read', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 404 }));
+    expect(await getBlizzardGuildRoster('eu', 'silvermoon', 'Nope')).toEqual([]);
   });
 
   it('exposes the calibrated thresholds', () => {
@@ -2810,6 +2854,54 @@ async function fetchFingerprintEntries(c: RaiderIoCharacter): Promise<Fingerprin
     if (a.completed_timestamp) entries.push([a.id, a.completed_timestamp]);
   }
   return entries;
+}
+
+export interface BlizzardRosterMember {
+  name: string;
+  realm: string;
+}
+
+interface GuildRosterProfile {
+  members?: { character?: { name?: string; realm?: { slug?: string } } }[];
+}
+
+/**
+ * Every member of a guild.
+ *
+ * Blizzard returns roughly twice what Raider.IO's member list does, because
+ * Raider.IO only knows characters it has crawled — 624 vs 312 on one guild, 688 vs
+ * 420 on another. The fingerprint sweep is roster-driven, so this doubles its reach
+ * for one extra request per guild.
+ *
+ * A guild that cannot be read yields an empty array rather than throwing: one bad
+ * guild must not abort the sweep of the others. A 429 still propagates, so the job
+ * runner can pause.
+ */
+export async function getBlizzardGuildRoster(
+  region: string,
+  guildRealm: string,
+  guildName: string,
+): Promise<BlizzardRosterMember[]> {
+  const token = await getAccessToken();
+  const realmSlug = encodeURIComponent(normalizeRealmSlug(guildRealm));
+  const nameSlug = encodeURIComponent(normalizeRealmSlug(guildName));
+  const url =
+    `https://${region}.api.blizzard.com/data/wow/guild/${realmSlug}/${nameSlug}/roster` +
+    `?namespace=profile-${region}&locale=en_GB`;
+
+  try {
+    const data = await httpRequest<GuildRosterProfile>('blizzard', url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return (data.members ?? [])
+      .map((m) => m.character)
+      .filter((c): c is NonNullable<typeof c> => Boolean(c?.name && c.realm?.slug))
+      .map((c) => ({ name: c.name!, realm: c.realm!.slug! }));
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 429) throw error;
+    if (error instanceof CircuitOpenError) throw error;
+    return [];
+  }
 }
 
 /**
@@ -4181,6 +4273,17 @@ import type {
   MythicKillDate,
 } from '../../../services/raiderioInternal.js';
 
+/**
+ * Caps and concurrency for the sweep.
+ *
+ * With Blizzard rosters (~twice Raider.IO's member count) 12 guilds hold ~7,200
+ * candidates, so `characters` binds rather than acting as a safety net — which is
+ * intended. 3,000 fingerprints is 8% of Blizzard's 36,000/hour budget; measured
+ * throughput at concurrency 8 was 313 characters in 13s ≈ 24 req/s, well under the
+ * 100/s ceiling. The budget is HOURLY, not per job: four applicants at the cap in
+ * one hour is ~33% of it, so raising these numbers trades reach for other
+ * applicants' sweeps pausing.
+ */
 export const ALT_CAPS = {
   guilds: 12,
   characters: 3000,
@@ -5193,9 +5296,12 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       // own guild and filters to ROSTER_RANKS, which would silently drop members
       // of a stranger's guild. See Task 8.
       getGuildRoster: async (guild) => {
-        const { getFullGuildRoster } = await import('../../../services/raiderio.js');
-        const roster = await getFullGuildRoster(guild.name, guild.realm);
-        return roster.map((m) => ({ name: m.name, realm: m.realm }));
+        // Blizzard, not Raider.IO: it returns roughly twice the members (624 vs
+        // 312 on one guild, 688 vs 420 on another) because Raider.IO only knows
+        // characters it has crawled. The sweep is roster-driven, so this doubles
+        // its reach for one extra request per guild.
+        const { getBlizzardGuildRoster } = await import('../../../services/blizzard.js');
+        return getBlizzardGuildRoster(applicant.region, guild.realm, guild.name);
       },
       getCharacterFingerprint: (await import('../../../services/blizzard.js'))
         .getCharacterFingerprint,

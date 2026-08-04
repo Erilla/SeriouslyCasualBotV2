@@ -467,10 +467,22 @@ that happen to share it — for Hitoshura that was 1 of 25.
    `Rancour-Draenor`, and querying the roster on the character's realm returns
    `Could not find requested guild`. Always take the realm from the `guild` object.
 
-2. Pop a guild, fetch its roster via the existing `getGuildRoster`, and fingerprint each
-   member not already fingerprinted, comparing against the applicant only — N comparisons,
-   not N². Characters already known from source 1 are recorded as alts without being
-   fingerprinted.
+2. Pop a guild, fetch its roster from **Blizzard**, and fingerprint each member not already
+   fingerprinted, comparing against the applicant only — N comparisons, not N². Characters
+   already known from source 1 are recorded as alts without being fingerprinted.
+
+   Blizzard's `/data/wow/guild/{realm}/{name}/roster` returns roughly **twice** what Raider.IO's
+   member list does, because Raider.IO only knows characters it has crawled:
+
+   ```
+   seriouslycasual-silvermoon:  blizzard 624 | raider.io 312
+   rancour-draenor:             blizzard 395 | raider.io 316
+   hindsight-kazzak:            blizzard 688 | raider.io 420
+   ```
+
+   That doubles the sweep's reach for one extra request per guild, on credentials we already
+   hold. Raider.IO stays the source for guild _identity_ — names, realms, history and links —
+   which Blizzard's roster knows nothing about.
 
 3. For every newly confirmed alt, resolve its guild the same way.
 
@@ -502,11 +514,25 @@ today, so this is new (small) code.
 | BFS depth                      | 3     |
 | Concurrent Blizzard requests   | 8     |
 
-Seeding from every associated guild raises the ceiling considerably: 12 guilds the size of
-`Rancour` (315 members) is ~3,800 characters before deduplication. At the measured rate
-(313 in 12s) a maxed-out sweep is roughly two minutes of background work and 3,000 of the
-36,000 hourly Blizzard requests — under 10%, but no longer negligible, which is what makes
-the scheduling below necessary rather than optional.
+### Rate limits
+
+| Source                 | Limit                                      | Our cost                                         |
+| ---------------------- | ------------------------------------------ | ------------------------------------------------ |
+| Blizzard               | 36,000/hour, 100/second                    | One request per fingerprint — the dominant cost  |
+| WarcraftLogs           | 9,000 points/hour                          | `zoneRankings` ~5 pts, `fights` ~2–3, reports ~2 |
+| Raider.IO (documented) | Fair use, no published ceiling             | A handful per job                                |
+| Raider.IO (internal)   | Undocumented; drops payloads when hammered | Paced 700 ms — measured, not assumed             |
+
+Using Blizzard rosters, 12 guilds hold ~7,200 candidates before deduplication, so the 3,000
+cap now binds rather than acting as a safety net. A capped sweep is **8% of Blizzard's hourly
+budget** and about two minutes at concurrency 8; measured throughput was 313 characters in 13
+seconds ≈ 24 requests/second, comfortably under the 100/second ceiling, which is why concurrency
+stays at 8.
+
+**The budget is hourly, not per job.** Four applicants in an hour at the cap is ~33% of the
+allowance and a dozen would exhaust it — the reason the cap stays at 3,000 despite the larger
+pool, and the reason the pause/resume machinery matters: the sweep degrades to "resuming in 15
+minutes" rather than failing.
 
 Characters are deduplicated by `name-realm` across rosters, so overlapping rosters cost
 nothing the second time. When a cap truncates the sweep, the output says so rather than
@@ -996,16 +1022,18 @@ No new environment variables are introduced, so the `ci.yml` stub block is uncha
 
 ## Rejected alternatives
 
-| Approach                                    | Why rejected                                                                                                                                                                              |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| WCL `User.characters` / `Character.claimed` | Permission denied even for the report owner                                                                                                                                               |
-| Raider.IO documented API (`/api/v1`)        | No alts field and no owner field; profile returns name/race/class/spec/faction/points only. The internal API is used instead                                                              |
-| Raider.IO warband endpoint                  | `/api/mythic-plus/rankings/warbands` is a region leaderboard, not a per-character lookup                                                                                                  |
-| Raider.IO `/api/search`                     | Indexes guilds and characters only — no user matches, so a username cannot be searched for                                                                                                |
-| WoWProgress `json_alts`                     | 403 behind Cloudflare; data is consent-gated by character confirmation                                                                                                                    |
-| WoWProgress guild history                   | Fuller than ours, but every route including `/export/ranks/` returns a Cloudflare JS challenge to server-side requests. Raider.IO's per-kill `guild` gives dated history for free instead |
-| WCL `Character.guilds` for guild history    | Unreliable — returned `null`, `[]` and current-guild-only across three tested characters                                                                                                  |
-| check-pvp.fr                                | No documented API, 403 to automated fetch, undocumented mechanism                                                                                                                         |
-| Battle.net OAuth (`/profile/user/wow`)      | Authoritative, but needs a public HTTP callback, redirect URI registration and token lifecycle — a web surface this bot does not have. Viable future upgrade.                             |
-| `zoneRankings` instead of `fights`          | Ranked kills only; cannot see wipes                                                                                                                                                       |
-| Asking the applicant to declare alts        | Explicitly declined — no new application questions                                                                                                                                        |
+| Approach                                    | Why rejected                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| WCL `User.characters` / `Character.claimed` | Permission denied even for the report owner                                                                                                                                                                                                                                                      |
+| Raider.IO documented API (`/api/v1`)        | No alts field and no owner field; profile returns name/race/class/spec/faction/points only. The internal API is used instead                                                                                                                                                                     |
+| Raider.IO warband endpoint                  | `/api/mythic-plus/rankings/warbands` is a region leaderboard, not a per-character lookup                                                                                                                                                                                                         |
+| Raider.IO `/api/search`                     | Indexes guilds and characters only — no user matches, so a username cannot be searched for                                                                                                                                                                                                       |
+| check-pvp.fr                                | Reachable with a browser user-agent — the earlier 403 was WebFetch being blocked, not the site — but its data arrives over **socket.io**. The handshake works from curl, yet the 3 MB bundle is obfuscated, so event names and payloads would need reverse-engineering and could change silently |
+| Data for Azeroth                            | API returns 403 from API Gateway without a session token, and its alts endpoint is contributor-gated in the client (`if (!contributor()) return`). Its alt data comes from Battle.net linking anyway — the same population Raider.IO's claimed list gives us for free                            |
+| WoWProgress `json_alts`                     | 403 behind Cloudflare; data is consent-gated by character confirmation                                                                                                                                                                                                                           |
+| WoWProgress guild history                   | Fuller than ours, but every route including `/export/ranks/` returns a Cloudflare JS challenge to server-side requests. Raider.IO's per-kill `guild` gives dated history for free instead                                                                                                        |
+| WCL `Character.guilds` for guild history    | Unreliable — returned `null`, `[]` and current-guild-only across three tested characters                                                                                                                                                                                                         |
+| check-pvp.fr                                | No documented API, 403 to automated fetch, undocumented mechanism                                                                                                                                                                                                                                |
+| Battle.net OAuth (`/profile/user/wow`)      | Authoritative, but needs a public HTTP callback, redirect URI registration and token lifecycle — a web surface this bot does not have. Viable future upgrade.                                                                                                                                    |
+| `zoneRankings` instead of `fights`          | Ranked kills only; cannot see wipes                                                                                                                                                                                                                                                              |
+| Asking the applicant to declare alts        | Explicitly declined — no new application questions                                                                                                                                                                                                                                               |
