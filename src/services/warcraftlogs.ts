@@ -7,6 +7,8 @@ import {
   type WclExpansion,
   type WclZone,
 } from '../functions/applications/mythic-logs/zoneCatalogue.js';
+import { shouldPreemptWclPoints } from '../functions/applications/intel/rateLimit.js';
+import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
 
 // ─── Token Cache ─────────────────────────────────────────────
 
@@ -51,6 +53,12 @@ async function getAccessToken(): Promise<string> {
   logger.debug('WarcraftLogs', 'Refreshed OAuth2 access token');
 
   return cachedToken;
+}
+
+/** Testing seam — clears the process-lifetime OAuth token cache. */
+export function resetAccessTokenCache(): void {
+  cachedToken = null;
+  tokenExpiresAt = 0;
 }
 
 // ─── GraphQL Query ───────────────────────────────────────────
@@ -208,4 +216,249 @@ export async function getZoneCatalogue(): Promise<WclZone[]> {
 /** Testing seam — clears the process cache. */
 export function resetZoneCatalogueCache(): void {
   cachedZones = null;
+}
+
+// ─── Per-character kill, report and wipe queries ────────────
+
+/** Thrown before WCL refuses us, so the job pauses on our terms. */
+export class WclPointsExhausted extends Error {
+  readonly service = 'warcraftlogs' as const;
+  constructor(spent: number, limit: number) {
+    super(`WarcraftLogs points nearly exhausted: ${spent}/${limit} this hour`);
+    this.name = 'WclPointsExhausted';
+  }
+}
+
+interface RateLimitEnvelope {
+  rateLimitData?: { limitPerHour: number; pointsSpentThisHour: number };
+}
+
+async function query<T extends RateLimitEnvelope>(
+  gql: string,
+  variables: Record<string, unknown>,
+): Promise<T> {
+  const token = await getAccessToken();
+  const result = await httpRequest<{ data: T }>(
+    'warcraftlogs',
+    'https://www.warcraftlogs.com/api/v2/client',
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: gql, variables }),
+    },
+  );
+  const rl = result.data.rateLimitData;
+  if (rl && shouldPreemptWclPoints(rl.pointsSpentThisHour, rl.limitPerHour)) {
+    throw new WclPointsExhausted(rl.pointsSpentThisHour, rl.limitPerHour);
+  }
+  return result.data;
+}
+
+export interface ZoneKill {
+  encounterId: number;
+  totalKills: number;
+}
+
+const ZONE_KILLS_QUERY = `
+  query zoneKills($name: String!, $realm: String!, $region: String!, $zone: Int!) {
+    characterData {
+      character(name: $name, serverSlug: $realm, serverRegion: $region) {
+        zoneRankings(zoneID: $zone, difficulty: 5, metric: dps)
+      }
+    }
+    rateLimitData { limitPerHour pointsSpentThisHour }
+  }
+`;
+
+/**
+ * Which bosses this character killed in a zone, keyed on WCL encounter ids.
+ * The structural source of truth: it decides "killed or not", so no
+ * cross-source name matching can ever drop a boss.
+ */
+export async function getZoneKills(c: RaiderIoCharacter, zoneId: number): Promise<ZoneKill[]> {
+  const data = await query<
+    RateLimitEnvelope & {
+      characterData: {
+        character: {
+          zoneRankings?: { rankings?: { encounter?: { id: number }; totalKills?: number }[] };
+        } | null;
+      };
+    }
+  >(ZONE_KILLS_QUERY, {
+    name: c.name,
+    realm: c.realm,
+    region: c.region.toUpperCase(),
+    zone: zoneId,
+  });
+
+  return (data.characterData.character?.zoneRankings?.rankings ?? [])
+    .filter((r) => (r.totalKills ?? 0) > 0 && r.encounter?.id)
+    .map((r) => ({ encounterId: r.encounter!.id, totalKills: r.totalKills! }));
+}
+
+export interface EncounterKill {
+  reportCode: string;
+  startTime: number;
+}
+
+const ENCOUNTER_KILLS_QUERY = `
+  query encounterKills($name: String!, $realm: String!, $region: String!, $encounter: Int!) {
+    characterData {
+      character(name: $name, serverSlug: $realm, serverRegion: $region) {
+        encounterRankings(encounterID: $encounter, difficulty: 5, metric: dps)
+      }
+    }
+    rateLimitData { limitPerHour pointsSpentThisHour }
+  }
+`;
+
+/** This character's own kills of one boss, oldest first — index 0 is their
+ *  first kill, and each entry carries the report to link. */
+export async function getEncounterKills(
+  c: RaiderIoCharacter,
+  encounterId: number,
+): Promise<EncounterKill[]> {
+  const data = await query<
+    RateLimitEnvelope & {
+      characterData: {
+        character: {
+          encounterRankings?: { ranks?: { startTime: number; report?: { code: string } }[] };
+        } | null;
+      };
+    }
+  >(ENCOUNTER_KILLS_QUERY, {
+    name: c.name,
+    realm: c.realm,
+    region: c.region.toUpperCase(),
+    encounter: encounterId,
+  });
+
+  return (data.characterData.character?.encounterRankings?.ranks ?? [])
+    .filter((r) => r.report?.code)
+    .map((r) => ({ reportCode: r.report!.code, startTime: r.startTime }))
+    .sort((a, b) => a.startTime - b.startTime);
+}
+
+export interface RaidReportRef {
+  code: string;
+  startTime: number;
+  zoneId: number;
+}
+
+const RECENT_REPORTS_QUERY = `
+  query recentReports($name: String!, $realm: String!, $region: String!, $page: Int!) {
+    characterData {
+      character(name: $name, serverSlug: $realm, serverRegion: $region) {
+        recentReports(limit: 100, page: $page) {
+          has_more_pages
+          data { code startTime zone { id } }
+        }
+      }
+    }
+    rateLimitData { limitPerHour pointsSpentThisHour }
+  }
+`;
+
+/** Reports this character appears in that belong to one of `zoneIds`. Presence
+ *  in a report proves nothing about a given pull — see getReportWipes. */
+export async function getRaidReports(
+  c: RaiderIoCharacter,
+  zoneIds: Set<number>,
+  maxPages = 6,
+): Promise<RaidReportRef[]> {
+  const out: RaidReportRef[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await query<
+      RateLimitEnvelope & {
+        characterData: {
+          character: {
+            recentReports?: {
+              has_more_pages: boolean;
+              data: { code: string; startTime: number; zone?: { id: number } }[];
+            };
+          } | null;
+        };
+      }
+    >(RECENT_REPORTS_QUERY, {
+      name: c.name,
+      realm: c.realm,
+      region: c.region.toUpperCase(),
+      page,
+    });
+
+    const reports = data.characterData.character?.recentReports;
+    if (!reports) break;
+    for (const r of reports.data) {
+      if (r.zone?.id && zoneIds.has(r.zone.id)) {
+        out.push({ code: r.code, startTime: r.startTime, zoneId: r.zone.id });
+      }
+    }
+    if (!reports.has_more_pages) break;
+  }
+  return out;
+}
+
+export interface WipePull {
+  encounterId: number;
+  fightId: number;
+  fightPercentage: number;
+  players: string[];
+}
+
+const REPORT_WIPES_QUERY = `
+  query reportWipes($code: String!) {
+    reportData {
+      report(code: $code) {
+        masterData { actors(type: "Player") { id name } }
+        fights(killType: All, difficulty: 5) {
+          id
+          encounterID
+          kill
+          fightPercentage
+          friendlyPlayers
+        }
+      }
+    }
+    rateLimitData { limitPerHour pointsSpentThisHour }
+  }
+`;
+
+/**
+ * Every wipe pull in a report with the names of who was actually in it.
+ * `friendlyPlayers` + `masterData.actors` gives per-pull rosters in ONE query;
+ * `playerDetails` answers the same question one pull at a time, and a single
+ * boss can have 40+ pulls in a night.
+ */
+export async function getReportWipes(code: string): Promise<WipePull[]> {
+  const data = await query<
+    RateLimitEnvelope & {
+      reportData: {
+        report: {
+          masterData?: { actors?: { id: number; name: string }[] };
+          fights?: {
+            id: number;
+            encounterID: number;
+            kill: boolean;
+            fightPercentage?: number;
+            friendlyPlayers?: number[];
+          }[];
+        } | null;
+      };
+    }
+  >(REPORT_WIPES_QUERY, { code });
+
+  const report = data.reportData.report;
+  if (!report) return [];
+  const byId = new Map((report.masterData?.actors ?? []).map((a) => [a.id, a.name]));
+
+  return (report.fights ?? [])
+    .filter((f) => !f.kill)
+    .map((f) => ({
+      encounterId: f.encounterID,
+      fightId: f.id,
+      fightPercentage: f.fightPercentage ?? 100,
+      players: (f.friendlyPlayers ?? [])
+        .map((id) => byId.get(id))
+        .filter((n): n is string => Boolean(n)),
+    }));
 }
