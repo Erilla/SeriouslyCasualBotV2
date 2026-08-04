@@ -6666,7 +6666,13 @@ Skip this commit entirely if Step 4 found nothing to change.
 
 ## Notes for the implementer
 
-- **Never call `getGuildRoster()` for someone else's guild.** It is hardcoded to our own guild and filters to `ROSTER_RANKS`. Task 8 adds `getFullGuildRoster(name, realm)` for the sweep — unfiltered and cached — and the adapter in Task 15 wires it. Reaching for the existing function here reintroduces a truncated-roster false negative that looks identical to "no alts found".
+- **Rosters come from Blizzard, not Raider.IO.** Task 10 adds `getBlizzardGuildRoster(region, guildRealm, guildName)` and the adapter in Task 15 wires it. Blizzard returns roughly twice the members (624 vs 312, 688 vs 420, 395 vs 316 on the guilds measured) because Raider.IO only knows characters it has crawled.
+
+  **Reconcile this before starting Task 13.** An earlier revision routed the sweep through a Raider.IO `getFullGuildRoster(name, realm)`; Task 8 may still describe it, and the plan was edited in both directions. Blizzard is the intended source. If `getFullGuildRoster` survives in Task 8, either drop it or leave it unused — do not wire both, and do not call the existing `getGuildRoster()`, which is hardcoded to our own guild and filters to `ROSTER_RANKS`. That filter reintroduces a truncated-roster false negative indistinguishable from "no alts found".
+
+- **Two other places where this plan states a signature it did not verify.** Check the file before trusting the snippet:
+  - Task 3's `status.ts` health field — copy the neighbouring object literal's exact shape rather than the one written here.
+  - Task 5's migration v11 — step 7 verifies it against a **copy** of `db.sqlite`. Do not skip that step; it is the only task whose mistakes reach beyond a failing test.
 - **The caches are keyed by entity, so they outlive the job.** A fingerprint is keyed by character and a roster by guild, which is what makes a second applicant from the same guild cheap. Do not move either into the job tables to make resume simpler — `applicant_intel_scanned` already covers resume, and job-scoping the data would restore the full request cost on every sweep.
 - **Raider.IO tier ordinals** are numeric and were verified live: `35` current, `34` Manaforge Omega, `33` Liberation of Undermine, `30` Aberrus. They shift when a tier is added — the constant lives in `resumeJobs.ts`.
 - **Do not "fix" the wipe path to use `playerDetails`.** It answers per pull; a single boss had 43 pulls in one night. `friendlyPlayers` + `masterData.actors` answers for the whole report in one query.
