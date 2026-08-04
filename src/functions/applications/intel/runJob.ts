@@ -37,8 +37,31 @@ export const MAX_JOB_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Alts given a full log sweep, on top of every application-named character. */
 export const ALT_SWEEP_SLOTS = 4;
 
+/**
+ * Paging metadata handed to `editMessage` so the durable `intelpage:` /
+ * `intelguildpage:` buttons and the `Page x/y` footer can be attached to a
+ * published message. runJob must stay free of discord.js, so it describes the
+ * paging rather than building the components itself; the injected editMessage
+ * (the legitimately Discord-bound half) turns this into an actual button row.
+ *
+ * Without it the renderers return N pages, page 1 is published, and pages 2..N
+ * are unreachable with no marker that they exist — worse than truncation.
+ */
+export interface PagingMeta {
+  /** Button-handler prefix: `intelpage` or `intelguildpage`. */
+  prefix: string;
+  jobId: number;
+  page: number;
+  totalPages: number;
+}
+
 export interface RunDeps {
-  editMessage: (channelId: string, messageId: string, description: string) => Promise<void>;
+  editMessage: (
+    channelId: string,
+    messageId: string,
+    description: string,
+    paging?: PagingMeta,
+  ) => Promise<void>;
   discover: typeof discoverAlts;
   gather: typeof gatherMythicLogs;
   confirm: typeof confirmDiscord;
@@ -84,6 +107,16 @@ const LOGS_PLACEHOLDER = '**Mythic raid logs** — fetching…';
  *  footer of its own (e.g. a generic degrade-and-finish), so the message
  *  never reads as "still searching" once nothing will ever retry it. */
 const UNRUN_TERMINAL_NOTE = '*Incomplete — this part did not complete this run.*';
+/**
+ * Appended to the found-characters body when `discoverAlts` reports
+ * `truncated`. That flag covers both a genuine cap hit and the case where the
+ * applicant's own fingerprint was unavailable, so NOT ONE comparison happened —
+ * and without a note a reviewer reads a zero-comparison sweep as "this
+ * applicant has no alts". Deliberately worded so it is not mistaken for the
+ * rate-limit footer, which may appear alongside it.
+ */
+const TRUNCATED_NOTE =
+  '*Search incomplete — not every candidate character could be checked, so undeclared characters may be missing.*';
 
 /**
  * The body for a message whose phase never ran. Never calls a data-driven
@@ -140,7 +173,13 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     if (job.alts_message_id) {
       try {
         const pages = renderFoundCharacters(findings, applicant.name, applicant.region, footer);
-        await deps.editMessage(channelId, job.alts_message_id, pages[0]);
+        const body = sweepTruncated ? `${pages[0]}\n\n${TRUNCATED_NOTE}` : pages[0];
+        await deps.editMessage(channelId, job.alts_message_id, body, {
+          prefix: 'intelpage',
+          jobId,
+          page: 1,
+          totalPages: pages.length,
+        });
       } catch (error) {
         // One rejected edit (e.g. the placeholder was deleted) must not
         // block the other two messages, and must not escape runJob — that
@@ -151,16 +190,22 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     }
     if (job.guilds_message_id) {
       try {
-        const body = guildsComputed
-          ? renderGuildHistory(guilds, applicant.region, footer)[0]
-          : unrunBody(GUILDS_PLACEHOLDER, footer, terminal);
-        await deps.editMessage(channelId, job.guilds_message_id, body);
+        const pages = guildsComputed
+          ? renderGuildHistory(guilds, applicant.region, footer)
+          : [unrunBody(GUILDS_PLACEHOLDER, footer, terminal)];
+        await deps.editMessage(channelId, job.guilds_message_id, pages[0], {
+          prefix: 'intelguildpage',
+          jobId,
+          page: 1,
+          totalPages: pages.length,
+        });
       } catch (error) {
         logger.warn('Intel', `Job #${jobId}: failed to edit the guilds message: ${error}`);
       }
     }
     if (job.logs_message_id) {
       try {
+        // Never paged: bounded at MAX_TIERS=5 x MAX_LINES_PER_TIER=3.
         const body = logsComputed
           ? renderMythicLogs(applicant.name, lastTiers, Math.max(0, sweptCount - 1), footer)
           : unrunBody(LOGS_PLACEHOLDER, footer, terminal);
@@ -176,6 +221,9 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   let sweptCount = 0;
   let guildsComputed = false;
   let logsComputed = false;
+  // Read by `publish` (declared above it, assigned after `discover` returns) to
+  // tell the reader that the sweep left work undone.
+  let sweepTruncated = false;
   // job.phase is a snapshot from before this run started; setPhase writes
   // the DB but not this object, so the failure log below must track the
   // phase that actually ran itself rather than reading job.phase (which
@@ -212,6 +260,11 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       tierOrdinals: deps.tierOrdinals,
       paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
     });
+    // Surfaced to the READER, not just the log: `truncated` also covers "the
+    // applicant's own fingerprint was unavailable, so no comparison happened at
+    // all", which a bare "Found characters — 1" misreports as a measured
+    // absence. See TRUNCATED_NOTE.
+    sweepTruncated = truncated;
     if (truncated) {
       logger.warn('Intel', `Job #${jobId}: alt sweep truncated by caps`);
     }
@@ -220,16 +273,23 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // sweep, so the found-characters message carries verdicts the first
     // time it is edited (at the end of this function, or on a pause/failure
     // in a later phase).
+    // Candidates the pass will actually try: it skips 'application' findings
+    // (nothing to confirm) and does nothing at all without a declared handle.
+    const confirmable = job.applicant_discord
+      ? getFindings(jobId).filter((f) => f.source !== 'application').length
+      : 0;
     const discord = await deps.confirm(jobId, applicant.region, job.applicant_discord, {
       getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
       paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
     });
-    if (discord.confirmed > 0 || discord.mismatched > 0) {
-      logger.info(
-        'Intel',
-        `Job #${jobId}: ${discord.confirmed} Discord-confirmed, ${discord.mismatched} mismatched`,
-      );
-    }
+    // Logged UNCONDITIONALLY, with the number attempted: gated on
+    // `confirmed > 0 || mismatched > 0` a total confirmation-API failure was
+    // indistinguishable from "no handles were exposed".
+    logger.info(
+      'Intel',
+      `Job #${jobId}: Discord confirmation attempted on ${confirmable} character(s) — ` +
+        `${discord.confirmed} confirmed, ${discord.mismatched} mismatched`,
+    );
 
     // Phase: which characters deserve a log sweep, then the sweep itself.
     setPhase(jobId, 'alt_logs');
@@ -266,20 +326,41 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // than merely passing it through to a mocked discover/gather, so an
     // uninjected real import here would hit the network in every test.
     const killHistory: { character: string; entries: MythicKillDate[] }[] = [];
+    // getMythicKillDates swallows EVERYTHING (including a 429) and reports
+    // failure only as `null`, so a total Raider.IO-internal outage otherwise
+    // aggregates to `[]` — indistinguishable from a genuinely kill-less
+    // account. For a solo applicant with one swept character that is a single
+    // failed fetch away, so it must be tracked, not assumed away.
+    let killDatesFailed = false;
     for (const c of swept.length > 0 ? swept : applicants) {
       const entries = await deps.getMythicKillDates(c, deps.tierOrdinals);
       await new Promise((r) => setTimeout(r, deps.paceMs ?? 0));
       if (entries) killHistory.push({ character: c.name, entries });
+      else killDatesFailed = true;
     }
     guilds = aggregateGuildHistory(killHistory, zones);
-    guildsComputed = true;
-    // Persist BEFORE publishing: a pause between the two must still leave the
-    // data retrievable, since durable pagination for this embed rebuilds
-    // from the database rather than from memory that is thrown away at the
-    // end of this function. Uses setGuildHistory (an upsert), not enqueue
-    // (ON CONFLICT DO NOTHING) — a resumed job must overwrite a prior
-    // attempt's history rather than being stuck with the first one forever.
-    setGuildHistory(jobId, guilds);
+
+    if (guilds.length === 0 && killDatesFailed) {
+      // An UNMEASURED absence. Leave guildsComputed false so `publish` takes the
+      // placeholder path instead of publishing the affirmative "No guild history
+      // found — no Mythic kills recorded with any guild", and skip the
+      // setGuildHistory write entirely so a previously-good stored history is
+      // never overwritten by this (which would also make the paginated copy
+      // serve the false page).
+      logger.warn(
+        'Intel',
+        `Job #${jobId}: guild history unmeasured — every kill-date fetch failed; not publishing or storing an empty history`,
+      );
+    } else {
+      guildsComputed = true;
+      // Persist BEFORE publishing: a pause between the two must still leave the
+      // data retrievable, since durable pagination for this embed rebuilds
+      // from the database rather than from memory that is thrown away at the
+      // end of this function. Uses setGuildHistory (an upsert), not enqueue
+      // (ON CONFLICT DO NOTHING) — a resumed job must overwrite a prior
+      // attempt's history rather than being stuck with the first one forever.
+      setGuildHistory(jobId, guilds);
+    }
 
     setPhase(jobId, 'logs');
     currentPhase = 'logs';
@@ -298,7 +379,11 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     setPhase(jobId, 'done');
     currentPhase = 'done';
     setStatus(jobId, 'done');
-    await publish();
+    // Terminal: nothing retries a done job. Normally every phase computed, so
+    // the flag is inert — but the guild-history phase can legitimately end
+    // unmeasured (all kill-date fetches failed), and that message must then say
+    // "Incomplete" rather than sit on "searching…" forever.
+    await publish(undefined, true);
   } catch (error) {
     // WarcraftLogs bills by points, so a WclPointsExhausted is thrown to
     // PRE-EMPT a 429 at 90% of the hourly budget. classifyError only pauses

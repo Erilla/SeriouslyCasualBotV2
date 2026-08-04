@@ -18,6 +18,7 @@ import { refreshPendingApplicationCategory } from '../functions/applications/app
 import {
   resumeApplicantIntelJobs,
   recoverInterruptedJobs,
+  pruneFingerprintCache,
 } from '../functions/applications/intel/resumeJobs.js';
 
 export const scheduler = new Scheduler();
@@ -119,7 +120,20 @@ export default {
     scheduler.registerCron({
       name: 'dailyBackup',
       expression: '0 4 * * *',
-      handler: () => dailyBackup(),
+      handler: async () => {
+        // BEFORE the backup, deliberately: the fingerprint cache is the largest
+        // thing on the volume (~85 KB an entry, up to 3,000 per applicant) and
+        // the backup keeps 7 copies of whatever it finds, so pruning first is
+        // what stops an 8x amplification of a recruitment week's growth.
+        // Pruning at boot alone left a long-running container growing all week.
+        try {
+          pruneFingerprintCache();
+        } catch (error) {
+          // Never let a prune failure skip the backup.
+          logger.warn('Intel', `Fingerprint cache prune failed: ${error}`);
+        }
+        await dailyBackup();
+      },
     });
 
     scheduler.registerInterval({

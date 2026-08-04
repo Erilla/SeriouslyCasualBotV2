@@ -13,6 +13,7 @@ import {
   setMessageIds,
   addFinding,
   getGuildHistory,
+  setApplicantCharacters,
 } from '../../src/functions/applications/intel/jobStore.js';
 import {
   runJob,
@@ -47,7 +48,12 @@ function deps(over: Partial<RunDeps> = {}): RunDeps {
     // Injected so the guild-history loop never touches the real
     // raiderioInternal module (and its real 700ms pace / live HTTP) in a
     // unit test — see CHANGE/finding 3.
-    getMythicKillDates: vi.fn(async () => null),
+    //
+    // FINAL REVIEW M2: `[]`, not `null`. `null` is this function's FAILURE
+    // signal, and the default deps must represent the ordinary case (a fetch
+    // that succeeded and found no Mythic kills). Tests that want the failure
+    // now override it explicitly.
+    getMythicKillDates: vi.fn(async () => [] as MythicKillDate[]),
     paceMs: 0,
     tierOrdinals: [35],
     ...over,
@@ -415,5 +421,193 @@ describe('runJob', () => {
   it('parseUtcTimestamp parses a SQLite datetime string as UTC regardless of host timezone', () => {
     const parsed = parseUtcTimestamp('2026-07-01 12:34:56');
     expect(parsed.getTime()).toBe(Date.UTC(2026, 6, 1, 12, 34, 56));
+  });
+
+  // ---------------------------------------------------------------------------
+  // FINAL REVIEW M2 — a total Raider.IO-internal failure must not publish an
+  // affirmative "No guild history found".
+  // ---------------------------------------------------------------------------
+
+  it('does not publish "No guild history found" when every kill-date fetch failed', async () => {
+    const editMessage = vi.fn(async () => {});
+    await runJob(jobId, deps({ editMessage, getMythicKillDates: vi.fn(async () => null) }));
+
+    const guilds = editMessage.mock.calls.find(([, messageId]) => messageId === 'GUILDS');
+    expect(guilds?.[2]).not.toContain('No guild history found');
+    // The un-run placeholder plus, since a done job is terminal, the factual note.
+    expect(guilds?.[2]).toContain('**Guild history** — searching…');
+    expect(guilds?.[2]).toContain('Incomplete');
+  });
+
+  it('does not overwrite a stored guild history with an unmeasured empty one', async () => {
+    const killDate: MythicKillDate = {
+      bossName: 'A',
+      firstDefeated: '2026-01-01T00:00:00.000Z',
+      guild: { name: 'Good Guild', realm: 'Draenor' },
+    };
+    await runJob(jobId, deps({ getMythicKillDates: vi.fn(async () => [killDate]) }));
+    const good = getGuildHistory(jobId);
+    expect(good).not.toEqual([]);
+
+    // A later attempt whose every fetch fails must leave the good row alone —
+    // otherwise the paginated copy serves the false "nothing found" page.
+    await runJob(jobId, deps({ getMythicKillDates: vi.fn(async () => null) }));
+    expect(getGuildHistory(jobId)).toEqual(good);
+  });
+
+  it('still publishes the real "No guild history found" when every fetch genuinely succeeded', async () => {
+    const editMessage = vi.fn(async () => {});
+    // `[]` is a SUCCESSFUL fetch that found no Mythic kills — a measured
+    // absence, which the reader is entitled to be told about.
+    await runJob(jobId, deps({ editMessage, getMythicKillDates: vi.fn(async () => []) }));
+
+    const guilds = editMessage.mock.calls.find(([, messageId]) => messageId === 'GUILDS');
+    expect(guilds?.[2]).toContain('No guild history found');
+    expect(getGuildHistory(jobId)).toEqual([]);
+  });
+
+  it('publishes the measured history when only SOME kill-date fetches failed', async () => {
+    const editMessage = vi.fn(async () => {});
+    // Two applicant characters, so the loop runs twice: the first fetch
+    // succeeds, the second fails. A partial result is still a MEASURED one.
+    setApplicantCharacters(jobId, [character, { ...character, name: 'Brentmonk' }]);
+    const killDate: MythicKillDate = {
+      bossName: 'A',
+      firstDefeated: '2026-01-01T00:00:00.000Z',
+      guild: { name: 'Partial Guild', realm: 'Draenor' },
+    };
+    let call = 0;
+    await runJob(
+      jobId,
+      deps({
+        editMessage,
+        getMythicKillDates: vi.fn(async () => (call++ === 0 ? [killDate] : null)),
+      }),
+    );
+    const guilds = editMessage.mock.calls.find(([, messageId]) => messageId === 'GUILDS');
+    expect(guilds?.[2]).toContain('Partial Guild');
+    expect(getGuildHistory(jobId)).not.toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // FINAL REVIEW M3 — paging metadata must reach the injected editMessage, or
+  // pages 2..N are unreachable with no marker that they exist.
+  // ---------------------------------------------------------------------------
+
+  it('passes intelpage paging metadata for the found-characters message', async () => {
+    // Enough findings to exceed one page (PAGE_BUDGET is 3600 chars).
+    for (let i = 0; i < 80; i++) {
+      addFinding(jobId, {
+        name: `Alt${i}`,
+        realm: 'draenor',
+        className: 'Monk',
+        guildName: 'Rancour',
+        guildRealm: 'Draenor',
+        source: 'fingerprint',
+        confidence: 50,
+        discordStatus: null,
+        discordProfile: null,
+      });
+    }
+    const editMessage = vi.fn(async () => {});
+    await runJob(jobId, deps({ editMessage }));
+
+    const alts = editMessage.mock.calls.find(([, messageId]) => messageId === 'ALTS');
+    expect(alts?.[3]).toEqual({
+      prefix: 'intelpage',
+      jobId,
+      page: 1,
+      totalPages: expect.any(Number),
+    });
+    expect((alts?.[3] as { totalPages: number }).totalPages).toBeGreaterThan(1);
+  });
+
+  it('passes intelguildpage paging metadata whose totalPages matches the rendered pages', async () => {
+    // 40 guilds pages at roughly five guilds a page.
+    const killDates: MythicKillDate[] = Array.from({ length: 40 }, (_, i) => ({
+      bossName: 'A',
+      firstDefeated: '2026-01-01T00:00:00.000Z',
+      guild: { name: `Guild${i}`, realm: 'Draenor' },
+    }));
+    const editMessage = vi.fn(async () => {});
+    await runJob(jobId, deps({ editMessage, getMythicKillDates: vi.fn(async () => killDates) }));
+
+    const guilds = editMessage.mock.calls.find(([, messageId]) => messageId === 'GUILDS');
+    const paging = guilds?.[3] as {
+      prefix: string;
+      jobId: number;
+      page: number;
+      totalPages: number;
+    };
+    expect(paging.prefix).toBe('intelguildpage');
+    expect(paging.jobId).toBe(jobId);
+    expect(paging.page).toBe(1);
+    expect(paging.totalPages).toBeGreaterThan(1);
+  });
+
+  it('never pages the logs message', async () => {
+    const editMessage = vi.fn(async () => {});
+    await runJob(jobId, deps({ editMessage }));
+    const logs = editMessage.mock.calls.find(([, messageId]) => messageId === 'LOGS');
+    expect(logs?.[3]).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // FINAL REVIEW M4 — `truncated` must reach the reader.
+  // ---------------------------------------------------------------------------
+
+  it('tells the reader when the alt sweep was truncated', async () => {
+    const editMessage = vi.fn(async () => {});
+    await runJob(jobId, deps({ editMessage, discover: vi.fn(async () => ({ truncated: true })) }));
+    const alts = editMessage.mock.calls.find(([, messageId]) => messageId === 'ALTS');
+    expect(alts?.[2]).toContain('Search incomplete');
+    // Distinguishable from the rate-limit footer, which is a different signal.
+    expect(alts?.[2]).not.toContain('Rate limited');
+  });
+
+  it('says nothing about truncation when the sweep was complete', async () => {
+    const editMessage = vi.fn(async () => {});
+    await runJob(jobId, deps({ editMessage }));
+    const alts = editMessage.mock.calls.find(([, messageId]) => messageId === 'ALTS');
+    expect(alts?.[2]).not.toContain('Search incomplete');
+  });
+
+  it('shows both the truncation note and the rate-limit footer when a later phase pauses', async () => {
+    const editMessage = vi.fn(async () => {});
+    await runJob(
+      jobId,
+      deps({
+        editMessage,
+        discover: vi.fn(async () => ({ truncated: true })),
+        gather: vi.fn(async () => {
+          throw new HttpError({
+            service: 'warcraftlogs',
+            status: 429,
+            attempts: 1,
+            message: 'rate limited',
+            retryAfterMs: 60_000,
+          });
+        }),
+      }),
+    );
+    const alts = editMessage.mock.calls.find(([, messageId]) => messageId === 'ALTS');
+    expect(alts?.[2]).toContain('Search incomplete');
+    expect(alts?.[2]).toContain('Rate limited on warcraftlogs');
+  });
+
+  // ---------------------------------------------------------------------------
+  // FINAL REVIEW (also-take) — the Discord confirmation summary must be logged
+  // unconditionally, so a total API failure is distinguishable from "no handles
+  // were exposed".
+  // ---------------------------------------------------------------------------
+
+  it('logs the Discord confirmation summary even when nothing was confirmed', async () => {
+    await runJob(jobId, deps());
+    const infoCalls = (logger.info as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const summary = infoCalls.find(
+      ([, msg]) => typeof msg === 'string' && msg.includes('Discord confirmation attempted on'),
+    );
+    expect(summary?.[1]).toContain('0 confirmed');
+    expect(summary?.[1]).toContain('0 mismatched');
   });
 });
