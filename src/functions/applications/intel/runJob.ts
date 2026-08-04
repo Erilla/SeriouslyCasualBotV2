@@ -20,6 +20,7 @@ import {
   type PauseFooter,
 } from './render.js';
 import { discoverAlts, ALT_CAPS } from '../alts/discoverAlts.js';
+import { confirmDiscord } from '../alts/confirmDiscord.js';
 import { aggregateGuildHistory, gatherMythicLogs } from '../mythic-logs/gatherMythicLogs.js';
 import {
   selectSweepTargets,
@@ -40,6 +41,7 @@ export interface RunDeps {
   editMessage: (channelId: string, messageId: string, description: string) => Promise<void>;
   discover: typeof discoverAlts;
   gather: typeof gatherMythicLogs;
+  confirm: typeof confirmDiscord;
   getZoneCatalogue: () => Promise<WclZone[]>;
   getMythicKillCount: (c: RaiderIoCharacter) => Promise<number>;
   getRaidReports: (c: RaiderIoCharacter, zoneIds: Set<number>) => Promise<RaidReportRef[]>;
@@ -212,6 +214,21 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     });
     if (truncated) {
       logger.warn('Intel', `Job #${jobId}: alt sweep truncated by caps`);
+    }
+
+    // Discord confirmation: runs right after discovery and before the log
+    // sweep, so the found-characters message carries verdicts the first
+    // time it is edited (at the end of this function, or on a pause/failure
+    // in a later phase).
+    const discord = await deps.confirm(jobId, applicant.region, job.applicant_discord, {
+      getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
+      paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
+    });
+    if (discord.confirmed > 0 || discord.mismatched > 0) {
+      logger.info(
+        'Intel',
+        `Job #${jobId}: ${discord.confirmed} Discord-confirmed, ${discord.mismatched} mismatched`,
+      );
     }
 
     // Phase: which characters deserve a log sweep, then the sweep itself.

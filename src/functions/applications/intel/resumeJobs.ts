@@ -9,6 +9,7 @@ import {
   RAIDERIO_INTERNAL_PACE_MS,
 } from '../../../services/raiderioInternal.js';
 import { discoverAlts } from '../alts/discoverAlts.js';
+import { confirmDiscord } from '../alts/confirmDiscord.js';
 import { gatherMythicLogs } from '../mythic-logs/gatherMythicLogs.js';
 import { pruneCache } from '../../../services/apiCache.js';
 import { FINGERPRINT_TTL_MS } from '../../../services/blizzard.js';
@@ -49,6 +50,7 @@ export async function resumeApplicantIntelJobs(
             editMessage(client, channelId, messageId, description),
           discover: discoverAlts,
           gather: gatherMythicLogs,
+          confirm: confirmDiscord,
           getZoneCatalogue,
           getMythicKillCount,
           getRaidReports,
