@@ -105,7 +105,24 @@ export async function discoverAlts(
     const realm = normalizeRealmSlug(c.realm);
     const normalized: RaiderIoCharacter = { ...c, realm };
     known.set(key(c.name, c.realm), normalized);
-    const summary = await deps.getCharacterSummary(normalized);
+
+    // getCharacterSummary rethrows a 429 / open circuit (it seeds the guild
+    // frontier, so swallowing one would publish an empty frontier as "only the
+    // declared characters exist"). But that throw must not also LOSE the
+    // finding: in the post-match loop every member of the batch is already
+    // markScanned, so an alt matched and then dropped here is excluded from
+    // this job's `pending` forever — a smaller found-characters list on the
+    // resumed run, presented as if it were measured. So the enrichment is
+    // attempted separately and the finding is written either way; only then is
+    // the rate limit propagated, to pause and resume the REST of the sweep.
+    let summary: CharacterSummary | null = null;
+    let rateLimited: unknown;
+    try {
+      summary = await deps.getCharacterSummary(normalized);
+    } catch (error) {
+      rateLimited = error;
+    }
+
     addFinding(jobId, {
       name: normalized.name,
       realm,
@@ -118,6 +135,14 @@ export async function discoverAlts(
       discordStatus: null,
       discordProfile: null,
     });
+
+    // A single addFinding per character, deliberately: writing a stub first and
+    // enriching afterwards would be a no-op, because addFinding's SOURCE_RANK
+    // guard drops a second write of the SAME source, and re-writing with a
+    // different source would corrupt provenance. Keeping one write also keeps
+    // the COALESCE Discord-verdict protection meaningful.
+    if (rateLimited) throw rateLimited;
+
     if (summary?.guild) {
       const gk = key(summary.guild.name, summary.guild.realm);
       if (
@@ -273,6 +298,11 @@ export async function discoverAlts(
       if (known.has(key(match.candidate.name, match.candidate.realm))) continue;
       await record(match.candidate, 'fingerprint', Math.round(match.percent));
       if (entry.depth + 1 < maxDepth) {
+        // The milder counterpart of record()'s handling: a 429 here propagates
+        // and pauses the job, but `record` above has already committed the
+        // finding, so all that is lost is extending the frontier through this
+        // character. Consistent with record() — nothing is swallowed, and no
+        // discovered character is dropped.
         const guild = await deps.getCharacterGuild(match.candidate);
         if (guild && !visitedGuilds.has(key(guild.name, guild.realm))) {
           guildFrontier.push({ guild, depth: entry.depth + 1 });

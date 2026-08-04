@@ -295,4 +295,69 @@ describe('discoverAlts', () => {
     ).rejects.toThrow();
     expect(isScanned(jobId, 'brenthunter-draenor')).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // RE-REVIEW ITEM 1: getCharacterSummary now rethrows a 429 (it seeds the guild
+  // frontier). record() called it BEFORE addFinding, so in the post-match loop a
+  // matched alt was dropped entirely while markScanned had already run for the
+  // whole batch — permanently excluding it from this job and republishing a
+  // SMALLER list on resume, with truncated still false because the throw
+  // bypasses the return. Pre-M5 the 429 was swallowed and the finding was kept,
+  // so this specific path had got worse.
+  // ---------------------------------------------------------------------------
+  it('still records a matched alt when the enrichment lookup is rate limited', async () => {
+    const getCharacterSummary = vi.fn(async (c: { name: string }) => {
+      // The applicant's own record() (source 0) succeeds; the matched alt's
+      // enrichment hits the rate limit.
+      if (c.name.toLowerCase() === 'brentpriest') return { className: 'Priest', guild: null };
+      throw new HttpError({
+        service: 'raiderio',
+        status: 429,
+        attempts: 1,
+        message: 'rate limited',
+        retryAfterMs: 60_000,
+      });
+    });
+
+    await expect(
+      discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterSummary,
+          getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
+          getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
+        }),
+      ),
+      // Still propagates, so the runner pauses and resumes the REST of the sweep.
+    ).rejects.toThrow(HttpError);
+
+    // ...but the discovered alt is on disk, because isScanned now excludes it
+    // from every future run of this job.
+    const found = getFindings(jobId).filter((f) => f.name === 'Brenthunter');
+    expect(found).toHaveLength(1);
+    expect(found[0].source).toBe('fingerprint');
+    // Recorded with what was known; the enrichment is simply absent.
+    expect(found[0].className).toBeNull();
+    expect(found[0].guildName).toBeNull();
+    // Confirms the hazard this guards: the member IS marked scanned, so a lost
+    // finding here would have been unrecoverable.
+    expect(isScanned(jobId, 'brenthunter-draenor')).toBe(true);
+  });
+
+  it('still records an applicant character when its own enrichment is rate limited', async () => {
+    const getCharacterSummary = vi.fn(async () => {
+      throw new HttpError({
+        service: 'raiderio',
+        status: 429,
+        attempts: 1,
+        message: 'rate limited',
+        retryAfterMs: 60_000,
+      });
+    });
+    await expect(discoverAlts(jobId, [applicant], deps({ getCharacterSummary }))).rejects.toThrow(
+      HttpError,
+    );
+    expect(getFindings(jobId).map((f) => f.name)).toEqual(['Brentpriest']);
+  });
 });
