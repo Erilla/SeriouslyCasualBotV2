@@ -35,7 +35,7 @@ let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 let inFlightToken: Promise<string> | null = null;
 
-function normalizeRealmSlug(realm: string): string {
+export function normalizeRealmSlug(realm: string): string {
   return realm.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
@@ -186,7 +186,14 @@ export async function getBlizzardGuildRoster(
       fetchGuildRosterMembers(region, guildRealm, guildName),
     );
   } catch (error) {
-    if (error instanceof HttpError && error.status === 429) throw error;
+    // status alone is insufficient: httpRequest's retry-exhaustion path
+    // reports the LAST status seen, so a 429 on early attempts followed by a
+    // 503 on the final one throws with status 503 even though the run was
+    // rate-limited. retryAfterMs is set whenever any attempt was rate-limited
+    // with a usable wait, so it catches the mixed case status===429 misses.
+    if (error instanceof HttpError && (error.status === 429 || error.retryAfterMs !== undefined)) {
+      throw error;
+    }
     if (error instanceof CircuitOpenError) throw error;
     return [];
   }
@@ -215,7 +222,14 @@ export async function getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fin
     );
   } catch (error) {
     if (error instanceof CircuitOpenError) throw error;
-    if (error instanceof HttpError && error.status === 429) throw error;
+    // status alone is insufficient: httpRequest's retry-exhaustion path
+    // reports the LAST status seen, so a 429 on early attempts followed by a
+    // 503 on the final one throws with status 503 even though the run was
+    // rate-limited. retryAfterMs is set whenever any attempt was rate-limited
+    // with a usable wait, so it catches the mixed case status===429 misses.
+    if (error instanceof HttpError && (error.status === 429 || error.retryAfterMs !== undefined)) {
+      throw error;
+    }
     return null;
   }
 

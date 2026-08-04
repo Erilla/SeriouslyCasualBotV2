@@ -85,6 +85,23 @@ describe('getCharacterFingerprint', () => {
     await expect(getCharacterFingerprint(character)).rejects.toBeInstanceOf(CircuitOpenError);
   });
 
+  it('rethrows a mixed-status retry storm (429 then 503) instead of reporting no alts', async () => {
+    // httpRequest's retry-exhaustion path throws with the LAST status seen,
+    // so a run rate-limited on early attempts but failing with 503 on the
+    // final one surfaces as status 503 with retryAfterMs still set from the
+    // earlier 429. status===429 alone would miss this and swallow it to null.
+    mocked.mockRejectedValueOnce(
+      new HttpError({
+        service: 'blizzard',
+        status: 503,
+        attempts: 3,
+        message: 'server error after rate limiting',
+        retryAfterMs: 2_000,
+      }),
+    );
+    await expect(getCharacterFingerprint(character)).rejects.toBeInstanceOf(HttpError);
+  });
+
   it('returns null when the character has no completed achievements', async () => {
     mocked.mockResolvedValueOnce({ achievements: [] } as never);
     expect(await getCharacterFingerprint(character)).toBeNull();
@@ -138,6 +155,24 @@ describe('getBlizzardGuildRoster', () => {
     mocked.mockRejectedValueOnce(new CircuitOpenError('blizzard'));
     await expect(getBlizzardGuildRoster('eu', 'silvermoon', 'Nope')).rejects.toBeInstanceOf(
       CircuitOpenError,
+    );
+  });
+
+  it('rethrows a mixed-status retry storm (429 then 503) instead of reporting an empty guild', async () => {
+    // Same rationale as the fingerprint case: the thrown error's status is
+    // the LAST one seen (503), not 429, so only retryAfterMs distinguishes
+    // this from a genuine non-rate-limited failure.
+    mocked.mockRejectedValueOnce(
+      new HttpError({
+        service: 'blizzard',
+        status: 503,
+        attempts: 3,
+        message: 'server error after rate limiting',
+        retryAfterMs: 2_000,
+      }),
+    );
+    await expect(getBlizzardGuildRoster('eu', 'silvermoon', 'Nope')).rejects.toBeInstanceOf(
+      HttpError,
     );
   });
 
