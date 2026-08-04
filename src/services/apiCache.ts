@@ -70,11 +70,6 @@ export function flushCache(): void {
   db.prepare('DELETE FROM icon_cache').run();
 }
 
-/**
- * Delete cache entries under `prefix` older than `olderThanMs`, returning the
- * number removed. Prefix-scoped so pruning bulky fingerprints cannot evict the
- * achievements-image entries, which are FOREVER by design.
- */
 /** Total rows in api_cache — logged next to a prune so volume growth is
  *  observable in production rather than only visible once the disk is full. */
 export function cacheRowCount(): number {
@@ -83,6 +78,11 @@ export function cacheRowCount(): number {
   return row.n;
 }
 
+/**
+ * Delete cache entries under `prefix` older than `olderThanMs`, returning the
+ * number removed. Prefix-scoped so pruning bulky fingerprints cannot evict the
+ * achievements-image entries, which are FOREVER by design.
+ */
 export function pruneCache(prefix: string, olderThanMs: number): number {
   const db = getDatabase();
   const cutoff = new Date(Date.now() - olderThanMs).toISOString();

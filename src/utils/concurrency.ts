@@ -12,7 +12,14 @@
  * (`markScanned`) per member, so siblings racing on after a Blizzard 429 would
  * record hundreds of members as scanned whose comparison results are discarded
  * with the abandoned promise, making them permanently unfingerprintable for
- * that job. Residual loss is now bounded by the workers already in flight.
+ * that job.
+ *
+ * Note the residual loss is NOT merely the ≤`limit` items in flight: the
+ * rejection discards the whole result array, so every item the callback had
+ * already completed in that call is affected too. Cancellation caps the damage
+ * at what was already started — it does not undo it. That is why the callback
+ * must remain the only place resume state is written, and why it writes only
+ * after a determinate outcome.
  *
  * Contract is otherwise unchanged: results are in input order, and the promise
  * rejects with the first error seen.
