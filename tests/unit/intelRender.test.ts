@@ -337,3 +337,57 @@ describe('renderFooter', () => {
     expect(footer).not.toContain('<t:');
   });
 });
+
+describe('realm slugs render as readable names', () => {
+  /**
+   * Findings store the realm slug-normalised, because the findings table's
+   * primary key is case-sensitive and Blizzard rosters yield slugs while
+   * Raider.IO yields display names — without one canonical form the same
+   * character inserts twice. That is right for storage but reads badly, so the
+   * renderer restores a display form. URLs must keep using the slug.
+   */
+  it('title-cases a single-word slug', () => {
+    const pages = renderFoundCharacters([finding({ realm: 'darksorrow' })], 'Regnipaw', 'eu');
+    expect(pages[0]).toContain('Monkni-Darksorrow');
+    expect(pages[0]).toContain('https://raider.io/characters/eu/darksorrow/Monkni');
+  });
+
+  it('turns a hyphenated slug into spaced words', () => {
+    const pages = renderFoundCharacters(
+      [finding({ realm: 'argent-dawn', guildRealm: 'twisting-nether' })],
+      'Regnipaw',
+      'eu',
+    );
+    expect(pages[0]).toContain('Monkni-Argent Dawn');
+    expect(pages[0]).toContain('(Twisting Nether)');
+    expect(pages[0]).toContain('https://raider.io/characters/eu/argent-dawn/Monkni');
+  });
+
+  it('leaves an already-readable realm untouched', () => {
+    const pages = renderFoundCharacters([finding({ realm: 'Tarren Mill' })], 'Regnipaw', 'eu');
+    expect(pages[0]).toContain('Monkni-Tarren Mill');
+  });
+
+  it('renders the guild-history realm readably', () => {
+    const out = renderGuildHistory(
+      [
+        {
+          guildName: 'Rewritten',
+          guildRealm: 'twisting-nether',
+          stints: [
+            {
+              raidName: 'Manaforge Omega',
+              kills: 1,
+              first: '2025-11-16T19:56:47.000Z',
+              last: '2025-11-16T19:56:47.000Z',
+              characters: ['Exya'],
+            },
+          ],
+        },
+      ],
+      'eu',
+    );
+    expect(out[0]).toContain('*(Twisting Nether)*');
+    expect(out[0]).toContain('https://raider.io/guilds/eu/twisting-nether/Rewritten');
+  });
+});

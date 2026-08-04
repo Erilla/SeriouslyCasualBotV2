@@ -33,6 +33,25 @@ export function renderFooter(f: PauseFooter): string {
 
 const realmSlug = (realm: string): string => realm.toLowerCase().replace(/\s+/g, '-');
 
+/**
+ * Findings store the realm slug-normalised, because `applicant_intel_findings`
+ * has a case-sensitive primary key and Blizzard rosters yield slugs
+ * (`argent-dawn`) while Raider.IO yields display names (`Argent Dawn`) — without
+ * one canonical form the same character inserts twice, bypasses the source-rank
+ * guard, and loses its Discord verdict to an exact-match WHERE. That is right for
+ * storage and reads badly, so restore a display form here. URLs keep the slug.
+ *
+ * Idempotent on an already-readable value, which is why the renderer's other
+ * tests can keep passing `Draenor`/`Tarren Mill` unchanged. Realms whose real
+ * name carries an apostrophe (`Zul'jin`) come back without it — the slug does not
+ * record one, and guessing where it belongs would be worse than omitting it.
+ */
+const displayRealm = (realm: string): string =>
+  realm
+    .split('-')
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(' ');
+
 export function raiderIoProfileUrl(region: string, realm: string, name: string): string {
   return `https://raider.io/characters/${region.toLowerCase()}/${realmSlug(realm)}/${name}`;
 }
@@ -54,8 +73,10 @@ export function discordDate(iso: string): string {
 }
 
 function findingLine(f: IntelFinding, region: string): string {
-  const link = `[${f.name}-${f.realm}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
-  const guild = f.guildName ? `${f.guildName} (${f.guildRealm ?? '?'})` : 'No guild';
+  const link = `[${f.name}-${displayRealm(f.realm)}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
+  const guild = f.guildName
+    ? `${f.guildName} (${f.guildRealm ? displayRealm(f.guildRealm) : '?'})`
+    : 'No guild';
   const discord =
     f.discordStatus === 'confirmed'
       ? ' · Discord verified'
@@ -171,7 +192,7 @@ export function renderGuildHistory(
       .sort()
       .slice(-1)[0];
     const link = raiderIoGuildUrl(region, entry.guildRealm, entry.guildName);
-    const head = `**[${entry.guildName}](${link})** *(${entry.guildRealm})* — ${dateRange(first, last)}`;
+    const head = `**[${entry.guildName}](${link})** *(${displayRealm(entry.guildRealm)})* — ${dateRange(first, last)}`;
     const lines = entry.stints.map((st) => {
       const kills = `${st.kills} Mythic kill${st.kills === 1 ? '' : 's'}`;
       return `${st.raidName} · ${kills} · ${dateRange(st.first, st.last)} · ${st.characters.join(', ')}`;
