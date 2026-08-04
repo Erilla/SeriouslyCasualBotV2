@@ -652,7 +652,8 @@ git commit -m "feat(intel): classify rate-limit errors and compute resume backof
   - `export interface IntelFinding { name: string; realm: string; className: string | null; guildName: string | null; guildRealm: string | null; source: FindingSource; confidence: number | null }`
   - `createJob({ applicationId: number | null; targetChannelId: string; character: RaiderIoCharacter }): number`
   - `getJob(id): IntelJobRow | undefined`, `setPhase(id, phase)`, `setStatus(id, status)`, `pauseJob(id, service, resumeAfterMs)`
-  - `dueJobs(nowIso: string): IntelJobRow[]`, `resetRunningJobs(): number`, `setMessageIds(id, { alts?, logs? })`
+  - `dueJobs(nowIso: string): IntelJobRow[]`, `resetRunningJobs(): number`, `setMessageIds(id, { alts?, guilds?, logs? })`
+  - `setApplicantCharacters(jobId, characters: RaiderIoCharacter[])`, `getApplicantCharacters(jobId): RaiderIoCharacter[]`
   - `enqueue(jobId, kind, key, payload?)`, `pendingQueue(jobId, kind)`, `markQueueDone(jobId, kind, key)`
   - `markScanned(jobId, characterKey)`, `isScanned(jobId, characterKey)`, `scannedCount(jobId)`
   - `addFinding(jobId, f: IntelFinding)`, `getFindings(jobId): IntelFinding[]`
@@ -679,6 +680,8 @@ import {
   resetRunningJobs,
   setStatus,
   setMessageIds,
+  setApplicantCharacters,
+  getApplicantCharacters,
   enqueue,
   pendingQueue,
   markQueueDone,
@@ -746,13 +749,24 @@ describe('intel job store', () => {
     expect(getJob(id)?.status).toBe('pending');
   });
 
-  it('stores message ids independently', () => {
+  it('stores all three message ids independently', () => {
     const id = createJob({ applicationId: 1, targetChannelId: '1', character });
     setMessageIds(id, { alts: 'A' });
+    setMessageIds(id, { guilds: 'G' });
     setMessageIds(id, { logs: 'L' });
     const job = getJob(id)!;
     expect(job.alts_message_id).toBe('A');
+    expect(job.guilds_message_id).toBe('G');
     expect(job.logs_message_id).toBe('L');
+  });
+
+  it('round-trips every character the applicant named', () => {
+    const id = createJob({ applicationId: 1, targetChannelId: '1', character });
+    setApplicantCharacters(id, [
+      character,
+      { region: 'eu', realm: 'draenor', name: 'Brenthunter' },
+    ]);
+    expect(getApplicantCharacters(id).map((c) => c.name)).toEqual(['Brentpriest', 'Brenthunter']);
   });
 
   it('tracks queue items and marks them done', () => {
@@ -821,6 +835,7 @@ In `src/database/schema.ts`, following the existing numbered-comment style:
       attempts INTEGER NOT NULL DEFAULT 0,
       logs_message_id TEXT,
       alts_message_id TEXT,
+      guilds_message_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -878,6 +893,7 @@ if (currentVersion < 11) {
           attempts INTEGER NOT NULL DEFAULT 0,
           logs_message_id TEXT,
           alts_message_id TEXT,
+          guilds_message_id TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -928,6 +944,7 @@ export interface IntelJobRow {
   attempts: number;
   logs_message_id: string | null;
   alts_message_id: string | null;
+  guilds_message_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1045,8 +1062,17 @@ export function resetRunningJobs(): number {
     .run().changes;
 }
 
-export function setMessageIds(id: number, ids: { alts?: string; logs?: string }): void {
+export function setMessageIds(
+  id: number,
+  ids: { alts?: string; guilds?: string; logs?: string },
+): void {
   const db = getDatabase();
+  if (ids.guilds !== undefined) {
+    db.prepare('UPDATE applicant_intel_jobs SET guilds_message_id = ? WHERE id = ?').run(
+      ids.guilds,
+      id,
+    );
+  }
   if (ids.alts !== undefined) {
     db.prepare('UPDATE applicant_intel_jobs SET alts_message_id = ? WHERE id = ?').run(
       ids.alts,
@@ -1060,6 +1086,26 @@ export function setMessageIds(id: number, ids: { alts?: string; logs?: string })
     );
   }
   touch(id);
+}
+
+/**
+ * The characters the applicant named themselves. An application — or a /test
+ * invocation — can name several, so the set lives in the queue rather than on
+ * the job row; the row's character_* columns hold the primary for identity only.
+ */
+export function setApplicantCharacters(jobId: number, characters: RaiderIoCharacter[]): void {
+  for (const c of characters) {
+    enqueue(jobId, 'applicant', `${c.name}-${c.realm}`.toLowerCase(), c);
+  }
+}
+
+export function getApplicantCharacters(jobId: number): RaiderIoCharacter[] {
+  return getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'applicant' ORDER BY rowid",
+    )
+    .all(jobId)
+    .map((r) => JSON.parse((r as { payload: string }).payload) as RaiderIoCharacter);
 }
 
 export function enqueue(jobId: number, kind: string, key: string, payload?: unknown): void {
@@ -3372,6 +3418,9 @@ git commit -m "feat(logs): add sweep selection, boss matching and evidence merge
   - `renderFoundCharacters(findings: IntelFinding[], applicantName: string, region: string, footer?: PauseFooter): string[]` — pages of embed-description text
   - `export interface RenderedTier { zone: WclZone; lines: BossEvidence[] }`
   - `renderMythicLogs(applicantName: string, tiers: RenderedTier[], sweptCount: number, footer?: PauseFooter): string`
+  - `export interface GuildStint { raidName: string; kills: number; first: string; last: string; characters: string[] }`
+  - `export interface GuildHistoryEntry { guildName: string; guildRealm: string; stints: GuildStint[] }`
+  - `renderGuildHistory(entries: GuildHistoryEntry[], footer?: PauseFooter): string`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3383,6 +3432,7 @@ import {
   renderFooter,
   renderFoundCharacters,
   renderMythicLogs,
+  renderGuildHistory,
   raiderIoProfileUrl,
 } from '../../src/functions/applications/intel/render.js';
 import type { IntelFinding } from '../../src/functions/applications/intel/jobStore.js';
@@ -3523,6 +3573,72 @@ describe('renderMythicLogs', () => {
   });
 });
 
+describe('renderGuildHistory', () => {
+  const entries = [
+    {
+      guildName: 'Hindsight',
+      guildRealm: 'Kazzak',
+      stints: [
+        {
+          raidName: 'VS / DR / MQD',
+          kills: 120,
+          first: '2026-04-23',
+          last: '2026-07-16',
+          characters: ['Dödsleif', 'Dödslock'],
+        },
+      ],
+    },
+    {
+      guildName: 'WashedUp',
+      guildRealm: 'Twisting Nether',
+      stints: [
+        {
+          raidName: 'Nerub-ar Palace',
+          kills: 1,
+          first: '2024-12-27',
+          last: '2024-12-27',
+          characters: ['Dödsleif'],
+        },
+      ],
+    },
+  ];
+
+  it('heads each guild with its realm and overall span', () => {
+    const out = renderGuildHistory(entries);
+    expect(out).toContain('**Hindsight** *(Kazzak)* — 2026-04-23 → 2026-07-16');
+  });
+
+  it('lists a line per raid with kills, dates and characters', () => {
+    const out = renderGuildHistory(entries);
+    expect(out).toContain('VS / DR / MQD · 120 Mythic kills · 2026-04-23 → 2026-07-16');
+    expect(out).toContain('Dödsleif, Dödslock');
+  });
+
+  it('collapses a single-day span to one date and singularises one kill', () => {
+    const out = renderGuildHistory(entries);
+    expect(out).toContain('Nerub-ar Palace · 1 Mythic kill · 2024-12-27 ·');
+    expect(out).not.toContain('2024-12-27 → 2024-12-27');
+  });
+
+  it('counts the guilds in the heading', () => {
+    expect(renderGuildHistory(entries)).toContain('**Guild history** — 2 guilds');
+  });
+
+  it('states the empty case explicitly', () => {
+    expect(renderGuildHistory([])).toContain('No guild history found');
+  });
+
+  it('appends the footer', () => {
+    const out = renderGuildHistory(entries, {
+      service: 'raiderio-internal',
+      scanned: 10,
+      total: 3000,
+      retryAt: new Date(1785325500000),
+    });
+    expect(out).toContain('Rate limited on raiderio-internal');
+  });
+});
+
 describe('renderFooter', () => {
   it('names the service, the progress and the retry as a relative timestamp', () => {
     const footer = renderFooter({
@@ -3648,6 +3764,69 @@ export function renderFoundCharacters(
     pages[0] = withFooter.slice(0, EMBED_DESCRIPTION_LIMIT);
   }
   return pages;
+}
+
+export interface GuildStint {
+  raidName: string;
+  kills: number;
+  /** ISO dates, already trimmed to YYYY-MM-DD by the caller. */
+  first: string;
+  last: string;
+  characters: string[];
+}
+
+export interface GuildHistoryEntry {
+  guildName: string;
+  guildRealm: string;
+  stints: GuildStint[];
+}
+
+const dateRange = (first: string, last: string): string =>
+  first === last ? first : `${first} → ${last}`;
+
+/**
+ * Guilds the account has raided with, per tier. Entries arrive most-recent-first.
+ *
+ * These are EVIDENCE SPANS, not tenures: one tested account has a kill with its
+ * old guild in July while other characters were killing with the new one, because
+ * different characters sat in different guilds at once. The copy therefore never
+ * says "left" or "joined" — only when kills happened.
+ */
+export function renderGuildHistory(
+  entries: GuildHistoryEntry[],
+  footer?: PauseFooter,
+): string {
+  if (entries.length === 0) {
+    const empty =
+      '**Guild history**
+No guild history found — no Mythic kills recorded with any guild.';
+    return footer ? `${empty}
+
+${renderFooter(footer)}` : empty;
+  }
+
+  const blocks = entries.map((entry) => {
+    const first = entry.stints.map((st) => st.first).sort()[0];
+    const last = entry.stints.map((st) => st.last).sort().slice(-1)[0];
+    const head = `**${entry.guildName}** *(${entry.guildRealm})* — ${dateRange(first, last)}`;
+    const lines = entry.stints.map((st) => {
+      const kills = `${st.kills} Mythic kill${st.kills === 1 ? '' : 's'}`;
+      return `${st.raidName} · ${kills} · ${dateRange(st.first, st.last)} · ${st.characters.join(', ')}`;
+    });
+    return `${head}
+${lines.join('
+')}`;
+  });
+
+  const out = `**Guild history** — ${entries.length} guild${entries.length === 1 ? '' : 's'}
+
+${blocks.join('
+
+')}`;
+  const withFooter = footer ? `${out}
+
+${renderFooter(footer)}` : out;
+  return withFooter.slice(0, EMBED_DESCRIPTION_LIMIT);
 }
 
 export interface RenderedTier {
@@ -4173,6 +4352,7 @@ git commit -m "feat(alts): discover account characters across every associated g
 - Produces:
   - `export interface GatherDeps { … }` (injected)
   - `gatherMythicLogs(applicants: RaiderIoCharacter[], swept: RaiderIoCharacter[], zones: WclZone[], deps: GatherDeps): Promise<RenderedTier[]>` — at most five tiers, newest activity first
+  - `aggregateGuildHistory(killDates: { character: string; entries: MythicKillDate[] }[], zones: WclZone[]): GuildHistoryEntry[]` — most recent guild first
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4182,6 +4362,7 @@ Create `tests/unit/gatherMythicLogs.test.ts`:
 import { describe, it, expect, vi } from 'vitest';
 import {
   gatherMythicLogs,
+  aggregateGuildHistory,
   type GatherDeps,
 } from '../../src/functions/applications/mythic-logs/gatherMythicLogs.js';
 import type { WclZone } from '../../src/functions/applications/mythic-logs/zoneCatalogue.js';
@@ -4214,6 +4395,67 @@ function deps(over: Partial<GatherDeps> = {}): GatherDeps {
     ...over,
   };
 }
+
+describe('aggregateGuildHistory', () => {
+  const kills = (character: string, entries: [string, string, string | null][]) => ({
+    character,
+    entries: entries.map(([bossName, firstDefeated, guildName]) => ({
+      bossName,
+      firstDefeated,
+      guild: guildName ? { name: guildName, realm: 'kazzak' } : null,
+    })),
+  });
+
+  it('groups by guild then raid, with spans, counts and characters', () => {
+    const out = aggregateGuildHistory(
+      [
+        kills('Dödsleif', [
+          ['imperator-averzian', '2026-04-23T00:00:00.000Z', 'Hindsight'],
+          ['crown-of-the-cosmos', '2026-07-16T00:00:00.000Z', 'Hindsight'],
+        ]),
+        kills('Dödslock', [['imperator-averzian', '2026-05-01T00:00:00.000Z', 'Hindsight']]),
+      ],
+      [zone],
+    );
+
+    expect(out).toHaveLength(1);
+    expect(out[0].guildName).toBe('Hindsight');
+    expect(out[0].stints[0].raidName).toBe('VS / DR / MQD');
+    expect(out[0].stints[0].kills).toBe(3);
+    expect(out[0].stints[0].first).toBe('2026-04-23');
+    expect(out[0].stints[0].last).toBe('2026-07-16');
+    expect(out[0].stints[0].characters).toEqual(['Dödsleif', 'Dödslock']);
+  });
+
+  it('orders guilds by most recent activity', () => {
+    const out = aggregateGuildHistory(
+      [
+        kills('X', [
+          ['imperator-averzian', '2024-01-01T00:00:00.000Z', 'Old'],
+          ['crown-of-the-cosmos', '2026-01-01T00:00:00.000Z', 'New'],
+        ]),
+      ],
+      [zone],
+    );
+    expect(out.map((e) => e.guildName)).toEqual(['New', 'Old']);
+  });
+
+  it('ignores kills with no guild attached', () => {
+    const out = aggregateGuildHistory(
+      [kills('X', [['imperator-averzian', '2026-01-01T00:00:00.000Z', null]])],
+      [zone],
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('falls back to the Raider.IO slug when no WCL zone matches', () => {
+    const out = aggregateGuildHistory(
+      [kills('X', [['some-future-boss', '2026-01-01T00:00:00.000Z', 'G']])],
+      [zone],
+    );
+    expect(out[0].stints[0].raidName).toBe('some-future-boss');
+  });
+});
 
 describe('gatherMythicLogs', () => {
   it('attributes each kill to the character WCL says killed it', async () => {
@@ -4348,7 +4590,7 @@ import {
 } from './selectMythicReports.js';
 import type { WclZone } from './zoneCatalogue.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
-import type { RenderedTier } from '../intel/render.js';
+import type { GuildHistoryEntry, GuildStint, RenderedTier } from '../intel/render.js';
 import type {
   EncounterKill,
   RaidReportRef,
@@ -4358,6 +4600,73 @@ import type {
 import type { MythicKillDate } from '../../../services/raiderioInternal.js';
 
 export const MAX_TIERS = 5;
+
+/**
+ * Guild history, from the same kill payload the dates come from: every kill entry
+ * names the guild it happened with, so this costs no extra requests.
+ *
+ * Raid names come from the WCL zone — `tier-mn-1` means nothing to a reviewer
+ * where `VS / DR / MQD` does — falling back to Raider.IO's slug rather than
+ * dropping a raid we cannot match.
+ */
+export function aggregateGuildHistory(
+  killDates: { character: string; entries: MythicKillDate[] }[],
+  zones: WclZone[],
+): GuildHistoryEntry[] {
+  const byGuild = new Map<
+    string,
+    { name: string; realm: string; raids: Map<string, GuildStint> }
+  >();
+
+  for (const { character, entries } of killDates) {
+    for (const entry of entries) {
+      if (!entry.guild) continue;
+      const gk = `${entry.guild.name}-${entry.guild.realm}`.toLowerCase();
+      const guild = byGuild.get(gk) ?? {
+        name: entry.guild.name,
+        realm: entry.guild.realm,
+        raids: new Map<string, GuildStint>(),
+      };
+      byGuild.set(gk, guild);
+
+      let raidName = entry.bossName;
+      for (const zone of zones) {
+        if (matchBossName(zone, entry.bossName)) {
+          raidName = zone.name;
+          break;
+        }
+      }
+
+      const day = entry.firstDefeated.slice(0, 10);
+      const stint = guild.raids.get(raidName) ?? {
+        raidName,
+        kills: 0,
+        first: day,
+        last: day,
+        characters: [] as string[],
+      };
+      stint.kills++;
+      if (day < stint.first) stint.first = day;
+      if (day > stint.last) stint.last = day;
+      if (!stint.characters.includes(character)) stint.characters.push(character);
+      guild.raids.set(raidName, stint);
+    }
+  }
+
+  const lastOf = (stints: GuildStint[]): string =>
+    stints
+      .map((st) => st.last)
+      .sort()
+      .slice(-1)[0] ?? '';
+
+  return [...byGuild.values()]
+    .map((guild) => ({
+      guildName: guild.name,
+      guildRealm: guild.realm,
+      stints: [...guild.raids.values()].sort((a, b) => b.last.localeCompare(a.last)),
+    }))
+    .sort((a, b) => lastOf(b.stints).localeCompare(lastOf(a.stints)));
+}
 /** Reports scanned per tier when looking for a wipe on the next boss. */
 const WIPE_SCAN_REPORTS = 8;
 
@@ -4580,7 +4889,7 @@ describe('runJob', () => {
     process.env.DATABASE_PATH = ':memory:';
     createTables(getDatabase());
     jobId = createJob({ applicationId: 1, targetChannelId: 'chan', character });
-    setMessageIds(jobId, { alts: 'ALTS', logs: 'LOGS' });
+    setMessageIds(jobId, { alts: 'ALTS', guilds: 'GUILDS', logs: 'LOGS' });
   });
   afterEach(() => closeDatabase());
 
@@ -4590,6 +4899,7 @@ describe('runJob', () => {
     expect(getJob(jobId)?.status).toBe('done');
     const edited = editMessage.mock.calls.map(([, messageId]) => messageId);
     expect(edited).toContain('ALTS');
+    expect(edited).toContain('GUILDS');
     expect(edited).toContain('LOGS');
   });
 
@@ -4614,7 +4924,7 @@ describe('runJob', () => {
     expect(new Date(job.resume_after!).getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('writes the rate-limit footer to both messages when it pauses', async () => {
+  it('writes the rate-limit footer to all three messages when it pauses', async () => {
     const editMessage = vi.fn(async () => {});
     await runJob(
       jobId,
@@ -4632,7 +4942,7 @@ describe('runJob', () => {
       }),
     );
     const bodies = editMessage.mock.calls.map(([, , description]) => description);
-    expect(bodies).toHaveLength(2);
+    expect(bodies).toHaveLength(3);
     for (const body of bodies) expect(body).toContain('Rate limited on blizzard');
   });
 
@@ -4710,6 +5020,7 @@ Create `src/functions/applications/intel/runJob.ts`:
 import { logger } from '../../../services/logger.js';
 import { classifyError } from './rateLimit.js';
 import {
+  getApplicantCharacters,
   getFindings,
   getJob,
   pauseJob,
@@ -4718,9 +5029,15 @@ import {
   setStatus,
   type IntelFinding,
 } from './jobStore.js';
-import { renderFoundCharacters, renderMythicLogs, type PauseFooter } from './render.js';
+import {
+  renderFoundCharacters,
+  renderGuildHistory,
+  renderMythicLogs,
+  type GuildHistoryEntry,
+  type PauseFooter,
+} from './render.js';
 import { discoverAlts, ALT_CAPS } from '../alts/discoverAlts.js';
-import { gatherMythicLogs } from '../mythic-logs/gatherMythicLogs.js';
+import { aggregateGuildHistory, gatherMythicLogs } from '../mythic-logs/gatherMythicLogs.js';
 import {
   selectSweepTargets,
   characterKey,
@@ -4728,6 +5045,7 @@ import {
 } from '../mythic-logs/selectMythicReports.js';
 import type { WclZone } from '../mythic-logs/zoneCatalogue.js';
 import type { RaidReportRef } from '../../../services/warcraftlogs.js';
+import type { MythicKillDate } from '../../../services/raiderioInternal.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
 
 export const MAX_JOB_ATTEMPTS = 20;
@@ -4762,11 +5080,16 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   if (!job || !job.target_channel_id) return;
 
   const now = deps.now ?? (() => new Date());
-  const applicant: RaiderIoCharacter = {
+  const primary: RaiderIoCharacter = {
     region: job.character_region,
     realm: job.character_realm,
     name: job.character_name,
   };
+  // An application — or /test — can name several characters; the row holds only
+  // the primary, so the full set comes from the queue.
+  const stored = getApplicantCharacters(jobId);
+  const applicants = stored.length > 0 ? stored : [primary];
+  const applicant = applicants[0];
 
   setStatus(jobId, 'running');
 
@@ -4778,6 +5101,9 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       const pages = renderFoundCharacters(findings, applicant.name, applicant.region, footer);
       await deps.editMessage(channelId, job.alts_message_id, pages[0]);
     }
+    if (job.guilds_message_id) {
+      await deps.editMessage(channelId, job.guilds_message_id, renderGuildHistory(guilds, footer));
+    }
     if (job.logs_message_id) {
       await deps.editMessage(
         channelId,
@@ -4788,12 +5114,13 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   };
 
   let lastTiers: Awaited<ReturnType<typeof gatherMythicLogs>> = [];
+  let guilds: GuildHistoryEntry[] = [];
   let sweptCount = 0;
 
   try {
     // Phase: alt sources + fingerprint sweep.
     setPhase(jobId, 'alt_sources');
-    const { truncated } = await deps.discover(jobId, [applicant], {
+    const { truncated } = await deps.discover(jobId, applicants, {
       getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
       getClaimedCharacters: (await import('../../../services/raiderioInternal.js'))
         .getClaimedCharacters,
@@ -4846,8 +5173,19 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       .map((f) => findingToCharacter(f, applicant.region));
     sweptCount = swept.length;
 
+    // Guild history rides along with the kill dates the log sweep needs anyway.
+    const { getMythicKillDates, RAIDERIO_INTERNAL_PACE_MS } =
+      await import('../../../services/raiderioInternal.js');
+    const killHistory: { character: string; entries: MythicKillDate[] }[] = [];
+    for (const c of swept.length > 0 ? swept : applicants) {
+      const entries = await getMythicKillDates(c, deps.tierOrdinals);
+      await new Promise((r) => setTimeout(r, RAIDERIO_INTERNAL_PACE_MS));
+      if (entries) killHistory.push({ character: c.name, entries });
+    }
+    guilds = aggregateGuildHistory(killHistory, zones);
+
     setPhase(jobId, 'logs');
-    lastTiers = await deps.gather([applicant], swept.length > 0 ? swept : [applicant], zones, {
+    lastTiers = await deps.gather(applicants, swept.length > 0 ? swept : applicants, zones, {
       getZoneKills: (await import('../../../services/warcraftlogs.js')).getZoneKills,
       getEncounterKills: (await import('../../../services/warcraftlogs.js')).getEncounterKills,
       getRaidReports: deps.getRaidReports,
@@ -4927,9 +5265,9 @@ git commit -m "feat(intel): add the job runner with pause, resume and publish"
 
 - Consumes: `jobStore`, `render`, `collectRaiderIoCharacters`
 - Produces:
-  - `placeholderEmbed(kind: 'alts' | 'logs'): EmbedBuilder`
-  - `startIntelJob(input: { applicationId: number | null; targetChannelId: string; character: RaiderIoCharacter; altsMessageId?: string; logsMessageId?: string }): number`
-  - `createForumPost` returns `{ forumPost, threadId, altsMessageId, logsMessageId }`
+  - `placeholderEmbed(kind: 'alts' | 'guilds' | 'logs'): EmbedBuilder`
+  - `startIntelJob(input: { applicationId: number | null; targetChannelId: string; characters: RaiderIoCharacter[]; altsMessageId?: string; guildsMessageId?: string; logsMessageId?: string }): number`
+  - `createForumPost` returns `{ forumPost, threadId, altsMessageId, guildsMessageId, logsMessageId }`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -4948,13 +5286,17 @@ import {
   placeholderEmbed,
   startIntelJob,
 } from '../../src/functions/applications/intel/placeholders.js';
-import { getJob } from '../../src/functions/applications/intel/jobStore.js';
+import { getApplicantCharacters, getJob } from '../../src/functions/applications/intel/jobStore.js';
 
 const character = { region: 'eu', realm: 'draenor', name: 'Brentpriest' };
 
 describe('placeholderEmbed', () => {
   it('says searching for the alts message', () => {
-    expect(placeholderEmbed('alts').toJSON().description).toContain('searching');
+    expect(placeholderEmbed('alts').toJSON().description).toContain('Found characters');
+  });
+
+  it('names the guild history message', () => {
+    expect(placeholderEmbed('guilds').toJSON().description).toContain('Guild history');
   });
 
   it('says fetching for the logs message', () => {
@@ -4969,19 +5311,31 @@ describe('startIntelJob', () => {
   });
   afterEach(() => closeDatabase());
 
-  it('creates a pending job carrying both message ids', () => {
+  it('creates a pending job carrying all three message ids', () => {
     const id = startIntelJob({
       applicationId: 5,
       targetChannelId: 'chan',
-      character,
+      characters: [character],
       altsMessageId: 'A',
+      guildsMessageId: 'G',
       logsMessageId: 'L',
     });
     const job = getJob(id)!;
     expect(job.status).toBe('pending');
     expect(job.alts_message_id).toBe('A');
+    expect(job.guilds_message_id).toBe('G');
     expect(job.logs_message_id).toBe('L');
     expect(job.application_id).toBe(5);
+  });
+
+  it('stores every named character, with the first as the primary', () => {
+    const id = startIntelJob({
+      applicationId: 5,
+      targetChannelId: 'chan',
+      characters: [character, { region: 'eu', realm: 'draenor', name: 'Brenthunter' }],
+    });
+    expect(getJob(id)?.character_name).toBe('Brentpriest');
+    expect(getApplicantCharacters(id).map((c) => c.name)).toEqual(['Brentpriest', 'Brenthunter']);
   });
 });
 ```
@@ -4997,7 +5351,7 @@ Create `src/functions/applications/intel/placeholders.ts`:
 
 ```typescript
 import { EmbedBuilder, Colors } from 'discord.js';
-import { createJob, setMessageIds } from './jobStore.js';
+import { createJob, setApplicantCharacters, setMessageIds } from './jobStore.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
 
 /**
@@ -5006,25 +5360,36 @@ import type { RaiderIoCharacter } from '../raiderIoName.js';
  * voting) is only achievable by reserving these two positions up front and
  * editing them in place.
  */
-export function placeholderEmbed(kind: 'alts' | 'logs'): EmbedBuilder {
-  const description =
-    kind === 'alts' ? '**Found characters** — searching…' : '**Mythic raid logs** — fetching…';
-  return new EmbedBuilder().setColor(Colors.Grey).setDescription(description);
+const PLACEHOLDER_TEXT = {
+  alts: '**Found characters** — searching…',
+  guilds: '**Guild history** — searching…',
+  logs: '**Mythic raid logs** — fetching…',
+} as const;
+
+export function placeholderEmbed(kind: 'alts' | 'guilds' | 'logs'): EmbedBuilder {
+  return new EmbedBuilder().setColor(Colors.Grey).setDescription(PLACEHOLDER_TEXT[kind]);
 }
 
 export function startIntelJob(input: {
   applicationId: number | null;
   targetChannelId: string;
-  character: RaiderIoCharacter;
+  /** Every character the applicant named; the first is the primary for identity. */
+  characters: RaiderIoCharacter[];
   altsMessageId?: string;
+  guildsMessageId?: string;
   logsMessageId?: string;
 }): number {
   const jobId = createJob({
     applicationId: input.applicationId,
     targetChannelId: input.targetChannelId,
-    character: input.character,
+    character: input.characters[0],
   });
-  setMessageIds(jobId, { alts: input.altsMessageId, logs: input.logsMessageId });
+  setApplicantCharacters(jobId, input.characters);
+  setMessageIds(jobId, {
+    alts: input.altsMessageId,
+    guilds: input.guildsMessageId,
+    logs: input.logsMessageId,
+  });
   return jobId;
 }
 ```
@@ -5096,8 +5461,11 @@ if (named.length > 0 && threadId) {
     const jobId = startIntelJob({
       applicationId,
       targetChannelId: threadId,
-      character: named[0],
+      // Every character the applicant named, not just the first — all of them are
+      // always swept and labelled "from the application".
+      characters: named,
       altsMessageId,
+      guildsMessageId,
       logsMessageId,
     });
     logger.info('Applications', `Queued intel job #${jobId} for application #${applicationId}`);
@@ -5547,6 +5915,14 @@ describe('parseIntelUrls', () => {
   it('returns an empty array for input with no character URL', () => {
     expect(parseIntelUrls('not a url')).toEqual([]);
   });
+
+  it('deduplicates a repeated URL', () => {
+    expect(
+      parseIntelUrls(
+        'https://raider.io/characters/eu/draenor/Brentpriest https://raider.io/characters/eu/draenor/brentpriest',
+      ),
+    ).toHaveLength(1);
+  });
 });
 ```
 
@@ -5583,7 +5959,7 @@ Register the subcommand alongside `clear_channel`:
         .addStringOption((opt) =>
           opt
             .setName('url')
-            .setDescription('Raider.IO character URL(s), space-separated')
+            .setDescription('Raider.IO character URL(s), space-separated — all are used')
             .setRequired(true),
         ),
     ),
@@ -5612,13 +5988,17 @@ if (sub === 'applicant_intel') {
   // Same placeholders as a real application, so the runner exercises the
   // production edit path rather than a test-only renderer.
   const altsMessage = await channel.send({ embeds: [placeholderEmbed('alts')] });
+  const guildsMessage = await channel.send({ embeds: [placeholderEmbed('guilds')] });
   const logsMessage = await channel.send({ embeds: [placeholderEmbed('logs')] });
 
   const jobId = startIntelJob({
     applicationId: null,
     targetChannelId: channel.id,
-    character: characters[0],
+    // Every URL supplied, exactly as multiple characters named across application
+    // answers are treated.
+    characters,
     altsMessageId: altsMessage.id,
+    guildsMessageId: guildsMessage.id,
     logsMessageId: logsMessage.id,
   });
 
@@ -5627,10 +6007,14 @@ if (sub === 'applicant_intel') {
     'ran applicant intel',
     `${characters[0].name}-${characters[0].realm} (job #${jobId})`,
   );
+  const label =
+    characters.length === 1
+      ? `**${characters[0].name}**-${characters[0].realm}`
+      : `${characters.length} characters (primary **${characters[0].name}**-${characters[0].realm})`;
   await interaction.editReply({
     content:
-      `Started intel job #${jobId} for **${characters[0].name}**-${characters[0].realm}. ` +
-      'The two messages above will fill in as the sweep completes (up to a few minutes).',
+      `Started intel job #${jobId} for ${label}. ` +
+      'The three messages above will fill in as the sweep completes (up to a few minutes).',
   });
   return;
 }
@@ -5704,11 +6088,15 @@ This is the only way to confirm masked links render, since masked links do **not
 
 1. Deploy to the test bot and run in a test channel:
    `/test applicant_intel url:https://raider.io/characters/eu/draenor/Brentpriest`
-2. Confirm two placeholder embeds post immediately and the ephemeral reply names a job id.
-3. Within ~5 minutes (the scheduler tick), confirm both embeds fill in.
-4. Check that character names are clickable and report links are clickable.
-5. Expect attribution across several characters — that account's first kills are split between `Brentprietwo` and `Brenthunter`, and the applicant's own `Brentpriest` holds the Nerub'ar Palace lines.
-6. Re-run the same command and confirm the second sweep is visibly faster and the cache is populated. This is the only check that the entity-keyed caching actually works end to end:
+2. Confirm THREE placeholder embeds post immediately, in order — found characters, guild
+   history, Mythic raid logs — and that the ephemeral reply names a job id.
+3. Within ~5 minutes (the scheduler tick), confirm all three embeds fill in.
+4. Re-run with two URLs to exercise the multi-character path, and confirm both appear in the
+   found-characters message labelled `from the application`:
+   `/test applicant_intel url:https://raider.io/characters/eu/draenor/Brentpriest https://raider.io/characters/eu/draenor/Brenthunter`
+5. Check that character names are clickable and report links are clickable.
+6. Expect attribution across several characters — that account's first kills are split between `Brentprietwo` and `Brenthunter`, and the applicant's own `Brentpriest` holds the Nerub'ar Palace lines.
+7. Re-run the same command and confirm the second sweep is visibly faster and the cache is populated. This is the only check that the entity-keyed caching actually works end to end:
 
    ```bash
    railway ssh "node" <<'EOF'

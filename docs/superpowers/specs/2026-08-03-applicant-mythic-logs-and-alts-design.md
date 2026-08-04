@@ -5,16 +5,20 @@
 
 ## Summary
 
-When an application is submitted, the bot posts two follow-up messages to the application
-forum thread:
+When an application is submitted, the bot posts three follow-up messages to the application
+forum thread, in this reading order:
 
-1. **Mythic raid logs** for the applicant's character — the deepest Mythic bosses reached in
-   each of up to five recent raid tiers, wipes included, one report link per boss.
-2. **Alts** — other characters on the same Battle.net account, discovered without asking the
-   applicant, each with its guild. The four most raid-active are swept for logs too, and their
-   results are merged into the logs message with each line attributed to its character.
+1. **Found characters** — every character on the same Battle.net account, discovered without
+   asking the applicant, each with its class and guild.
+2. **Guild history** — the guilds those characters have raided with, per raid tier, with dates
+   and kill counts.
+3. **Mythic raid logs** — the deepest Mythic bosses reached in each of up to five recent raid
+   tiers, wipes included, one report link per boss, every line attributed to the character it
+   belongs to. The four most raid-active alts are swept alongside the applicant's own
+   character(s) and merged in.
 
-Both run in the background after the forum post exists. Neither can fail the application.
+All three are produced by one resumable background job after the forum post exists. None of them
+can fail the application.
 
 ## Motivation
 
@@ -336,7 +340,7 @@ Two uses:
 
 1. **Extra fingerprint seeds.** Former guilds join the BFS frontier. Alts are routinely left
    behind in a guild the main has since left, and no other source reveals those guilds.
-2. **Vetting context.** A reviewer can see guild movement, with dates, evidenced by kills.
+2. **Vetting context**, published as its own message — see Guild history message below.
 
 It only sees guilds the character killed Mythic bosses with — casual or Heroic-only membership is
 invisible. WCL's `Character.guilds` is not an alternative: it returned `null`, `[]` and a single
@@ -570,6 +574,44 @@ Two things to know about how these render:
 - **URLs must be absolute.** Only a full `https://…` target linkifies. Any elided or
   relative-looking form (`.../reports/abc123`) renders as literal text.
 
+### Guild history message
+
+Posted between the found characters and the logs, because it answers "who have these people
+raided with" before a reviewer reads what they killed. Built entirely from the kill history
+already fetched, so it costs nothing extra.
+
+Grouped by guild, most recent activity first; within a guild, one line per raid tier:
+
+```
+**Guild history** — 4 guilds
+
+**Hindsight** *(Kazzak)* — 2026-04-23 → 2026-07-30
+VS / DR / MQD · 120 Mythic kills · 2026-04-23 → 2026-07-16 · Dödsleif, Dödslock, Skogslisa
+Sporefall · 24 Mythic kills · 2026-06-18 → 2026-07-30 · Dödsleif, Dödslock, Skogslisa
+
+**SeriouslyCasual** *(Silvermoon)* — 2024-11-14 → 2026-07-27
+VS / DR / MQD · 8 Mythic kills · 2026-07-27 · Dödslock
+Manaforge Omega · 9 Mythic kills · 2025-08-31 → 2026-02-18 · Dödslock, Skogslisa
+Nerub-ar Palace · 8 Mythic kills · 2024-11-14 → 2026-02-18 · Dödsleif, Dödslock, Skogslisa
+
+**Rancour** *(Draenor)* — 2026-03-29
+VS / DR / MQD · 24 Mythic kills · 2026-03-29 · Dödsleif
+```
+
+Three rules the data forces:
+
+- **These are evidence spans, not tenures.** The account above has a `SeriouslyCasual` kill in
+  July 2026 while other characters were killing with `Hindsight`, because different characters
+  sat in different guilds at once. Never render or imply "left on <date>" — the dates say when
+  kills happened, nothing more.
+- **Raid names come from the WCL zone**, not Raider.IO's slug: `tier-mn-1` is meaningless to a
+  reviewer where `VS / DR / MQD` is not. Matched by the same encounter-overlap rule used
+  elsewhere; an unmatched raid falls back to the slug rather than being dropped.
+- **Only guilds with logged Mythic kills appear.** A guild the account was in without killing
+  Mythic bosses is invisible, so the message is titled guild _history_ rather than a complete
+  membership record, and an empty result says
+  `No guild history found — no Mythic kills recorded with any guild.`
+
 ### Message size and paging
 
 The list is rendered as an **embed**, not plain content: an embed description allows 4,096
@@ -657,6 +699,7 @@ applicant_intel_jobs (
   attempts INTEGER NOT NULL DEFAULT 0,
   logs_message_id TEXT,
   alts_message_id TEXT,
+  guilds_message_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 )
@@ -729,16 +772,16 @@ than empty.
 ### Partial results are published, not withheld
 
 Because the placeholders already exist (see Thread layout under Integration), a paused job can
-show its progress rather than sitting blank. On pause the runner edits **both** messages —
-found-characters and logs — with whatever it has so far, plus a footer naming the service and
-the next retry:
+show its progress rather than sitting blank. On pause the runner edits **all three** messages —
+found characters, guild history and logs — with whatever it has so far, plus a footer naming the
+service and the next retry:
 
 ```
 *Rate limited on blizzard — 1,240 of ~3,000 characters scanned. Retrying <t:1785325500:R>.*
 ```
 
-Both carry the footer even when only one phase is blocked, because a reviewer may read either
-in isolation and needs to know the picture is provisional. The retry time is a Discord relative
+All three carry the footer even when only one phase is blocked, because a reviewer may read any
+of them in isolation and needs to know the picture is provisional. The retry time is a Discord relative
 timestamp (`<t:…:R>` renders as "in 14 minutes"), so it is correct in every reader's timezone
 and stays accurate as the wait elapses — a formatted clock time would be neither.
 
@@ -777,11 +820,12 @@ them in place:
 | --- | ----------------------------------- | ----------------- |
 | 1   | Q&A (split as today)                | `createForumPost` |
 | 2   | `**Found characters** — searching…` | `createForumPost` |
-| 3   | `**Mythic raid logs** — fetching…`  | `createForumPost` |
-| 4   | Voting embed                        | `createForumPost` |
-| 5   | Accept / Reject buttons             | `createForumPost` |
+| 3   | `**Guild history** — searching…`    | `createForumPost` |
+| 4   | `**Mythic raid logs** — fetching…`  | `createForumPost` |
+| 5   | Voting embed                        | `createForumPost` |
+| 6   | Accept / Reject buttons             | `createForumPost` |
 
-Their ids are written to `alts_message_id` and `logs_message_id` on the job, which the runner
+Their ids are written to `alts_message_id`, `guilds_message_id` and `logs_message_id` on the job, which the runner
 already needed for resume-and-edit.
 
 A placeholder must never be left reading "searching…" forever. Every terminal state edits
@@ -818,9 +862,17 @@ invoked from.
 - **A subcommand of `/test`**, not a new top-level command, matching how every other manual
   trigger is exposed. It inherits `devOnly: true` (so `deploy-commands.ts` skips it in
   production), the `Administrator` default permission, and the `requireOfficer` check.
-- **`url` (required)** is parsed with the same `parseRaiderIoCharacter` used on application
-  answers, so a malformed URL fails the same way it would in production. Multiple URLs may be
-  supplied space-separated, exercising the multi-character path.
+- **`url` (required)** is parsed with the same `collectRaiderIoCharacters` used on application
+  answers, so a malformed URL fails the same way it would in production. **Multiple
+  space-separated URLs are accepted and all of them are used**, exactly as multiple characters
+  named across application answers are — the first is the primary for identity, and every one is
+  treated as `from the application`: always swept, exempt from the sweep caps, and counting for
+  kills even when those kills post-date the account's first.
+
+  This means the job cannot carry a single character. The applicant set is stored as
+  `applicant` rows in `applicant_intel_queue`, with the primary also on the job row for identity
+  and the thread title. Both the `/test` command and `submitApplication` pass the full list.
+
 - **It runs the real job**, not a parallel implementation. The command creates an
   `applicant_intel_jobs` row targeting the invoking channel, posts the two placeholders there,
   and returns immediately with an ephemeral `started job #N`. The runner then edits them exactly
