@@ -233,11 +233,11 @@ Posted as a follow-up message to the application thread, mirroring how
 **Mythic raid logs — Nnoggie**
 
 **Manaforge Omega** *(The War Within)*
-6/8 **Fractillus** — first kill 2025-10-19 · [report](https://www.warcraftlogs.com/reports/ZDHVbJdK2yx9nkhf)
+6/8 **Fractillus** — first kill <t:1760... :D> · [report](https://www.warcraftlogs.com/reports/ZDHVbJdK2yx9nkhf)
 
 **Liberation of Undermine** *(The War Within)*
 6/8 **One-Armed Bandit** — wiping, best 0.7% · [report](https://www.warcraftlogs.com/reports/v4wVWRhfYyrnCpFT)
-4/8 **Rik Reverb** — first kill 2025-03-11 · [report](https://www.warcraftlogs.com/reports/vWrJFmNHxtQw9pZ8)
+4/8 **Rik Reverb** — first kill <t:1741... :D> · [report](https://www.warcraftlogs.com/reports/vWrJFmNHxtQw9pZ8)
 ```
 
 With no Mythic history, the message is explicit rather than absent:
@@ -585,20 +585,25 @@ Grouped by guild, most recent activity first; within a guild, one line per raid 
 ```
 **Guild history** — 4 guilds
 
-**Hindsight** *(Kazzak)* — 2026-04-23 → 2026-07-30
-VS / DR / MQD · 120 Mythic kills · 2026-04-23 → 2026-07-16 · Dödsleif, Dödslock, Skogslisa
-Sporefall · 24 Mythic kills · 2026-06-18 → 2026-07-30 · Dödsleif, Dödslock, Skogslisa
+**[Hindsight](https://raider.io/guilds/eu/kazzak/Hindsight)** *(Kazzak)* — <t:1777... :D> → <t:1784... :D>
+VS / DR / MQD · 120 Mythic kills · <t:1777... :D> → <t:1784... :D> · Dödsleif, Dödslock, Skogslisa
+Sporefall · 24 Mythic kills · <t:1781... :D> → <t:1784... :D> · Dödsleif, Dödslock, Skogslisa
 
-**SeriouslyCasual** *(Silvermoon)* — 2024-11-14 → 2026-07-27
-VS / DR / MQD · 8 Mythic kills · 2026-07-27 · Dödslock
-Manaforge Omega · 9 Mythic kills · 2025-08-31 → 2026-02-18 · Dödslock, Skogslisa
-Nerub-ar Palace · 8 Mythic kills · 2024-11-14 → 2026-02-18 · Dödsleif, Dödslock, Skogslisa
+**[SeriouslyCasual](https://raider.io/guilds/eu/silvermoon/SeriouslyCasual)** *(Silvermoon)* — …
+VS / DR / MQD · 8 Mythic kills · <t:1784... :D> · Dödslock
+Nerub-ar Palace · 8 Mythic kills · <t:1731... :D> → <t:1770... :D> · Dödsleif, Dödslock, Skogslisa
 
-**Rancour** *(Draenor)* — 2026-03-29
-VS / DR / MQD · 24 Mythic kills · 2026-03-29 · Dödsleif
+**[Rancour](https://raider.io/guilds/eu/draenor/Rancour)** *(Draenor)* — <t:1774... :D>
+VS / DR / MQD · 24 Mythic kills · <t:1774... :D> · Dödsleif
 ```
 
-Three rules the data forces:
+Guild names link to `https://raider.io/guilds/{region}/{realm-slug}/{Name}` (percent-encoded, so
+a guild with spaces still resolves), and every date is a Discord timestamp — `<t:epoch:D>`,
+rendering in each reader's own timezone rather than a fixed `YYYY-MM-DD`. The kill's full
+timestamp is used, not a UTC midnight, so the date shown is the reader's local date of the kill.
+The same applies to first-kill dates in the logs message.
+
+Four rules the data forces:
 
 - **These are evidence spans, not tenures.** The account above has a `SeriouslyCasual` kill in
   July 2026 while other characters were killing with `Hindsight`, because different characters
@@ -607,6 +612,7 @@ Three rules the data forces:
 - **Raid names come from the WCL zone**, not Raider.IO's slug: `tier-mn-1` is meaningless to a
   reviewer where `VS / DR / MQD` is not. Matched by the same encounter-overlap rule used
   elsewhere; an unmatched raid falls back to the slug rather than being dropped.
+- **Same-day spans collapse to a single timestamp** rather than rendering `X → X`.
 - **Only guilds with logged Mythic kills appear.** A guild the account was in without killing
   Mythic bosses is invisible, so the message is titled guild _history_ rather than a complete
   membership record, and an empty result says

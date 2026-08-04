@@ -3420,7 +3420,9 @@ git commit -m "feat(logs): add sweep selection, boss matching and evidence merge
   - `renderMythicLogs(applicantName: string, tiers: RenderedTier[], sweptCount: number, footer?: PauseFooter): string`
   - `export interface GuildStint { raidName: string; kills: number; first: string; last: string; characters: string[] }`
   - `export interface GuildHistoryEntry { guildName: string; guildRealm: string; stints: GuildStint[] }`
-  - `renderGuildHistory(entries: GuildHistoryEntry[], footer?: PauseFooter): string`
+  - `renderGuildHistory(entries: GuildHistoryEntry[], region: string, footer?: PauseFooter): string`
+  - `raiderIoGuildUrl(region: string, realm: string, name: string): string`
+  - `discordDate(iso: string): string` — `<t:epoch:D>`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3434,6 +3436,7 @@ import {
   renderMythicLogs,
   renderGuildHistory,
   raiderIoProfileUrl,
+  raiderIoGuildUrl,
 } from '../../src/functions/applications/intel/render.js';
 import type { IntelFinding } from '../../src/functions/applications/intel/jobStore.js';
 import type { WclZone } from '../../src/functions/applications/mythic-logs/zoneCatalogue.js';
@@ -3454,6 +3457,20 @@ describe('raiderIoProfileUrl', () => {
   it('lowercases and hyphenates the realm but preserves the name', () => {
     expect(raiderIoProfileUrl('eu', 'Tarren Mill', 'Boptinus')).toBe(
       'https://raider.io/characters/eu/tarren-mill/Boptinus',
+    );
+  });
+});
+
+describe('raiderIoGuildUrl', () => {
+  it('builds a guild URL from region, realm slug and name', () => {
+    expect(raiderIoGuildUrl('eu', 'Silvermoon', 'SeriouslyCasual')).toBe(
+      'https://raider.io/guilds/eu/silvermoon/SeriouslyCasual',
+    );
+  });
+
+  it('percent-encodes a guild name containing spaces', () => {
+    expect(raiderIoGuildUrl('eu', 'Silvermoon', 'Seriously Casual')).toBe(
+      'https://raider.io/guilds/eu/silvermoon/Seriously%20Casual',
     );
   });
 });
@@ -3524,7 +3541,7 @@ describe('renderMythicLogs', () => {
     bossName: "Belo'ren, Child of Al'ar",
     who: 'Brenthunter',
     kind: 'kill',
-    date: '2026-05-03',
+    date: '2026-05-03T19:45:00.000Z',
     reportCode: 'bgDj26pmAHBdhPk3',
     isApplicantCharacter: false,
   };
@@ -3540,9 +3557,10 @@ describe('renderMythicLogs', () => {
     isApplicantCharacter: false,
   };
 
-  it('renders kills with a first-kill date and the character', () => {
+  it('renders kills with a Discord-formatted first-kill date and the character', () => {
     const out = renderMythicLogs('Brentpriest', [{ zone, lines: [kill] }], 4);
-    expect(out).toContain("8/9 **Belo'ren, Child of Al'ar** — first kill 2026-05-03");
+    const stamp = `<t:${Math.floor(new Date(kill.date!).getTime() / 1000)}:D>`;
+    expect(out).toContain(`8/9 **Belo'ren, Child of Al'ar** — first kill ${stamp}`);
     expect(out).toContain('**Brenthunter**');
     expect(out).toContain('[report](https://www.warcraftlogs.com/reports/bgDj26pmAHBdhPk3)');
   });
@@ -3574,6 +3592,11 @@ describe('renderMythicLogs', () => {
 });
 
 describe('renderGuildHistory', () => {
+  const FIRST = '2026-04-23T19:00:00.000Z';
+  const LAST = '2026-07-16T20:30:00.000Z';
+  const ONE_DAY = '2024-12-27T21:00:00.000Z';
+  const stamp = (iso: string) => `<t:${Math.floor(new Date(iso).getTime() / 1000)}:D>`;
+
   const entries = [
     {
       guildName: 'Hindsight',
@@ -3582,8 +3605,8 @@ describe('renderGuildHistory', () => {
         {
           raidName: 'VS / DR / MQD',
           kills: 120,
-          first: '2026-04-23',
-          last: '2026-07-16',
+          first: FIRST,
+          last: LAST,
           characters: ['Dödsleif', 'Dödslock'],
         },
       ],
@@ -3595,41 +3618,53 @@ describe('renderGuildHistory', () => {
         {
           raidName: 'Nerub-ar Palace',
           kills: 1,
-          first: '2024-12-27',
-          last: '2024-12-27',
+          first: ONE_DAY,
+          last: ONE_DAY,
           characters: ['Dödsleif'],
         },
       ],
     },
   ];
 
-  it('heads each guild with its realm and overall span', () => {
-    const out = renderGuildHistory(entries);
-    expect(out).toContain('**Hindsight** *(Kazzak)* — 2026-04-23 → 2026-07-16');
+  it('links the guild name to its Raider.IO page', () => {
+    expect(renderGuildHistory(entries, 'eu')).toContain(
+      '**[Hindsight](https://raider.io/guilds/eu/kazzak/Hindsight)**',
+    );
+  });
+
+  it('hyphenates a multi-word realm in the guild link', () => {
+    expect(renderGuildHistory(entries, 'eu')).toContain(
+      'https://raider.io/guilds/eu/twisting-nether/WashedUp',
+    );
+  });
+
+  it('heads each guild with its realm and overall span as Discord timestamps', () => {
+    const out = renderGuildHistory(entries, 'eu');
+    expect(out).toContain(`*(Kazzak)* — ${stamp(FIRST)} → ${stamp(LAST)}`);
   });
 
   it('lists a line per raid with kills, dates and characters', () => {
-    const out = renderGuildHistory(entries);
-    expect(out).toContain('VS / DR / MQD · 120 Mythic kills · 2026-04-23 → 2026-07-16');
+    const out = renderGuildHistory(entries, 'eu');
+    expect(out).toContain(`VS / DR / MQD · 120 Mythic kills · ${stamp(FIRST)} → ${stamp(LAST)}`);
     expect(out).toContain('Dödsleif, Dödslock');
   });
 
-  it('collapses a single-day span to one date and singularises one kill', () => {
-    const out = renderGuildHistory(entries);
-    expect(out).toContain('Nerub-ar Palace · 1 Mythic kill · 2024-12-27 ·');
-    expect(out).not.toContain('2024-12-27 → 2024-12-27');
+  it('collapses a single-day span to one timestamp and singularises one kill', () => {
+    const out = renderGuildHistory(entries, 'eu');
+    expect(out).toContain(`Nerub-ar Palace · 1 Mythic kill · ${stamp(ONE_DAY)} ·`);
+    expect(out).not.toContain(`${stamp(ONE_DAY)} → ${stamp(ONE_DAY)}`);
   });
 
   it('counts the guilds in the heading', () => {
-    expect(renderGuildHistory(entries)).toContain('**Guild history** — 2 guilds');
+    expect(renderGuildHistory(entries, 'eu')).toContain('**Guild history** — 2 guilds');
   });
 
   it('states the empty case explicitly', () => {
-    expect(renderGuildHistory([])).toContain('No guild history found');
+    expect(renderGuildHistory([], 'eu')).toContain('No guild history found');
   });
 
   it('appends the footer', () => {
-    const out = renderGuildHistory(entries, {
+    const out = renderGuildHistory(entries, 'eu', {
       service: 'raiderio-internal',
       scanned: 10,
       total: 3000,
@@ -3714,6 +3749,22 @@ export function raiderIoProfileUrl(region: string, realm: string, name: string):
   return `https://raider.io/characters/${region.toLowerCase()}/${realmSlug(realm)}/${name}`;
 }
 
+export function raiderIoGuildUrl(region: string, realm: string, name: string): string {
+  return `https://raider.io/guilds/${region.toLowerCase()}/${realmSlug(realm)}/${encodeURIComponent(name)}`;
+}
+
+/**
+ * A Discord long-date timestamp. Rendered in each reader's own timezone, which a
+ * hardcoded `YYYY-MM-DD` is not — and it stays correct as time passes.
+ * The full kill timestamp is used, so the date shown is the reader's local date
+ * of the kill rather than a UTC midnight that can slip a day.
+ */
+export function discordDate(iso: string): string {
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return iso;
+  return `<t:${Math.floor(ms / 1000)}:D>`;
+}
+
 function findingLine(f: IntelFinding, region: string): string {
   const link = `[${f.name}-${f.realm}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
   const guild = f.guildName ? `${f.guildName} (${f.guildRealm ?? '?'})` : 'No guild';
@@ -3769,7 +3820,7 @@ export function renderFoundCharacters(
 export interface GuildStint {
   raidName: string;
   kills: number;
-  /** ISO dates, already trimmed to YYYY-MM-DD by the caller. */
+  /** Full ISO timestamps — kept intact so they can render as Discord timestamps. */
   first: string;
   last: string;
   characters: string[];
@@ -3781,8 +3832,11 @@ export interface GuildHistoryEntry {
   stints: GuildStint[];
 }
 
+/** Same-day spans collapse to one timestamp; ISO strings compare lexicographically. */
 const dateRange = (first: string, last: string): string =>
-  first === last ? first : `${first} → ${last}`;
+  first.slice(0, 10) === last.slice(0, 10)
+    ? discordDate(first)
+    : `${discordDate(first)} → ${discordDate(last)}`;
 
 /**
  * Guilds the account has raided with, per tier. Entries arrive most-recent-first.
@@ -3794,6 +3848,7 @@ const dateRange = (first: string, last: string): string =>
  */
 export function renderGuildHistory(
   entries: GuildHistoryEntry[],
+  region: string,
   footer?: PauseFooter,
 ): string {
   if (entries.length === 0) {
@@ -3808,7 +3863,8 @@ ${renderFooter(footer)}` : empty;
   const blocks = entries.map((entry) => {
     const first = entry.stints.map((st) => st.first).sort()[0];
     const last = entry.stints.map((st) => st.last).sort().slice(-1)[0];
-    const head = `**${entry.guildName}** *(${entry.guildRealm})* — ${dateRange(first, last)}`;
+    const link = raiderIoGuildUrl(region, entry.guildRealm, entry.guildName);
+    const head = `**[${entry.guildName}](${link})** *(${entry.guildRealm})* — ${dateRange(first, last)}`;
     const lines = entry.stints.map((st) => {
       const kills = `${st.kills} Mythic kill${st.kills === 1 ? '' : 's'}`;
       return `${st.raidName} · ${kills} · ${dateRange(st.first, st.last)} · ${st.characters.join(', ')}`;
@@ -3839,7 +3895,7 @@ function logLine(entry: BossEvidence, bossCount: number): string {
   const status =
     entry.kind === 'kill'
       ? entry.date
-        ? `first kill ${entry.date.slice(0, 10)}`
+        ? `first kill ${discordDate(entry.date)}`
         : 'killed'
       : `wiping, best ${(entry.percent ?? 100).toFixed(1)}%`;
   const link = `[report](https://www.warcraftlogs.com/reports/${entry.reportCode})`;
@@ -4422,8 +4478,8 @@ describe('aggregateGuildHistory', () => {
     expect(out[0].guildName).toBe('Hindsight');
     expect(out[0].stints[0].raidName).toBe('VS / DR / MQD');
     expect(out[0].stints[0].kills).toBe(3);
-    expect(out[0].stints[0].first).toBe('2026-04-23');
-    expect(out[0].stints[0].last).toBe('2026-07-16');
+    expect(out[0].stints[0].first).toBe('2026-04-23T00:00:00.000Z');
+    expect(out[0].stints[0].last).toBe('2026-07-16T00:00:00.000Z');
     expect(out[0].stints[0].characters).toEqual(['Dödsleif', 'Dödslock']);
   });
 
@@ -4637,17 +4693,20 @@ export function aggregateGuildHistory(
         }
       }
 
-      const day = entry.firstDefeated.slice(0, 10);
+      // Keep the full ISO timestamp: the renderer turns it into a Discord
+      // timestamp (which needs the time), and ISO strings still compare
+      // lexicographically for min/max.
+      const at = entry.firstDefeated;
       const stint = guild.raids.get(raidName) ?? {
         raidName,
         kills: 0,
-        first: day,
-        last: day,
+        first: at,
+        last: at,
         characters: [] as string[],
       };
       stint.kills++;
-      if (day < stint.first) stint.first = day;
-      if (day > stint.last) stint.last = day;
+      if (at < stint.first) stint.first = at;
+      if (at > stint.last) stint.last = at;
       if (!stint.characters.includes(character)) stint.characters.push(character);
       guild.raids.set(raidName, stint);
     }
@@ -5102,7 +5161,11 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       await deps.editMessage(channelId, job.alts_message_id, pages[0]);
     }
     if (job.guilds_message_id) {
-      await deps.editMessage(channelId, job.guilds_message_id, renderGuildHistory(guilds, footer));
+      await deps.editMessage(
+        channelId,
+        job.guilds_message_id,
+        renderGuildHistory(guilds, applicant.region, footer),
+      );
     }
     if (job.logs_message_id) {
       await deps.editMessage(
