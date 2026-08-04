@@ -24,7 +24,7 @@ export function buildIntelPage(
   if (findings.length === 0) return null;
   const pages = renderFoundCharacters(findings, applicantName, region);
   const index = page - 1;
-  if (index < 0 || index >= pages.length) return null;
+  if (!Number.isInteger(index) || index < 0 || index >= pages.length) return null;
   return { description: pages[index], page, totalPages: pages.length };
 }
 
@@ -46,7 +46,7 @@ export function buildGuildHistoryPage(
   const entries = getGuildHistory(jobId);
   const pages = renderGuildHistory(entries, region);
   const index = page - 1;
-  if (index < 0 || index >= pages.length) return null;
+  if (!Number.isInteger(index) || index < 0 || index >= pages.length) return null;
   return { description: pages[index], page, totalPages: pages.length };
 }
 
@@ -54,7 +54,7 @@ async function handleIntelPage(interaction: ButtonInteraction, params: string[])
   // customId: intelpage:{jobId}:{page}
   const jobId = Number(params[0]);
   const page = Number(params[1]);
-  const job = getJob(jobId);
+  const job = Number.isInteger(jobId) ? getJob(jobId) : undefined;
   const built = job ? buildIntelPage(jobId, page, job.character_name, job.character_region) : null;
 
   if (!built) {
@@ -80,7 +80,7 @@ async function handleIntelGuildPage(
   // customId: intelguildpage:{jobId}:{page}
   const jobId = Number(params[0]);
   const page = Number(params[1]);
-  const job = getJob(jobId);
+  const job = Number.isInteger(jobId) ? getJob(jobId) : undefined;
   const built = job ? buildGuildHistoryPage(jobId, page, job.character_region) : null;
 
   if (!built) {

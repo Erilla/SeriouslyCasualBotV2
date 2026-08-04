@@ -11,8 +11,20 @@ import {
   addFinding,
   setGuildHistory,
 } from '../../src/functions/applications/intel/jobStore.js';
-import { buildIntelPage, buildGuildHistoryPage } from '../../src/interactions/intelPagination.js';
+import {
+  buildIntelPage,
+  buildGuildHistoryPage,
+  buttons,
+} from '../../src/interactions/intelPagination.js';
 import type { GuildHistoryEntry } from '../../src/functions/applications/intel/render.js';
+import type { ButtonInteraction } from 'discord.js';
+
+function mockInteraction() {
+  return {
+    reply: vi.fn().mockResolvedValue(undefined),
+    update: vi.fn().mockResolvedValue(undefined),
+  } as unknown as ButtonInteraction;
+}
 
 const character = { region: 'eu', realm: 'draenor', name: 'Regnipaw' };
 
@@ -50,6 +62,13 @@ describe('buildIntelPage', () => {
 
   it('returns null for an unknown job', () => {
     expect(buildIntelPage(999_999, 1, 'Regnipaw', 'eu')).toBeNull();
+  });
+
+  // FIX ROUND 1: `NaN < 0` and `NaN >= pages.length` are both false, so a
+  // non-numeric page (a malformed customId) must be rejected explicitly
+  // rather than falling through the bounds check.
+  it('returns null for a NaN page', () => {
+    expect(buildIntelPage(jobId, NaN, 'Regnipaw', 'eu')).toBeNull();
   });
 });
 
@@ -107,5 +126,97 @@ describe('buildGuildHistoryPage', () => {
 
   it('returns null for an unknown job', () => {
     expect(buildGuildHistoryPage(999_999, 1, 'eu')).toBeNull();
+  });
+
+  // FIX ROUND 1: same NaN-bypasses-the-bounds-check hazard as buildIntelPage.
+  it('returns null for a NaN page', () => {
+    setGuildHistory(jobId, bigHistory());
+    expect(buildGuildHistoryPage(jobId, NaN, 'eu')).toBeNull();
+  });
+});
+
+// FIX ROUND 1: a malformed customId (missing/non-numeric page or job segment)
+// must produce the handler's specific ephemeral reply, not throw out of
+// EmbedBuilder.setDescription(undefined) into the generic error middleware.
+describe('intelPagination button handlers with malformed params', () => {
+  let jobId: number;
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+    jobId = createJob({ applicationId: 1, targetChannelId: 'c', character });
+    addFinding(jobId, {
+      name: 'Alt0',
+      realm: 'Draenor',
+      className: 'Monk',
+      guildName: 'Rancour',
+      guildRealm: 'Draenor',
+      source: 'fingerprint',
+      confidence: 50,
+      discordStatus: null,
+      discordProfile: null,
+    });
+    setGuildHistory(jobId, [
+      {
+        guildName: 'Rancour',
+        guildRealm: 'Draenor',
+        stints: [
+          {
+            raidName: 'VS / DR / MQD',
+            kills: 5,
+            first: '2026-01-01T00:00:00.000Z',
+            last: '2026-01-05T00:00:00.000Z',
+            characters: ['Regnipaw'],
+          },
+        ],
+      },
+    ]);
+  });
+  afterEach(() => closeDatabase());
+
+  function getHandler(prefix: string) {
+    const handler = buttons.find((b) => b.prefix === prefix);
+    if (!handler) throw new Error(`${prefix} handler not registered`);
+    return handler.handle;
+  }
+
+  it('intelpage replies with the specific message when the page segment is missing', async () => {
+    const interaction = mockInteraction();
+    await getHandler('intelpage')(interaction, [String(jobId)]); // no page segment -> NaN
+
+    expect(interaction.reply).toHaveBeenCalledWith({
+      content: 'That character list is no longer available.',
+      flags: expect.anything(),
+    });
+    expect(interaction.update).not.toHaveBeenCalled();
+  });
+
+  it('intelpage replies with the specific message when the job segment is non-numeric', async () => {
+    const interaction = mockInteraction();
+    await getHandler('intelpage')(interaction, ['not-a-number', '1']);
+
+    expect(interaction.reply).toHaveBeenCalledWith({
+      content: 'That character list is no longer available.',
+      flags: expect.anything(),
+    });
+  });
+
+  it('intelguildpage replies with the specific message when the page segment is missing', async () => {
+    const interaction = mockInteraction();
+    await getHandler('intelguildpage')(interaction, [String(jobId)]); // no page segment -> NaN
+
+    expect(interaction.reply).toHaveBeenCalledWith({
+      content: 'That guild history is no longer available.',
+      flags: expect.anything(),
+    });
+    expect(interaction.update).not.toHaveBeenCalled();
+  });
+
+  it('intelguildpage replies with the specific message when the job segment is non-numeric', async () => {
+    const interaction = mockInteraction();
+    await getHandler('intelguildpage')(interaction, ['not-a-number', '1']);
+
+    expect(interaction.reply).toHaveBeenCalledWith({
+      content: 'That guild history is no longer available.',
+      flags: expect.anything(),
+    });
   });
 });
