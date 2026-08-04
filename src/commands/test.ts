@@ -6,10 +6,15 @@ import {
   MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js';
-import { requireOfficer } from '../utils.js';
+import { requireOfficer, asSendable } from '../utils.js';
 import { audit } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
 import { getDatabase } from '../database/db.js';
+import {
+  collectRaiderIoCharacters,
+  type RaiderIoCharacter,
+} from '../functions/applications/raiderIoName.js';
+import { placeholderEmbed, startIntelJob } from '../functions/applications/intel/placeholders.js';
 
 // Scheduled / background handlers we want manual triggers for (#35).
 import { syncRaiders } from '../functions/raids/syncRaiders.js';
@@ -252,6 +257,12 @@ function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
+/** Accepts one or more space-separated Raider.IO character URLs, parsed the
+ *  same way application answers are so a bad URL fails identically. */
+export function parseIntelUrls(raw: string): RaiderIoCharacter[] {
+  return collectRaiderIoCharacters([{ answer: raw }]);
+}
+
 export default {
   devOnly: true,
   data: new SlashCommandBuilder()
@@ -285,6 +296,17 @@ export default {
       sub
         .setName('clear_channel')
         .setDescription('Delete all messages (<14 days old) in the current channel'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('applicant_intel')
+        .setDescription('Run the applicant intel sweep and post the results in this channel')
+        .addStringOption((opt) =>
+          opt
+            .setName('url')
+            .setDescription('Raider.IO character URL(s), space-separated — all are used')
+            .setRequired(true),
+        ),
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -389,6 +411,55 @@ export default {
           content: `✗ clear_channel failed after ${elapsed}.\n\`\`\`\n${sanitizeForCodeBlock(error.message).slice(0, 1500)}\n\`\`\``,
         });
       }
+      return;
+    }
+
+    if (sub === 'applicant_intel') {
+      const characters = parseIntelUrls(interaction.options.getString('url', true));
+      if (characters.length === 0) {
+        await interaction.editReply({
+          content: 'No Raider.IO character URL found in that input.',
+        });
+        return;
+      }
+
+      const channel = asSendable(interaction.channel);
+      if (!channel) {
+        await interaction.editReply({ content: 'This channel cannot receive messages.' });
+        return;
+      }
+
+      // Same placeholders as a real application, so the runner exercises the
+      // production edit path rather than a test-only renderer.
+      const altsMessage = await channel.send({ embeds: [placeholderEmbed('alts')] });
+      const guildsMessage = await channel.send({ embeds: [placeholderEmbed('guilds')] });
+      const logsMessage = await channel.send({ embeds: [placeholderEmbed('logs')] });
+
+      const jobId = startIntelJob({
+        applicationId: null,
+        targetChannelId: channel.id,
+        // Every URL supplied, exactly as multiple characters named across
+        // application answers are treated.
+        characters,
+        altsMessageId: altsMessage.id,
+        guildsMessageId: guildsMessage.id,
+        logsMessageId: logsMessage.id,
+      });
+
+      await audit(
+        interaction.user,
+        'ran applicant intel',
+        `${characters[0].name}-${characters[0].realm} (job #${jobId})`,
+      );
+      const label =
+        characters.length === 1
+          ? `**${characters[0].name}**-${characters[0].realm}`
+          : `${characters.length} characters (primary **${characters[0].name}**-${characters[0].realm})`;
+      await interaction.editReply({
+        content:
+          `Started intel job #${jobId} for ${label}. ` +
+          'The three messages above will fill in as the sweep completes (up to a few minutes).',
+      });
       return;
     }
 
