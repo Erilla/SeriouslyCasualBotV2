@@ -189,7 +189,6 @@ export function renderGuildHistory(
     if (currentHasBlock && current.length + chunk.length > PAGE_BUDGET) {
       pages.push(current.trimEnd());
       current = '';
-      currentHasBlock = false;
     }
     current += chunk;
     currentHasBlock = true;
