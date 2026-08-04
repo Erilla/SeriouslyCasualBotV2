@@ -110,6 +110,20 @@ describe('buildPageButtons', () => {
     expect(next.data).toMatchObject({ custom_id: 'page:raiders:3:5' });
   });
 
+  // FINAL REVIEW M3: handlers registered under their own prefix parse
+  // `<prefix>:<jobId>:<page>`, which the default `page:<name>:<page>:<total>`
+  // shape would misroute to the generic `page` cache handler.
+  it('uses a caller-supplied custom id shape when one is given', () => {
+    const row = buildPageButtons('intelpage', 2, 5, (target) => `intelpage:42:${target}`);
+    const [prev, next] = row!.components;
+    expect(prev.data).toMatchObject({ custom_id: 'intelpage:42:1' });
+    expect(next.data).toMatchObject({ custom_id: 'intelpage:42:3' });
+  });
+
+  it('still returns null for a single page even with a custom id builder', () => {
+    expect(buildPageButtons('intelpage', 1, 1, (t) => `intelpage:42:${t}`)).toBeNull();
+  });
+
   it('disables Previous button on first page', () => {
     const row = buildPageButtons('mycommand', 1, 3);
     const [prev] = row!.components;

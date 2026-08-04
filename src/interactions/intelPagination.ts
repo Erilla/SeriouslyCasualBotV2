@@ -69,7 +69,14 @@ async function handleIntelPage(interaction: ButtonInteraction, params: string[])
   if (built.totalPages > 1) {
     embed.setFooter({ text: `Page ${built.page}/${built.totalPages}` });
   }
-  const buttonsRow = buildPageButtons(`intelpage:${jobId}`, built.page, built.totalPages);
+  // Explicit id shape: the default `page:<commandName>:...` form would be
+  // routed by the registry to the generic `page` handler, not back to here.
+  const buttonsRow = buildPageButtons(
+    'intelpage',
+    built.page,
+    built.totalPages,
+    (target) => `intelpage:${jobId}:${target}`,
+  );
   await interaction.update({ embeds: [embed], components: buttonsRow ? [buttonsRow] : [] });
 }
 
@@ -95,7 +102,12 @@ async function handleIntelGuildPage(
   if (built.totalPages > 1) {
     embed.setFooter({ text: `Page ${built.page}/${built.totalPages}` });
   }
-  const buttonsRow = buildPageButtons(`intelguildpage:${jobId}`, built.page, built.totalPages);
+  const buttonsRow = buildPageButtons(
+    'intelguildpage',
+    built.page,
+    built.totalPages,
+    (target) => `intelguildpage:${jobId}:${target}`,
+  );
   await interaction.update({ embeds: [embed], components: buttonsRow ? [buttonsRow] : [] });
 }
 

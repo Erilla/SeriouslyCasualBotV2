@@ -62,25 +62,34 @@ export function buildPageEmbed(
  * Build Previous/Next navigation buttons for paginated results.
  * Custom IDs follow the pattern: page:{commandName}:{targetPage}:{totalPages}
  * Returns null when totalPages <= 1 (no navigation needed).
+ *
+ * `buildCustomId` overrides that id shape for handlers registered under their
+ * OWN prefix rather than the shared `page:` cache handler — applicant intel's
+ * durable pagination parses `<prefix>:<jobId>:<page>`, and building it the
+ * default way would produce `page:intelpage:...`, which the registry routes to
+ * the generic `page` handler (a guaranteed "this list has expired" reply).
  */
 export function buildPageButtons(
   commandName: string,
   currentPage: number,
   totalPages: number,
+  buildCustomId?: (targetPage: number) => string,
 ): ActionRowBuilder<MessageActionRowComponentBuilder> | null {
   if (totalPages <= 1) return null;
 
   const prevPage = currentPage - 1;
   const nextPage = currentPage + 1;
+  const customId = (target: number): string =>
+    buildCustomId ? buildCustomId(target) : `page:${commandName}:${target}:${totalPages}`;
 
   const prevButton = new ButtonBuilder()
-    .setCustomId(`page:${commandName}:${prevPage}:${totalPages}`)
+    .setCustomId(customId(prevPage))
     .setLabel('Previous')
     .setStyle(ButtonStyle.Secondary)
     .setDisabled(currentPage <= 1);
 
   const nextButton = new ButtonBuilder()
-    .setCustomId(`page:${commandName}:${nextPage}:${totalPages}`)
+    .setCustomId(customId(nextPage))
     .setLabel('Next')
     .setStyle(ButtonStyle.Secondary)
     .setDisabled(currentPage >= totalPages);
