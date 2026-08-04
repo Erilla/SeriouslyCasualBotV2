@@ -130,10 +130,21 @@ That applicant applied on `Brentpriest`, which reaches 4/8 on its own, while the
 9/9-progressing on `Brenthunter`. Both facts matter and neither is legible without the label.
 
 **Merge rule.** Tiers are pooled across characters; within a tier each boss keeps the single
-strongest piece of evidence — a kill beats any wipe, and between two wipes the lower boss
-percentage wins; ties break to the more recent report. The three-links-per-tier and
-five-tiers caps then apply to the pooled result, so an alt's deeper progression can displace
-the applicant's own line rather than being appended to it.
+strongest piece of evidence, resolved in this order:
+
+1. A kill beats any wipe
+2. Between two wipes, the lower boss percentage wins
+3. Still tied — **prefer the applicant's own character**
+4. Still tied — the more recent report
+
+Rule 3 exists because of an observed regression: `Brentdh` also killed Rasha'nan at 4/8 and
+more recently than `Brentpriest`, so a recency-only tie-break removed the applicant's own
+character from the message entirely. A reviewer should always see what the character in front
+of them has done when the evidence is otherwise equal.
+
+The three-links-per-tier and five-tier caps then apply to the pooled result, so an alt's
+genuinely deeper progression can still displace the applicant's line rather than being
+appended to it.
 
 ## Feature 2: Alt Discovery
 
@@ -415,8 +426,15 @@ spent. Characters with any Mythic kill go to the front of the queue, ranked by k
 `Brentpriest-Draenor`'s 19 claimed characters this flagged exactly `Brenthunter` (7/9 M) and
 `Brentprietwo` (6/9 M) — the same two a WCL probe picks, for free.
 
-**Stage 2 — WCL fills the remaining slots.** Any slots left over are filled by
-`recentReports(limit: 20)` filtered to raid zones, most recent first.
+**Stage 2 — WCL fills the remaining slots by tier coverage, not recency.** Probe each unchosen
+character with `recentReports(limit: 20)` filtered to raid zones. That probe returns the set of
+tiers the character has raided, so fill the slots greedily: each pick is the character adding
+the most tiers not already covered by the characters chosen so far.
+
+Recency is the wrong key. On `Brentpriest` it selected `Brentwartwo` and `Brentmagetwo`, whose
+only tier was VS / DR / MQD — already covered by `Brenthunter`. Two sweeps, nothing learned,
+and the result stalled at three tiers. Greedy coverage picked `Brentdh` instead and surfaced a
+fourth tier, Aberrus, with Dragonflight wipe progression that recency never reached.
 
 Stage 2 is required because `raid_progression` has three blind spots, all observed:
 
@@ -648,8 +666,10 @@ Unit tests cover the pure functions with fixture data:
 - Report dedupe across bosses; the three-per-raid and five-raid caps
 - Cross-character merge: kill beats wipe, lower boss % beats higher, recency breaks ties, and
   each surviving line keeps the right character attribution
-- Sweep selection: Mythic-kill characters ordered first, WCL recency filling the remainder,
-  the applicant's character always included even at zero reported kills
+- Sweep selection: Mythic-kill characters ordered first, greedy tier coverage filling the
+  remainder, the applicant's character always included even at zero reported kills
+- Greedy coverage: a candidate whose tiers are already covered is not chosen over one that
+  adds a new tier, regardless of recency
 - Fingerprint comparison: match, non-match, and insufficient-common-achievements cases
 - BFS: multi-guild seeding, guild dedupe, cap enforcement, truncation flag
 - Rate-limit classification: 429 with and without `Retry-After`, `CircuitOpenError`, WCL
