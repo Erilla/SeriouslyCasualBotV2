@@ -599,8 +599,8 @@ JSON blob on every step:
 ```sql
 applicant_intel_jobs (
   id INTEGER PRIMARY KEY,
-  application_id INTEGER NOT NULL,
-  thread_id TEXT,
+  application_id INTEGER,        -- NULL for ad-hoc /test runs
+  target_channel_id TEXT,        -- forum thread in production, any channel under /test
   character_name TEXT NOT NULL,
   character_realm TEXT NOT NULL,
   character_region TEXT NOT NULL,
@@ -745,6 +745,40 @@ Phases run in the order recorded on the job, each resumable independently:
 Each phase edits the relevant placeholder as its results firm up, so the thread fills in
 progressively rather than all at once at the end.
 
+## Test command
+
+Neither feature can be exercised without submitting a real application, which is a poor
+feedback loop for something with this much API surface. `/test` gains a subcommand that runs the
+whole pipeline against an arbitrary character and posts the results in the channel it was
+invoked from.
+
+```
+/test applicant_intel url:https://raider.io/characters/eu/draenor/Brentpriest
+```
+
+- **A subcommand of `/test`**, not a new top-level command, matching how every other manual
+  trigger is exposed. It inherits `devOnly: true` (so `deploy-commands.ts` skips it in
+  production), the `Administrator` default permission, and the `requireOfficer` check.
+- **`url` (required)** is parsed with the same `parseRaiderIoCharacter` used on application
+  answers, so a malformed URL fails the same way it would in production. Multiple URLs may be
+  supplied space-separated, exercising the multi-character path.
+- **It runs the real job**, not a parallel implementation. The command creates an
+  `applicant_intel_jobs` row targeting the invoking channel, posts the two placeholders there,
+  and returns immediately with an ephemeral `started job #N`. The runner then edits them exactly
+  as it would in a forum thread — including pause, resume and the rate-limited footer.
+- **Audited** via `audit(interaction.user, 'ran applicant intel', character)`, consistent with
+  the other `/test` subcommands.
+
+Two schema consequences, both small:
+
+- `applicant_intel_jobs.application_id` becomes nullable — an ad-hoc run has no application.
+- `thread_id` is renamed `target_channel_id`, since the destination is a forum thread in
+  production and a plain channel here. Nothing else cares which it is.
+
+Testing the real path this way is the point: a separate test-only renderer would let the two
+drift, and the failure modes worth catching (attribution, naming drift, rate-limit pauses) only
+appear in the real one.
+
 ## Module layout
 
 | Module                                                          | Responsibility                                                                                           |
@@ -764,6 +798,7 @@ progressively rather than all at once at the end.
 | `src/functions/applications/intel/rateLimit.ts`                 | Pure: classify an error as pausable, compute `resume_after`                                              |
 | `src/functions/applications/intel/resumeJobs.ts`                | Scheduler task: pick up paused/pending jobs, crash recovery                                              |
 | `src/interactions/intelPagination.ts`                           | Durable `intelpage:` handler rebuilding pages from `applicant_intel_findings`                            |
+| `src/commands/test.ts`                                          | New `applicant_intel` subcommand (existing file)                                                         |
 
 Selection, ranking and rendering are pure functions taking plain data, matching how
 `extractMatchingCodes` is structured and tested today.
@@ -816,6 +851,8 @@ Unit tests cover the pure functions with fixture data:
   points pre-empt, and non-pausable errors that must not pause the job
 - Backoff schedule, including the attempt cap and the 7-day abandonment
 - Resume: a job with a half-finished queue continues without redoing `scanned` characters
+- `/test applicant_intel`: a rejected URL reports the same parse failure as an application, and
+  a job with no `application_id` posts to the invoking channel
 - Both renderers, including the empty cases and the rate-limited footer
 
 Service functions are tested against a mocked `httpRequest`. No test performs a live API call.
