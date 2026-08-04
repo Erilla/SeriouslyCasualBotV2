@@ -148,7 +148,15 @@ export async function gatherMythicLogs(
 
   const evidenceByZone = new Map<number, BossEvidence[]>();
 
-  for (const zone of zones) {
+  // Newest-first, same order as the final sort, and stop once MAX_TIERS zones
+  // have actually produced evidence — the final slice keeps the five newest
+  // zones WITH evidence, so gathering more than that is pure waste against a
+  // points-billed API. A zone that yields nothing must not consume a slot.
+  const zonesNewestFirst = [...zones].sort((a, b) => b.id - a.id);
+  let producedZones = 0;
+  for (const zone of zonesNewestFirst) {
+    if (producedZones >= MAX_TIERS) break;
+
     for (const c of swept) {
       const kills = await deps.getZoneKills(c, zone.id);
       if (kills.length === 0) continue;
@@ -174,6 +182,8 @@ export async function gatherMythicLogs(
         evidenceByZone.set(zone.id, list);
       }
     }
+
+    if ((evidenceByZone.get(zone.id)?.length ?? 0) > 0) producedZones++;
   }
 
   // One wipe line per tier: the boss immediately after the deepest kill.

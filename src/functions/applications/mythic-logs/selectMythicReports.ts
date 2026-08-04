@@ -102,11 +102,17 @@ export interface BossEvidence {
   isApplicantCharacter: boolean;
 }
 
-/** Lower is better. */
+/**
+ * Lower is better. An undated kill (no WCL/Raider.IO name match) must sort
+ * LAST among kills, never first: `?? Infinity` rather than `?? 0`, because a
+ * missing date means "unknown", not "earliest" — a naming mismatch must cost
+ * only a date, never the boss's attribution to whoever actually has a
+ * verified earlier kill.
+ */
 function rank(e: BossEvidence): [number, number, number, number] {
   return [
     e.kind === 'kill' ? 0 : 1,
-    e.kind === 'kill' ? new Date(e.date ?? 0).getTime() : (e.percent ?? 100),
+    e.kind === 'kill' ? (e.date ? new Date(e.date).getTime() : Infinity) : (e.percent ?? 100),
     e.isApplicantCharacter ? 0 : 1,
     e.kind === 'kill' ? 0 : -new Date(e.date ?? 0).getTime(),
   ];

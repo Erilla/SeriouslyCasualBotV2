@@ -154,6 +154,15 @@ describe('mergeBossEvidence', () => {
     expect(merged[0].who).toBe('Brentpriest');
   });
 
+  it('prefers a dated kill over an undated kill on the same boss, and keeps its date', () => {
+    const merged = mergeBossEvidence([
+      evidence({ who: 'Brentwartwo', date: undefined, reportCode: 'UNDATED' }),
+      evidence({ who: 'Brenthunter', date: '2026-06-01', reportCode: 'DATED' }),
+    ]);
+    expect(merged[0].who).toBe('Brenthunter');
+    expect(merged[0].date).toBe('2026-06-01');
+  });
+
   it('keeps one entry per encounter', () => {
     const merged = mergeBossEvidence([
       evidence({ encounterId: 3133, bossIndex: 2 }),

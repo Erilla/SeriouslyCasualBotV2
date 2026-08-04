@@ -208,4 +208,15 @@ describe('gatherMythicLogs', () => {
     );
     expect(tiers).toHaveLength(5);
   });
+
+  it('stops gathering once five zones have produced evidence, wasting no calls on the rest', async () => {
+    const zones = Array.from({ length: 8 }, (_, i) => ({ ...zone, id: 40 + i }));
+    const getZoneKills = vi.fn(async () => [{ encounterId: 3176, totalKills: 1 }]);
+    const tiers = await gatherMythicLogs([applicant], [hunter], zones, deps({ getZoneKills }));
+    expect(tiers).toHaveLength(5);
+    // One character swept, one call per zone actually gathered — every zone
+    // here yields evidence, so exactly MAX_TIERS calls should be made, not 8.
+    expect(getZoneKills.mock.calls.length).toBeLessThan(8);
+    expect(getZoneKills.mock.calls.length).toBe(5);
+  });
 });
