@@ -223,3 +223,71 @@ describe('pruneCache', () => {
     expect(keys).toHaveLength(2);
   });
 });
+
+describe('fingerprint cache payload is compressed', () => {
+  beforeEach(() => {
+    mocked.mockReset();
+    createTables(getDatabase(':memory:'));
+  });
+  afterEach(() => closeDatabase());
+
+  /**
+   * Disk pressure, measured live: 1,775 cached fingerprints took the test bot's
+   * database from ~15 MB to 108 MB (~82 KB each) against a 434 MB volume, so two
+   * applicants at the 3,000 cap would fill it and a full volume fails EVERY
+   * SQLite write in the bot. Compressing the payload is what keeps that in hand.
+   */
+  const big = {
+    achievements: Array.from({ length: 2000 }, (_, i) => ({
+      id: 1000 + i,
+      completed_timestamp: 1_700_000_000_000 + i * 37_000,
+    })),
+  };
+
+  const storedPayload = (): string =>
+    (
+      getDatabase()
+        .prepare("SELECT payload FROM api_cache WHERE key LIKE 'fingerprint:%'")
+        .get() as {
+        payload: string;
+      }
+    ).payload;
+
+  it('stores the entries compressed, not as raw JSON', async () => {
+    mocked.mockResolvedValueOnce(big as never);
+    await getCharacterFingerprint(character);
+
+    const payload = storedPayload();
+    // Raw JSON would begin with the array-of-pairs structure.
+    expect(payload.startsWith('"[[')).toBe(false);
+    expect(payload).not.toContain('1700000000000');
+
+    const rawJsonBytes = JSON.stringify(
+      big.achievements.map((a) => [a.id, a.completed_timestamp]),
+    ).length;
+    expect(payload.length).toBeLessThan(rawJsonBytes / 1.5);
+  });
+
+  it('round-trips a compressed payload back into the same fingerprint', async () => {
+    mocked.mockResolvedValueOnce(big as never);
+    const first = await getCharacterFingerprint(character);
+
+    const second = await getCharacterFingerprint(character);
+    expect(mocked).toHaveBeenCalledTimes(1);
+    expect(second).toBeInstanceOf(Map);
+    expect(second!.size).toBe(first!.size);
+    expect(second!.get(1000)).toBe(1_700_000_000_000);
+    expect(second!.get(2999)).toBe(1_700_000_000_000 + 1999 * 37_000);
+  });
+
+  it('still reads a legacy uncompressed entry written before this change', async () => {
+    const key = 'fingerprint:eu:argent-dawn:driptinus';
+    getDatabase()
+      .prepare('INSERT INTO api_cache (key, payload, fetched_at) VALUES (?, ?, ?)')
+      .run(key, JSON.stringify([[7, 1_700_000_000_777]]), new Date().toISOString());
+
+    const fp = await getCharacterFingerprint(character);
+    expect(mocked).not.toHaveBeenCalled();
+    expect(fp!.get(7)).toBe(1_700_000_000_777);
+  });
+});

@@ -1,3 +1,4 @@
+import { gunzipSync, gzipSync } from 'zlib';
 import { config } from '../config.js';
 import { httpRequest, CircuitOpenError, HttpError } from './httpClient.js';
 import { getCachedOrFetch, ttl } from './apiCache.js';
@@ -99,13 +100,17 @@ type FingerprintEntries = [number, number][];
  * character earning more — correctness alone would tolerate a much longer TTL.
  *
  * 48 hours is a DISK-PRESSURE limit, not a freshness one. DO NOT RAISE IT BACK
- * TO A WEEK without re-doing this arithmetic: each fingerprint is ~85 KB of
- * JSON in `api_cache` and a maxed sweep caches 3,000 of them, so one applicant
- * is ~255 MB. `dailyBackup` then copies the whole database and keeps 7 copies
- * on the same Railway volume, an 8x amplification — three applicants in a
- * recruitment week at a 7-day TTL reached ~750 MB live and up to ~6 GB of
- * backups, and exhausting that volume fails EVERY SQLite write in the bot, not
- * just this feature's.
+ * TO A WEEK without re-doing this arithmetic, measured on the test bot: 1,775
+ * cached fingerprints took the database from ~15 MB to 108 MB (~82 KB each as
+ * raw JSON) against a 434 MB volume. At the 3,000-character cap that is ~235 MB
+ * for a single applicant, so two inside the TTL window would fill the volume —
+ * and exhausting it fails EVERY SQLite write in the bot, not just this feature's.
+ * Compression (see encodeFingerprint) cuts that to roughly 98 MB; the TTL is the
+ * other half of keeping it bounded.
+ *
+ * `dailyBackup` is NOT part of this problem: it writes to
+ * `resolve(process.cwd(), 'backups')`, the container's ephemeral filesystem,
+ * not the mounted volume.
  *
  * 48 hours still delivers what the cache is actually for: a recruitment burst
  * shares warm guild rosters across applicants, which happens within a day or
@@ -119,6 +124,29 @@ export const FINGERPRINT_TTL_MS = 48 * 60 * 60 * 1000;
  * against re-walking every applicant's guild from scratch.
  */
 export const GUILD_ROSTER_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A fingerprint is the single bulkiest thing this bot caches — thousands of
+ * `[achievementId, timestamp]` pairs — and it is cached per character across a
+ * whole guild roster, so the raw JSON dominates the volume (see
+ * FINGERPRINT_TTL_MS for the measured figures). gzip gets ~3.3x on real
+ * payloads; base64 gives a third of that back to keep it a JSON-safe string in
+ * the shared `api_cache` TEXT column, for a net ~2.4x.
+ */
+function encodeFingerprint(entries: FingerprintEntries): string {
+  return gzipSync(Buffer.from(JSON.stringify(entries), 'utf8')).toString('base64');
+}
+
+/**
+ * Entries cached before compression landed are a plain array, so they stay
+ * readable until their TTL expires rather than needing a cache flush on deploy.
+ */
+function decodeFingerprint(cached: string | FingerprintEntries): FingerprintEntries {
+  if (Array.isArray(cached)) return cached;
+  return JSON.parse(
+    gunzipSync(Buffer.from(cached, 'base64')).toString('utf8'),
+  ) as FingerprintEntries;
+}
 
 /** Throws on any failure so nothing is cached; the caller decides what is fatal. */
 async function fetchFingerprintEntries(c: RaiderIoCharacter): Promise<FingerprintEntries> {
@@ -229,9 +257,12 @@ export async function getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fin
 
   let entries: FingerprintEntries;
   try {
-    entries = await getCachedOrFetch<FingerprintEntries>(key, ttl(FINGERPRINT_TTL_MS), () =>
-      fetchFingerprintEntries(c),
+    const cached = await getCachedOrFetch<string | FingerprintEntries>(
+      key,
+      ttl(FINGERPRINT_TTL_MS),
+      async () => encodeFingerprint(await fetchFingerprintEntries(c)),
     );
+    entries = decodeFingerprint(cached);
   } catch (error) {
     if (error instanceof CircuitOpenError) throw error;
     // status alone is insufficient: httpRequest's retry-exhaustion path
