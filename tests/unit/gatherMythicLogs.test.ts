@@ -87,12 +87,33 @@ describe('aggregateGuildHistory', () => {
     expect(out).toEqual([]);
   });
 
-  it('falls back to the Raider.IO slug when no WCL zone matches', () => {
+  it('falls back to the Raider.IO slug when no WCL zone matches, made readable', () => {
     const out = aggregateGuildHistory(
       [kills('X', [['some-future-boss', '2026-01-01T00:00:00.000Z', 'G']])],
       [zone],
     );
-    expect(out[0].stints[0].raidName).toBe('some-future-boss');
+    expect(out[0].stints[0].raidName).toBe('Some Future Boss');
+  });
+
+  /**
+   * The fallback is not rare: single-boss zones are filtered out of the WCL
+   * catalogue, so a one-boss raid can never match and its slug is all there is.
+   * The live test sweep published `rotmire` in the guild history for that reason.
+   */
+  it('title-cases a single-word slug', () => {
+    const out = aggregateGuildHistory(
+      [kills('X', [['rotmire', '2026-06-17T18:38:09.000Z', 'G']])],
+      [zone],
+    );
+    expect(out[0].stints[0].raidName).toBe('Rotmire');
+  });
+
+  it('keeps particles lowercase inside a slug', () => {
+    const out = aggregateGuildHistory(
+      [kills('X', [['crown-of-the-cosmos-reborn', '2026-01-01T00:00:00.000Z', 'G']])],
+      [{ ...zone, encounters: [] }],
+    );
+    expect(out[0].stints[0].raidName).toBe('Crown of the Cosmos Reborn');
   });
 });
 

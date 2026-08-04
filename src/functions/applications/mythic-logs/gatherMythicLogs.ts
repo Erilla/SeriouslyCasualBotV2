@@ -17,6 +17,29 @@ import type { MythicKillDate } from '../../../services/raiderioInternal.js';
 
 export const MAX_TIERS = 5;
 
+/** Lowercase inside a title, capitalised only when they lead it. */
+const TITLE_PARTICLES = new Set(['of', 'the', 'and', 'in', 'at', 'to', 'a', 'an']);
+
+/**
+ * Best-effort display name for a Raider.IO slug used as a raid-name fallback.
+ *
+ * The fallback fires more often than it looks: `selectMythicRaidZones` drops
+ * single-boss zones, so a one-boss raid has no WCL zone to match and its slug is
+ * all we have. The live test sweep surfaced `rotmire` in the guild history for
+ * exactly that reason. Dropping the raid entirely would lose real evidence, so
+ * this only makes the slug readable — it never decides whether a raid appears.
+ */
+function readableRaidName(slug: string): string {
+  return slug
+    .split('-')
+    .map((word, i) =>
+      !word || (i > 0 && TITLE_PARTICLES.has(word))
+        ? word
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    )
+    .join(' ');
+}
+
 /**
  * Guild history, from the same kill payload the dates come from: every kill entry
  * names the guild it happened with, so this costs no extra requests.
@@ -45,7 +68,7 @@ export function aggregateGuildHistory(
       };
       byGuild.set(gk, guild);
 
-      let raidName = entry.bossName;
+      let raidName = readableRaidName(entry.bossName);
       for (const zone of zones) {
         if (matchBossName(zone, entry.bossName)) {
           raidName = zone.name;
