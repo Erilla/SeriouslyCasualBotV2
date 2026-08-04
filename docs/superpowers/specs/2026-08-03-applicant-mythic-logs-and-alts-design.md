@@ -683,15 +683,28 @@ than empty.
 ### Partial results are published, not withheld
 
 Because the placeholders already exist (see Thread layout under Integration), a paused job can
-show its progress rather than sitting blank. On pause the runner edits its messages with whatever it has and a footer:
+show its progress rather than sitting blank. On pause the runner edits **both** messages —
+found-characters and logs — with whatever it has so far, plus a footer naming the service and
+the next retry:
 
 ```
-*Rate limited on blizzard — 1,240 of ~3,000 characters scanned. Resuming after 14:05.*
+*Rate limited on blizzard — 1,240 of ~3,000 characters scanned. Retrying <t:1785325500:R>.*
 ```
 
-On resume it edits the same messages again, and the footer is removed when the job completes.
-A reviewer looking at a thread mid-sweep sees real findings and an honest statement of what is
-still missing, never a silently truncated list that looks complete.
+Both carry the footer even when only one phase is blocked, because a reviewer may read either
+in isolation and needs to know the picture is provisional. The retry time is a Discord relative
+timestamp (`<t:…:R>` renders as "in 14 minutes"), so it is correct in every reader's timezone
+and stays accurate as the wait elapses — a formatted clock time would be neither.
+
+On resume the runner edits the same messages again, and the footer is removed once the job
+completes. A reviewer looking at a thread mid-sweep sees real findings and an honest statement
+of what is still missing, never a silently truncated list that looks complete.
+
+On abandonment the footer becomes terminal, with no retry offered:
+
+```
+*Incomplete — rate limited on blizzard, gave up after 7 days. 1,240 of ~3,000 characters scanned.*
+```
 
 Nothing found is ever lost to a pause: every scanned character, queue item and finding is
 committed to the tables as it happens, so a pause costs time, not work.
@@ -853,7 +866,8 @@ Unit tests cover the pure functions with fixture data:
 - Resume: a job with a half-finished queue continues without redoing `scanned` characters
 - `/test applicant_intel`: a rejected URL reports the same parse failure as an application, and
   a job with no `application_id` posts to the invoking channel
-- Both renderers, including the empty cases and the rate-limited footer
+- Both renderers, including the empty cases, the paused footer with its retry timestamp, and
+  the terminal abandonment footer
 
 Service functions are tested against a mocked `httpRequest`. No test performs a live API call.
 No new environment variables are introduced, so the `ci.yml` stub block is unchanged.
