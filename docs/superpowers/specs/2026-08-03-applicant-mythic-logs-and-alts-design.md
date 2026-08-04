@@ -43,6 +43,17 @@ already exist. Keep a name-only wrapper so `deriveCharacterNameFromAnswers` and 
 tests are unaffected. Region is uppercased for WCL (`EU`); the realm slug passes through
 unchanged.
 
+**Every character named in the application is collected, not just the first.** The existing
+helper returns the first Raider.IO URL it finds; the new one scans all answers and returns all
+distinct character URLs. Applicants routinely mention a second character ("I can also play my
+alt <link>"), and those characters:
+
+- are always swept for logs, exempt from the sweep caps and the selection heuristics
+- are labelled `from the application` in the found-characters message
+- count for kills even when those kills post-date the account's first kill (see above)
+
+The first URL remains the applicant's primary character for the thread title and identity.
+
 If no Raider.IO URL is present in the answers, both features no-op. The existing
 Discord-display-name fallback is not a character identity and cannot be looked up.
 
@@ -63,15 +74,50 @@ Discord-display-name fallback is not a character identity and cannot be looked u
 3. **Tier selection.** Group candidates by zone, sort each group newest-first, and take the
    five tiers with the most recent activity.
 
-4. **Fights pass.** For each candidate report, query
-   `fights(killType: All, difficulty: 5)`. Filter to `encounterID`s present in that zone's
-   catalogue — necessary because raid reports also contain Mythic+ fights and trash fights
-   with `difficulty: null`. Accumulate per boss: kill count, wipe count, and the lowest
-   `fightPercentage` seen.
+4. **Kill dates from Raider.IO.** `GET /api/characters/{region}/{realm}/{name}/raid-progress?tier={n}`
+   returns `encountersDefeated.mythic[]` per raid, each entry carrying `slug`,
+   **`firstDefeated`**, `lastDefeated`, `numKills` and the guild it was killed with. The `tier`
+   parameter is a numeric ordinal and reaches back through the window — `34` returns Manaforge
+   Omega, `33` Liberation of Undermine, `30` Aberrus. One call per character per tier, no WCL
+   points.
 
-5. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
+   **Raider.IO supplies dates; WCL remains the authority on what was killed.** The same
+   `Brenthunter` payload lists 7 Mythic kills but omits Crown of the Cosmos, which WCL shows him
+   killing — the character was last crawled 2026-05-15 and the kill post-dates that. Treating
+   the absence of an `encountersDefeated` entry as "not killed" would report a killed boss as
+   wipe progress.
+
+   So the field is used as a fast path and for display, never as a gate: where Raider.IO names a
+   date, jump straight to that report; where it says nothing, still scan WCL. On disagreement,
+   WCL wins.
+
+5. **Fights pass, targeted.** For a boss with a kill, fetch fights only for the reports on the
+   first-kill date to locate and confirm the report. For a boss with no kill anywhere, scan the
+   tier's reports newest-first until wipes on that boss are found. Filter to `encounterID`s in
+   the zone catalogue — raid reports also contain Mythic+ fights and trash fights with
+   `difficulty: null`.
+
+6. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
    report per boss, skipping any report already linked for a deeper boss, and stop at three
    links. A single report covering bosses 6–8 therefore produces one link, not three.
+
+### Which report is shown for a boss
+
+- **Killed:** the **first** kill — the earliest report in which the boss died, not the most
+  recent. A reviewer wants to know when the account first got the boss down, since that is what
+  dates their progression.
+- **Not killed:** the **most recent** report containing wipes on that boss, which is the best
+  evidence of current progress.
+
+**First kill is account-level, not per character.** If the account killed a boss on one
+character and later killed it again on an alt, only the earliest kill counts — a re-kill on an
+alt months later is not progression and must not be presented as such.
+
+**Exception: characters named in the application always count.** Kills by any character the
+applicant listed are shown even when they post-date the account's first kill, because a
+reviewer explicitly wants to know what the named characters themselves have done. So the
+candidate set per boss is the account's earliest kill, plus any kill by an
+application-named character.
 
 Requests are sequential — the repo has no concurrency helper and this runs in the background.
 A hard cap of 120 requests per applicant guards against a runaway.
@@ -98,11 +144,11 @@ Posted as a follow-up message to the application thread, mirroring how
 **Mythic raid logs — Nnoggie**
 
 **Manaforge Omega** *(The War Within)*
-6/8 **Fractillus** — 1 kill · [report](https://www.warcraftlogs.com/reports/ZDHVbJdK2yx9nkhf)
+6/8 **Fractillus** — first kill 2025-10-19 · [report](https://www.warcraftlogs.com/reports/ZDHVbJdK2yx9nkhf)
 
 **Liberation of Undermine** *(The War Within)*
 6/8 **One-Armed Bandit** — wiping, best 0.7% · [report](https://www.warcraftlogs.com/reports/v4wVWRhfYyrnCpFT)
-4/8 **Rik Reverb** — 2 kills · [report](https://www.warcraftlogs.com/reports/vWrJFmNHxtQw9pZ8)
+4/8 **Rik Reverb** — first kill 2025-03-11 · [report](https://www.warcraftlogs.com/reports/vWrJFmNHxtQw9pZ8)
 ```
 
 With no Mythic history, the message is explicit rather than absent:
@@ -120,27 +166,29 @@ progression they are reading:
 
 **VS / DR / MQD** *(Midnight)*
 9/9 **Midnight Falls** — wiping, best 80.5% · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/1rkzLm8jK9x3YCwc)
-7/9 **Chimaerus, the Undreamt God** — 1 kill · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/N7tJvzVBZF2YXQ3d)
+8/9 **Belo'ren, Child of Al'ar** — first kill 2026-05-03 · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/HMhq7rgJ9YdGBWRb)
+7/9 **Chimaerus, the Undreamt God** — first kill 2026-04-09 · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/N7tJvzVBZF2YXQ3d)
 
-**Nerub-ar Palace** *(The War Within)*
-4/8 **Rasha'nan** — 1 kill · **Brentpriest** · [report](https://www.warcraftlogs.com/reports/Q3m2Ly4gZCkFRdBb)
+**Manaforge Omega** *(The War Within)*
+8/8 **Dimensius, the All-Devouring** — first kill 2025-10-30 · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/RQ8CZKMAFWGdtq9n)
 ```
+
+Killed bosses show the first-kill date, which dates the account's progression; wipe-only bosses
+show the best percentage instead, since there is no kill to date.
 
 That applicant applied on `Brentpriest`, which reaches 4/8 on its own, while the account is
 9/9-progressing on `Brenthunter`. Both facts matter and neither is legible without the label.
 
-**Merge rule.** Tiers are pooled across characters; within a tier each boss keeps the single
-strongest piece of evidence, resolved in this order:
+**Merge rule.** Tiers are pooled across characters; within a tier each boss resolves to one
+entry:
 
-1. A kill beats any wipe
-2. Between two wipes, the lower boss percentage wins
-3. Still tied — **prefer the applicant's own character**
-4. Still tied — the more recent report
+1. If any character killed it — the **earliest** kill across the account (see First kill above)
+2. Otherwise — the most recent report with wipes, choosing the lowest boss percentage seen
+3. Ties break to the applicant's named characters, then to the earlier report
 
-Rule 3 exists because of an observed regression: `Brentdh` also killed Rasha'nan at 4/8 and
-more recently than `Brentpriest`, so a recency-only tie-break removed the applicant's own
-character from the message entirely. A reviewer should always see what the character in front
-of them has done when the evidence is otherwise equal.
+Rule 3's first clause exists because of an observed regression: `Brentdh` also killed
+Rasha'nan at 4/8, so a plain recency tie-break removed `Brentpriest` — the character the
+application was actually made on — from its own message.
 
 The three-links-per-tier and five-tier caps then apply to the pooled result, so an alt's
 genuinely deeper progression can still displace the applicant's line rather than being
@@ -615,23 +663,23 @@ progressively rather than all at once at the end.
 
 ## Module layout
 
-| Module                                                          | Responsibility                                                                     |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `src/services/warcraftlogs.ts`                                  | `getApplicantMythicProgress`, zone catalogue fetch + cache                         |
-| `src/services/blizzard.ts`                                      | `getCharacterAchievementFingerprint`                                               |
-| `src/services/raiderio.ts`                                      | `getCharacterGuild`, `getRaidProgression` (documented API)                         |
-| `src/services/raiderioInternal.ts`                              | `getCharacterOwner`, `getClaimedCharacters` (internal endpoints, isolated breaker) |
-| `src/utils/concurrency.ts`                                      | Bounded-parallelism helper for fingerprint fetches                                 |
-| `src/functions/applications/mythic-logs/selectMythicReports.ts` | Pure: catalogue filter, boss ranking, dedupe, caps                                 |
-| `src/functions/applications/mythic-logs/renderMythicLogs.ts`    | Pure: message text                                                                 |
-| `src/functions/applications/alts/compareFingerprints.ts`        | Pure: match ratio and threshold                                                    |
-| `src/functions/applications/alts/discoverAlts.ts`               | BFS orchestration, caps, merge                                                     |
-| `src/functions/applications/alts/renderAlts.ts`                 | Pure: message text                                                                 |
-| `src/functions/applications/intel/jobStore.ts`                  | Job/queue/scanned/findings table access                                            |
-| `src/functions/applications/intel/runJob.ts`                    | Phase sequencing, pause/resume, message editing                                    |
-| `src/functions/applications/intel/rateLimit.ts`                 | Pure: classify an error as pausable, compute `resume_after`                        |
-| `src/functions/applications/intel/resumeJobs.ts`                | Scheduler task: pick up paused/pending jobs, crash recovery                        |
-| `src/interactions/intelPagination.ts`                           | Durable `intelpage:` handler rebuilding pages from `applicant_intel_findings`      |
+| Module                                                          | Responsibility                                                                                           |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `src/services/warcraftlogs.ts`                                  | `getApplicantMythicProgress`, zone catalogue fetch + cache                                               |
+| `src/services/blizzard.ts`                                      | `getCharacterAchievementFingerprint`                                                                     |
+| `src/services/raiderio.ts`                                      | `getCharacterGuild`, `getRaidProgression` (documented API)                                               |
+| `src/services/raiderioInternal.ts`                              | `getCharacterOwner`, `getClaimedCharacters`, `getMythicKillDates` (internal endpoints, isolated breaker) |
+| `src/utils/concurrency.ts`                                      | Bounded-parallelism helper for fingerprint fetches                                                       |
+| `src/functions/applications/mythic-logs/selectMythicReports.ts` | Pure: catalogue filter, boss ranking, dedupe, caps                                                       |
+| `src/functions/applications/mythic-logs/renderMythicLogs.ts`    | Pure: message text                                                                                       |
+| `src/functions/applications/alts/compareFingerprints.ts`        | Pure: match ratio and threshold                                                                          |
+| `src/functions/applications/alts/discoverAlts.ts`               | BFS orchestration, caps, merge                                                                           |
+| `src/functions/applications/alts/renderAlts.ts`                 | Pure: message text                                                                                       |
+| `src/functions/applications/intel/jobStore.ts`                  | Job/queue/scanned/findings table access                                                                  |
+| `src/functions/applications/intel/runJob.ts`                    | Phase sequencing, pause/resume, message editing                                                          |
+| `src/functions/applications/intel/rateLimit.ts`                 | Pure: classify an error as pausable, compute `resume_after`                                              |
+| `src/functions/applications/intel/resumeJobs.ts`                | Scheduler task: pick up paused/pending jobs, crash recovery                                              |
+| `src/interactions/intelPagination.ts`                           | Durable `intelpage:` handler rebuilding pages from `applicant_intel_findings`                            |
 
 Selection, ranking and rendering are pure functions taking plain data, matching how
 `extractMatchingCodes` is structured and tested today.
@@ -664,8 +712,12 @@ Unit tests cover the pure functions with fixture data:
 - Zone catalogue filtering: `>= 500` rollups, PTR/Beta names, dungeon-only zones, sparse zones
 - Boss ranking with wipes: deeper wipe beats shallower kill
 - Report dedupe across bosses; the three-per-raid and five-raid caps
-- Cross-character merge: kill beats wipe, lower boss % beats higher, recency breaks ties, and
-  each surviving line keeps the right character attribution
+- Cross-character merge: earliest kill wins over a later re-kill on an alt; a wipe-only boss
+  takes the most recent wipe report; each surviving line keeps the right attribution
+- Application-named characters: all URLs in the answers are collected, all are swept, and
+  their kills survive the account-first-kill rule
+- Kill-date mapping: a `firstDefeated` timestamp resolves to the right report, and a boss with
+  no `encountersDefeated` entry falls through to the wipe path
 - Sweep selection: Mythic-kill characters ordered first, greedy tier coverage filling the
   remainder, the applicant's character always included even at zero reported kills
 - Greedy coverage: a candidate whose tiers are already covered is not chosen over one that
