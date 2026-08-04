@@ -133,6 +133,18 @@ const dateRange = (first: string, last: string): string =>
     : `${discordDate(first)} → ${discordDate(last)}`;
 
 /**
+ * Clamp a page to the embed limit without cutting mid-line — a mid-line cut can
+ * land inside a markdown link (`[report](https://...` with no closing paren),
+ * which Discord renders as broken literal text instead of a link.
+ */
+function clampPage(page: string): string {
+  if (page.length <= EMBED_DESCRIPTION_LIMIT) return page;
+  const cut = page.slice(0, EMBED_DESCRIPTION_LIMIT);
+  const lastNewline = cut.lastIndexOf('\n');
+  return (lastNewline > 0 ? cut.slice(0, lastNewline) : cut).trimEnd();
+}
+
+/**
  * Guilds the account has raided with, per tier. Entries arrive most-recent-first.
  *
  * These are EVIDENCE SPANS, not tenures: one tested account has a kill with its
@@ -144,13 +156,14 @@ export function renderGuildHistory(
   entries: GuildHistoryEntry[],
   region: string,
   footer?: PauseFooter,
-): string {
+): string[] {
   if (entries.length === 0) {
     const empty =
       '**Guild history**\nNo guild history found — no Mythic kills recorded with any guild.';
-    return footer ? `${empty}\n\n${renderFooter(footer)}` : empty;
+    return [footer ? `${empty}\n\n${renderFooter(footer)}` : empty];
   }
 
+  const heading = `**Guild history** — ${entries.length} guild${entries.length === 1 ? '' : 's'}`;
   const blocks = entries.map((entry) => {
     const first = entry.stints.map((st) => st.first).sort()[0];
     const last = entry.stints
@@ -166,9 +179,31 @@ export function renderGuildHistory(
     return `${head}\n${lines.join('\n')}`;
   });
 
-  const out = `**Guild history** — ${entries.length} guild${entries.length === 1 ? '' : 's'}\n\n${blocks.join('\n\n')}`;
-  const withFooter = footer ? `${out}\n\n${renderFooter(footer)}` : out;
-  return withFooter.slice(0, EMBED_DESCRIPTION_LIMIT);
+  // Page on guild block boundaries only — splitting a guild's head line from its
+  // raid lines would orphan a raid line under no guild heading.
+  const pages: string[] = [];
+  let current = `${heading}\n\n`;
+  let currentHasBlock = false;
+  for (const block of blocks) {
+    const chunk = `${block}\n\n`;
+    if (currentHasBlock && current.length + chunk.length > PAGE_BUDGET) {
+      pages.push(current.trimEnd());
+      current = '';
+      currentHasBlock = false;
+    }
+    current += chunk;
+    currentHasBlock = true;
+  }
+  if (current.trim()) pages.push(current.trimEnd());
+
+  if (footer) {
+    pages[0] = `${pages[0]}\n\n${renderFooter(footer)}`;
+  }
+
+  // A single guild block bigger than PAGE_BUDGET still gets its own page (it
+  // can't be split), so that page alone can still breach the hard 4096 limit —
+  // clamp it, preferring a line boundary over a mid-link cut.
+  return pages.map(clampPage);
 }
 
 export interface RenderedTier {

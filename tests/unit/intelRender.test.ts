@@ -217,50 +217,99 @@ describe('renderGuildHistory', () => {
   ];
 
   it('links the guild name to its Raider.IO page', () => {
-    expect(renderGuildHistory(entries, 'eu')).toContain(
-      '**[Hindsight](https://raider.io/guilds/eu/kazzak/Hindsight)**',
-    );
+    const pages = renderGuildHistory(entries, 'eu');
+    expect(pages[0]).toContain('**[Hindsight](https://raider.io/guilds/eu/kazzak/Hindsight)**');
   });
 
   it('hyphenates a multi-word realm in the guild link', () => {
-    expect(renderGuildHistory(entries, 'eu')).toContain(
-      'https://raider.io/guilds/eu/twisting-nether/WashedUp',
-    );
+    const pages = renderGuildHistory(entries, 'eu');
+    expect(pages[0]).toContain('https://raider.io/guilds/eu/twisting-nether/WashedUp');
   });
 
   it('heads each guild with its realm and overall span as Discord timestamps', () => {
-    const out = renderGuildHistory(entries, 'eu');
-    expect(out).toContain(`*(Kazzak)* — ${stamp(FIRST)} → ${stamp(LAST)}`);
+    const pages = renderGuildHistory(entries, 'eu');
+    expect(pages[0]).toContain(`*(Kazzak)* — ${stamp(FIRST)} → ${stamp(LAST)}`);
   });
 
   it('lists a line per raid with kills, dates and characters', () => {
-    const out = renderGuildHistory(entries, 'eu');
-    expect(out).toContain(`VS / DR / MQD · 120 Mythic kills · ${stamp(FIRST)} → ${stamp(LAST)}`);
-    expect(out).toContain('Dödsleif, Dödslock');
+    const pages = renderGuildHistory(entries, 'eu');
+    expect(pages[0]).toContain(
+      `VS / DR / MQD · 120 Mythic kills · ${stamp(FIRST)} → ${stamp(LAST)}`,
+    );
+    expect(pages[0]).toContain('Dödsleif, Dödslock');
   });
 
   it('collapses a single-day span to one timestamp and singularises one kill', () => {
-    const out = renderGuildHistory(entries, 'eu');
-    expect(out).toContain(`Nerub-ar Palace · 1 Mythic kill · ${stamp(ONE_DAY)} ·`);
-    expect(out).not.toContain(`${stamp(ONE_DAY)} → ${stamp(ONE_DAY)}`);
+    const pages = renderGuildHistory(entries, 'eu');
+    expect(pages[0]).toContain(`Nerub-ar Palace · 1 Mythic kill · ${stamp(ONE_DAY)} ·`);
+    expect(pages[0]).not.toContain(`${stamp(ONE_DAY)} → ${stamp(ONE_DAY)}`);
   });
 
   it('counts the guilds in the heading', () => {
-    expect(renderGuildHistory(entries, 'eu')).toContain('**Guild history** — 2 guilds');
+    const pages = renderGuildHistory(entries, 'eu');
+    expect(pages[0]).toContain('**Guild history** — 2 guilds');
   });
 
   it('states the empty case explicitly', () => {
-    expect(renderGuildHistory([], 'eu')).toContain('No guild history found');
+    expect(renderGuildHistory([], 'eu')[0]).toContain('No guild history found');
   });
 
-  it('appends the footer', () => {
-    const out = renderGuildHistory(entries, 'eu', {
+  it('appends the footer to the first page', () => {
+    const pages = renderGuildHistory(entries, 'eu', {
       service: 'raiderio-internal',
       scanned: 10,
       total: 3000,
       retryAt: new Date(1785325500000),
     });
-    expect(out).toContain('Rate limited on raiderio-internal');
+    expect(pages[0]).toContain('Rate limited on raiderio-internal');
+  });
+
+  it('every page fits within the embed description limit', () => {
+    const pages = renderGuildHistory(entries, 'eu');
+    for (const page of pages) expect(page.length).toBeLessThanOrEqual(4096);
+  });
+
+  it('pages when the guild history exceeds the embed description limit', () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      guildName: `Guild${i}`,
+      guildRealm: 'Kazzak',
+      stints: [
+        {
+          raidName: 'VS / DR / MQD',
+          kills: 120,
+          first: FIRST,
+          last: LAST,
+          characters: ['Dödsleif', 'Dödslock'],
+        },
+      ],
+    }));
+    const pages = renderGuildHistory(many, 'eu');
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) expect(page.length).toBeLessThanOrEqual(4096);
+  });
+
+  it('never splits a guild block across a page boundary', () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      guildName: `Guild${i}`,
+      guildRealm: 'Kazzak',
+      stints: [
+        {
+          raidName: 'VS / DR / MQD',
+          kills: 120,
+          first: FIRST,
+          last: LAST,
+          characters: ['Dödsleif', 'Dödslock'],
+        },
+      ],
+    }));
+    const pages = renderGuildHistory(many, 'eu');
+    for (let i = 0; i < many.length; i++) {
+      const head = `**[Guild${i}](`;
+      const raidLine = 'VS / DR / MQD · 120 Mythic kills';
+      const page = pages.find((p) => p.includes(head));
+      expect(page).toBeDefined();
+      expect(page).toContain(raidLine);
+    }
   });
 });
 
