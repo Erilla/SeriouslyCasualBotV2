@@ -81,25 +81,61 @@ Discord-display-name fallback is not a character identity and cannot be looked u
    Omega, `33` Liberation of Undermine, `30` Aberrus. One call per character per tier, no WCL
    points.
 
-   **Raider.IO supplies dates; WCL remains the authority on what was killed.** The same
-   `Brenthunter` payload lists 7 Mythic kills but omits Crown of the Cosmos, which WCL shows him
-   killing — the character was last crawled 2026-05-15 and the kill post-dates that. Treating
-   the absence of an `encountersDefeated` entry as "not killed" would report a killed boss as
-   wipe progress.
+   `encountersDefeated` is **per character and correctly attributed**, which makes it the
+   primary source for kills (see Attribution below).
 
-   So the field is used as a fast path and for display, never as a gate: where Raider.IO names a
-   date, jump straight to that report; where it says nothing, still scan WCL. On disagreement,
-   WCL wins.
+   **A failed fetch is not "no kills".** Calling the internal API in rapid succession dropped one
+   character's payload during testing, which silently reassigned five first kills from
+   `Brentprietwo` to `Brenthunter` — the account's progression looked like a different
+   character's. Requests are paced (~700 ms apart), failures are recorded as _unknown_ rather
+   than empty, and a character with unknown kill data is excluded from first-kill comparison
+   instead of counting as having none.
 
-5. **Fights pass, targeted.** For a boss with a kill, fetch fights only for the reports on the
-   first-kill date to locate and confirm the report. For a boss with no kill anywhere, scan the
-   tier's reports newest-first until wipes on that boss are found. Filter to `encounterID`s in
-   the zone catalogue — raid reports also contain Mythic+ fights and trash fights with
-   `difficulty: null`.
+5. **Report links for kills.** `characterData.character.encounterRankings(encounterID,
+difficulty: 5)` returns that character's own kills with `report.code`, `report.fightID` and
+   `startTime`. It is authoritative per character, so it both confirms the kill and supplies the
+   link. Queried only for the bosses actually being displayed, not every boss.
 
-6. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
+6. **Wipes.** For a boss with no kill, scan the tier's reports newest-first with
+   `fights(killType: All, difficulty: 5)` to find wipe pulls, filtering to `encounterID`s in the
+   zone catalogue — raid reports also contain Mythic+ fights and trash fights with
+   `difficulty: null`. Then confirm the character was actually in the pull (see Attribution).
+
+7. **Selection.** Within a tier, rank bosses by depth descending. Walk the ranking taking one
    report per boss, skipping any report already linked for a deeper boss, and stop at three
    links. A single report covering bosses 6–8 therefore produces one link, not three.
+
+### Attribution: per fight, never per report
+
+**A report is a raid night, not a character's participation record.** `recentReports` returns
+reports the character appears in _somewhere_; it says nothing about which pulls they were in.
+Players who swap characters mid-raid appear in one report on two characters, and attributing a
+kill to whoever the report was fetched for is then simply wrong.
+
+Observed, and the reason this section exists:
+
+```
+report gvHhxnrTapcKLJ7X (VS / DR / MQD, 2026-04-23)
+  actors in report:            Brentprietwo, Brenthunter    ← same raid night
+  players in the Crown kill:   Brentprietwo                 ← not Brenthunter
+  encounterRankings:           Brenthunter 0 kills, Brentprietwo 1 kill
+```
+
+An earlier draft attributed that kill to `Brenthunter` purely because the report came from his
+`recentReports`. It also concluded from the mismatch that Raider.IO was stale — wrong on both
+counts: Raider.IO correctly reported no Crown kill for `Brenthunter`, and the account's first
+Crown kill was on `Brentprietwo`.
+
+Two consequences:
+
+- **Kills** are taken from Raider.IO `encountersDefeated` (per character by construction) and
+  linked via `encounterRankings` (per character by construction). Neither can misattribute.
+- **Wipes** have no per-character API, so a candidate wipe pull is confirmed with
+  `playerDetails(fightIDs: [n])` before it is displayed — one call per displayed line, not per
+  report scanned, since at most three lines per tier are shown.
+
+This also makes the account-first-kill rule behave correctly: Crown's first kill is
+`Brentprietwo` on 2026-04-23, and a later kill on `Brenthunter` would not displace it.
 
 ### Which report is shown for a boss
 
@@ -167,11 +203,15 @@ progression they are reading:
 **VS / DR / MQD** *(Midnight)*
 9/9 **Midnight Falls** — wiping, best 80.5% · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/1rkzLm8jK9x3YCwc)
 8/9 **Belo'ren, Child of Al'ar** — first kill 2026-05-03 · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/HMhq7rgJ9YdGBWRb)
-7/9 **Chimaerus, the Undreamt God** — first kill 2026-04-09 · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/N7tJvzVBZF2YXQ3d)
+7/9 **Chimaerus, the Undreamt God** — first kill 2026-03-29 · **Brentprietwo** · [report](https://www.warcraftlogs.com/reports/N7tJvzVBZF2YXQ3d)
 
 **Manaforge Omega** *(The War Within)*
 8/8 **Dimensius, the All-Devouring** — first kill 2025-10-30 · **Brenthunter** · [report](https://www.warcraftlogs.com/reports/RQ8CZKMAFWGdtq9n)
 ```
+
+The attribution mix is the point. For that account's current tier, `Brentprietwo` holds five of
+the seven first kills and `Brenthunter` two; a per-report reading credited all of them to
+`Brenthunter`.
 
 Killed bosses show the first-kill date, which dates the account's progression; wipe-only bosses
 show the best percentage instead, since there is no kill to date.
@@ -489,8 +529,11 @@ Stage 2 is required because `raid_progression` has three blind spots, all observ
 - **Current expansion only.** Regnipaw's `raid_progression` lists four Midnight raids; his
   Amirdrassil 9/9 and Nerub'ar Palace kills do not appear. `Brentpriest` reads zero Mythic
   kills while WCL shows a Nerub'ar Rasha'nan kill.
-- **Crawl lag.** `Brenthunter` was last crawled 11 weeks before this was written. Regnipaw
-  reports `4/9 M` where WCL already has a Midnight Falls kill.
+- **Crawl lag.** `last_crawled_at` can be weeks old (`Brenthunter`: 11 weeks), so a very recent
+  kill may not appear yet. No confirmed case of a missing kill was found — an earlier draft
+  claimed one for Regnipaw and Midnight Falls, but `encounterRankings` reports zero kills for
+  that boss on every character checked, so Raider.IO was right and the report-level inference
+  was wrong.
 - **Kills only.** Wipe-only progression is invisible to it, and wipes are explicitly in scope
   for this feature.
 
@@ -697,6 +740,7 @@ Every external call goes through `httpRequest`, inheriting the circuit breaker a
 | Blizzard down                                | Fingerprint phase skipped; Raider.IO alts still posted          |
 | Raider.IO internal endpoints broken          | Sources 1 and the declared main skipped; fingerprint still runs |
 | Character owner privacy-hidden               | Source 1 yields nothing; other sources still run                |
+| Kill-date fetch fails for a character        | Recorded as unknown and retried — never treated as "no kills"   |
 | Applicant guildless and unclaimed            | No alts found; message says so explicitly                       |
 | Bot restart mid-sweep                        | Job resumes from its recorded phase and queue                   |
 | 20 attempts or 7 days elapsed                | Job marked `failed`; thread message notes it is incomplete      |
