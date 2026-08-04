@@ -1,4 +1,9 @@
-export type ServiceName = 'blizzard' | 'raiderio' | 'warcraftlogs' | 'wowaudit';
+export type ServiceName =
+  | 'blizzard'
+  | 'raiderio'
+  | 'raiderio-internal'
+  | 'warcraftlogs'
+  | 'wowaudit';
 
 export type Outcome = 'ok' | 'retried' | 'rate_limited' | 'timeout' | 'failed' | 'circuit_rejected';
 
@@ -38,7 +43,13 @@ export interface ServiceSummary {
   breaker: BreakerState;
 }
 
-const SERVICES: ServiceName[] = ['blizzard', 'raiderio', 'warcraftlogs', 'wowaudit'];
+const SERVICES: ServiceName[] = [
+  'blizzard',
+  'raiderio',
+  'raiderio-internal',
+  'warcraftlogs',
+  'wowaudit',
+];
 const WINDOW_MINUTES = 60;
 const BREAKER_OPEN_THRESHOLD = 5;
 const BREAKER_COOLDOWN_MS = 60_000;

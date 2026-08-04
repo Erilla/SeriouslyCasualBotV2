@@ -78,7 +78,13 @@ describe('apiHealth tracker core', () => {
 
   it('getAllSummaries returns an entry per known service', () => {
     const all = getAllSummaries();
-    expect(Object.keys(all).sort()).toEqual(['blizzard', 'raiderio', 'warcraftlogs', 'wowaudit']);
+    expect(Object.keys(all).sort()).toEqual([
+      'blizzard',
+      'raiderio',
+      'raiderio-internal',
+      'warcraftlogs',
+      'wowaudit',
+    ]);
   });
 });
 

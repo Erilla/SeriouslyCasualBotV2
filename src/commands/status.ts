@@ -128,6 +128,11 @@ export default {
       },
       {
         name: '\u200B',
+        value: formatApiHealthLine('Raider.io (internal)', apiSummaries['raiderio-internal']),
+        inline: false,
+      },
+      {
+        name: '\u200B',
         value: formatApiHealthLine('WarcraftLogs', apiSummaries.warcraftlogs),
         inline: false,
       },

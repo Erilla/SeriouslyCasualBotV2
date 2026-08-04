@@ -23,6 +23,7 @@ export class HttpError extends Error {
   readonly attempts: number;
   readonly lastError?: Error;
   readonly responseMessage?: string;
+  readonly retryAfterMs?: number;
 
   constructor(args: {
     service: ServiceName;
@@ -31,6 +32,7 @@ export class HttpError extends Error {
     message: string;
     lastError?: Error;
     responseMessage?: string;
+    retryAfterMs?: number;
   }) {
     super(args.message);
     this.name = 'HttpError';
@@ -39,6 +41,7 @@ export class HttpError extends Error {
     this.attempts = args.attempts;
     this.lastError = args.lastError;
     this.responseMessage = args.responseMessage;
+    this.retryAfterMs = args.retryAfterMs;
   }
 }
 
@@ -86,6 +89,7 @@ export async function httpRequest<T>(
     let sawTimeout = false;
     let lastError: Error | undefined;
     let lastStatus: number | undefined;
+    let lastRetryAfterMs: number | undefined;
 
     while (attempt <= maxRetries) {
       attempt += 1;
@@ -170,6 +174,7 @@ export async function httpRequest<T>(
             status: response.status,
             message: `${service} JSON parse error: ${e.message}`,
             lastError: e,
+            retryAfterMs: lastRetryAfterMs,
           });
         }
       }
@@ -196,6 +201,7 @@ export async function httpRequest<T>(
           message: responseMessage
             ? `${service} API error: ${response.status} ${response.statusText}: ${responseMessage}`
             : `${service} API error: ${response.status} ${response.statusText}`,
+          retryAfterMs: lastRetryAfterMs,
         });
       }
 
@@ -204,8 +210,11 @@ export async function httpRequest<T>(
         response.headers.get('retry-after'),
         response.headers.get('date'),
       );
+      if (retryAfterMs !== null) lastRetryAfterMs = retryAfterMs;
       if (retryAfterMs !== null && retryAfterMs > RETRY_AFTER_CAP_MS) {
         // Upstream told us to wait longer than our cap; treat as final failure.
+        // retryAfterMs on the thrown error is deliberately uncapped — the
+        // background job scheduler needs the real wait, which can be minutes.
         recordOutcome(service, classifyFinalFailure(sawRateLimit, sawTimeout), {
           msg: `Retry-After ${Math.round(retryAfterMs / 1_000)}s exceeds ${RETRY_AFTER_CAP_MS / 1_000}s cap`,
           status: response.status,
@@ -217,6 +226,7 @@ export async function httpRequest<T>(
           attempts: attempt,
           status: response.status,
           message: `${service} Retry-After exceeds ${RETRY_AFTER_CAP_MS / 1_000}s cap`,
+          retryAfterMs,
         });
       }
 
@@ -243,6 +253,7 @@ export async function httpRequest<T>(
       status: lastStatus,
       message: `${service} request failed after ${attempt} attempt(s): ${msg}`,
       lastError,
+      retryAfterMs: lastRetryAfterMs,
     });
   } finally {
     // Defense in depth. All normal exit paths already release/resolve the
