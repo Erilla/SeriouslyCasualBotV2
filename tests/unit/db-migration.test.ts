@@ -226,6 +226,140 @@ describe('runMigrations — v8 adds the build_info cache table', () => {
   });
 });
 
+describe('runMigrations — v11 adds the applicant intel tables', () => {
+  it('creates all four applicant_intel_* tables on a legacy DB missing them', () => {
+    const db = getDatabase();
+
+    // Represent a pre-v11 install: createTables in beforeEach created the
+    // tables, so drop them and replay migrations from v10.
+    db.exec(`
+      DROP TABLE IF EXISTS applicant_intel_jobs;
+      DROP TABLE IF EXISTS applicant_intel_queue;
+      DROP TABLE IF EXISTS applicant_intel_scanned;
+      DROP TABLE IF EXISTS applicant_intel_findings;
+    `);
+    db.exec('DELETE FROM schema_version WHERE version >= 11;');
+
+    runMigrations(db);
+
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
+    expect(version.v).toBe(11);
+
+    const tableNames = db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'applicant_intel%' ORDER BY name`,
+      )
+      .all()
+      .map((r) => (r as { name: string }).name);
+    expect(tableNames).toEqual([
+      'applicant_intel_findings',
+      'applicant_intel_jobs',
+      'applicant_intel_queue',
+      'applicant_intel_scanned',
+    ]);
+
+    const jobsCols = (db.pragma('table_info(applicant_intel_jobs)') as { name: string }[]).map(
+      (c) => c.name,
+    );
+    expect(jobsCols).toEqual(
+      expect.arrayContaining([
+        'id',
+        'application_id',
+        'target_channel_id',
+        'character_name',
+        'character_realm',
+        'character_region',
+        'phase',
+        'status',
+        'resume_after',
+        'paused_service',
+        'attempts',
+        'logs_message_id',
+        'alts_message_id',
+        'guilds_message_id',
+        'applicant_discord',
+        'created_at',
+        'updated_at',
+      ]),
+    );
+
+    const queueCols = (db.pragma('table_info(applicant_intel_queue)') as { name: string }[]).map(
+      (c) => c.name,
+    );
+    expect(queueCols).toEqual(expect.arrayContaining(['job_id', 'kind', 'key', 'payload', 'done']));
+
+    const scannedCols = (
+      db.pragma('table_info(applicant_intel_scanned)') as { name: string }[]
+    ).map((c) => c.name);
+    expect(scannedCols).toEqual(expect.arrayContaining(['job_id', 'character_key']));
+
+    const findingsCols = (
+      db.pragma('table_info(applicant_intel_findings)') as { name: string }[]
+    ).map((c) => c.name);
+    expect(findingsCols).toEqual(
+      expect.arrayContaining([
+        'job_id',
+        'name',
+        'realm',
+        'class',
+        'guild_name',
+        'guild_realm',
+        'source',
+        'confidence',
+        'discord_status',
+        'discord_profile',
+      ]),
+    );
+  });
+
+  it('is idempotent — running migrations twice does not throw or duplicate the schema_version row', () => {
+    const db = getDatabase();
+
+    db.exec(`
+      DROP TABLE IF EXISTS applicant_intel_jobs;
+      DROP TABLE IF EXISTS applicant_intel_queue;
+      DROP TABLE IF EXISTS applicant_intel_scanned;
+      DROP TABLE IF EXISTS applicant_intel_findings;
+    `);
+    db.exec('DELETE FROM schema_version WHERE version >= 11;');
+
+    expect(() => runMigrations(db)).not.toThrow();
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const versionRows = db
+      .prepare('SELECT COUNT(*) as n FROM schema_version WHERE version = 11')
+      .get() as { n: number };
+    expect(versionRows.n).toBe(1);
+
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
+    expect(version.v).toBe(11);
+  });
+
+  it('is non-destructive — a pre-existing table keeps its rows across the migration', () => {
+    const db = getDatabase();
+
+    db.prepare('INSERT INTO raiders (character_name) VALUES (?)').run('Brentpriest');
+    db.prepare('INSERT INTO raiders (character_name) VALUES (?)').run('Brenthunter');
+
+    db.exec(`
+      DROP TABLE IF EXISTS applicant_intel_jobs;
+      DROP TABLE IF EXISTS applicant_intel_queue;
+      DROP TABLE IF EXISTS applicant_intel_scanned;
+      DROP TABLE IF EXISTS applicant_intel_findings;
+    `);
+    db.exec('DELETE FROM schema_version WHERE version >= 11;');
+
+    runMigrations(db);
+
+    const count = (db.prepare('SELECT COUNT(*) as n FROM raiders').get() as { n: number }).n;
+    expect(count).toBe(2);
+  });
+});
+
 describe('initDatabase — seeds default application questions', () => {
   it('seeds the 9 default application questions on a fresh database', () => {
     const db = initDatabase(':memory:');
