@@ -175,6 +175,14 @@ characters, despite `Brenthunter` appearing in the report. An earlier draft disp
 `Midnight Falls — wiping, best 80.5% · Brenthunter` on exactly that basis; it was an artefact of
 report-level attribution, and the corrected pipeline omits the line.
 
+**Scan depth is a named constant (`WIPE_SCAN_REPORTS`, 8 reports per character per tier).** It
+is deliberately shallow, because the wipe line only ever concerns the boss immediately after the
+account's deepest kill and each report costs a query. The trade-off is real and observed: for a
+tier the account last raided two years ago, the progression nights can sit outside that window,
+so a genuinely-wiped boss shows no line. A tier that was fully cleared has no wipe line by
+definition. If reviewers report missing wipe lines on old tiers, raise this constant rather than
+widening the whole scan — the cost is linear in it.
+
 This also makes the account-first-kill rule behave correctly: Crown's first kill is
 `Brentprietwo` on 2026-04-23, and a later kill on `Brenthunter` would not displace it.
 
@@ -256,6 +264,12 @@ the seven first kills and `Brenthunter` two; a per-report reading credited all o
 
 Killed bosses show the first-kill date, which dates the account's progression; wipe-only bosses
 show the best percentage instead, since there is no kill to date.
+
+**Dates can read out of sequence, and that is not an error.** WCL's encounter order is the
+zone's boss order, not the order a group killed them: one tested account killed the tier's final
+boss on 2026-05-31 and the eighth boss on 2026-06-04. Side bosses are routinely left until after
+the last boss. Do not "correct" the ordering — the lines are sorted by boss depth, deliberately,
+and the dates say when each fell.
 
 That applicant applied on `Brentpriest`, which reaches 4/8 on its own, while the account is
 9/9-progressing on `Brenthunter`. Both facts matter and neither is legible without the label.
