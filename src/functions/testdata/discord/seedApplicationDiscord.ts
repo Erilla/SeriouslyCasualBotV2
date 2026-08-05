@@ -2,8 +2,14 @@ import type { Client } from 'discord.js';
 import type Database from 'better-sqlite3';
 import { logger } from '../../../services/logger.js';
 import { config } from '../../../config.js';
-import { seedApplication, type SeedApplicationOptions } from '../seedApplication.js';
+import {
+  seedApplication,
+  SEED_CHARACTER,
+  type SeedApplicationOptions,
+} from '../seedApplication.js';
 import { createForumPost } from '../../applications/createForumPost.js';
+import { collectRaiderIoCharacters } from '../../applications/raiderIoName.js';
+import { startIntelJob } from '../../applications/intel/placeholders.js';
 import { buildQAText, type AnswerWithQuestion } from '../../applications/buildQAText.js';
 
 export interface SeedApplicationDiscordResult {
@@ -44,7 +50,7 @@ export async function seedApplicationDiscord(
     };
   }
 
-  const characterName = options.characterName ?? 'Testcharacter';
+  const characterName = options.characterName ?? SEED_CHARACTER.name;
 
   const answers = db
     .prepare(
@@ -58,20 +64,54 @@ export async function seedApplicationDiscord(
 
   const qaText = buildQAText(answers, client.user, characterName);
 
+  // Parsed once and used for both decisions, exactly as submitApplication does:
+  // it gates the intel placeholders and provides the sweep's characters.
+  const named = collectRaiderIoCharacters(answers);
+
   try {
-    const { forumPost, threadId } = await createForumPost(
-      guild,
-      characterName,
-      client.user,
-      qaText,
-      seedResult.applicationId,
-    );
+    const { forumPost, threadId, altsMessageId, guildsMessageId, logsMessageId } =
+      await createForumPost(
+        guild,
+        characterName,
+        client.user,
+        qaText,
+        seedResult.applicationId,
+        named,
+      );
 
     db.prepare('UPDATE applications SET forum_post_id = ?, thread_id = ? WHERE id = ?').run(
       forumPost.id,
       threadId,
       seedResult.applicationId,
     );
+
+    // Queue the sweep, like a real submission. Without this the seeder reserved
+    // the three placeholders and nothing ever edited them, which is precisely how
+    // a seeded application ended up stuck on "searching…" indefinitely. Failure
+    // here must not fail the seed, so it is logged and swallowed.
+    if (named.length > 0) {
+      try {
+        const jobId = startIntelJob({
+          applicationId: seedResult.applicationId,
+          targetChannelId: threadId,
+          characters: named,
+          applicantDiscord: client.user.username,
+          altsMessageId,
+          guildsMessageId,
+          logsMessageId,
+        });
+        logger.info(
+          'TestData',
+          `Queued intel job #${jobId} for seeded application #${seedResult.applicationId}`,
+        );
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        logger.warn(
+          'TestData',
+          `Failed to queue intel job for seeded application: ${error.message}`,
+        );
+      }
+    }
 
     return {
       applicationId: seedResult.applicationId,

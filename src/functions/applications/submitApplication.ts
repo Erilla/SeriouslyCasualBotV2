@@ -98,8 +98,13 @@ export async function submitApplication(
   let altsMessageId: string | undefined;
   let guildsMessageId: string | undefined;
   let logsMessageId: string | undefined;
+  // Parsed BEFORE the forum post, because the same list decides two things: whether
+  // to reserve the three intel placeholders, and whether to queue the sweep. When
+  // those were separate decisions an application with no parseable Raider.IO URL
+  // got placeholders that nothing would ever edit.
+  const named = collectRaiderIoCharacters(answers);
   try {
-    const result = await createForumPost(guild, characterName, user, qaText, applicationId);
+    const result = await createForumPost(guild, characterName, user, qaText, applicationId, named);
     forumPost = result.forumPost;
     threadId = result.threadId;
     altsMessageId = result.altsMessageId;
@@ -172,7 +177,6 @@ export async function submitApplication(
   // API call, so a crash mid-queue loses nothing; the scheduler picks it up.
   if (threadId) {
     try {
-      const named = collectRaiderIoCharacters(answers);
       if (named.length > 0) {
         const jobId = startIntelJob({
           applicationId,

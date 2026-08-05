@@ -1,12 +1,30 @@
 import type Database from 'better-sqlite3';
 import { seedApplicationQuestions } from '../../database/seedApplicationQuestions.js';
 
+/**
+ * A REAL character, so a seeded application exercises the applicant-intel sweep
+ * end to end instead of stranding its placeholders.
+ *
+ * Brentpriest-draenor was verified live: the sweep found 19 characters and a
+ * six-raid guild history, and its achievement fingerprints are already cached, so
+ * a seeded run is warm and quick. A non-existent character (the previous
+ * `silvermoon/testcharacter`) parses fine but every lookup 404s, which is a much
+ * weaker test.
+ */
+export const SEED_CHARACTER = {
+  name: 'Brentpriest',
+  realm: 'draenor',
+  region: 'eu',
+} as const;
+
+export const SEED_CHARACTER_URL = `https://raider.io/characters/${SEED_CHARACTER.region}/${SEED_CHARACTER.realm}/${SEED_CHARACTER.name}`;
+
 const MOCK_ANSWERS = [
   'Warrior (Arms)',
-  'https://raider.io/characters/eu/silvermoon/testcharacter',
+  SEED_CHARACTER_URL,
   "I'm 28, based in the UK, work in software, and enjoy hiking on weekends.",
   "Found you via Raider.IO recruitment listings. A friend who used to raid with you (Someguy) spoke highly of the guild's atmosphere.",
-  'Cutting Edge Mythic Queen Ansurek (Nerub-ar Palace), 6/8M Aberrus while current. Logs: https://www.warcraftlogs.com/character/eu/silvermoon/testcharacter',
+  `Cutting Edge Mythic Queen Ansurek (Nerub-ar Palace), 6/8M Aberrus while current. Logs: https://www.warcraftlogs.com/character/${SEED_CHARACTER.region}/${SEED_CHARACTER.realm}/${SEED_CHARACTER.name}`,
   "I've pushed 3.2k+ M+ rating this season and have heroic logs sitting at 90th+ percentile on most bosses.",
   'Yes, both evenings work reliably. No known conflicts with the raid schedule.',
   'I can swap to Protection for off-tank duties and have a geared resto druid alt (mythic logs available on request).',

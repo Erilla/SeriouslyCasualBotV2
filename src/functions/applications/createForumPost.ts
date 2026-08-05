@@ -15,6 +15,7 @@ import { splitMessage } from './splitMessage.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { resolveApplicationLogCategory } from './applicationLogCategory.js';
 import { placeholderEmbed } from './intel/placeholders.js';
+import type { RaiderIoCharacter } from './raiderIoName.js';
 
 export interface CreateForumPostResult {
   forumPost: { id: string };
@@ -30,6 +31,18 @@ export async function createForumPost(
   applicant: User,
   qaText: string,
   applicationId: number,
+  /**
+   * Characters the applicant named, used ONLY to decide whether to reserve the
+   * three intel placeholders.
+   *
+   * Posting them and queueing the sweep used to be separate decisions in separate
+   * functions, so anything that reserved the positions without queueing a job left
+   * three embeds reading "searching…" forever. That hit the testdata seeder (which
+   * calls this directly and never queued anything) and every real application whose
+   * answers contain no parseable Raider.IO URL. One condition now governs both:
+   * no character, no placeholders.
+   */
+  characters: RaiderIoCharacter[] = [],
 ): Promise<CreateForumPostResult> {
   let forum: ForumChannel;
   try {
@@ -103,19 +116,24 @@ export async function createForumPost(
   let altsMessageId: string | undefined;
   let guildsMessageId: string | undefined;
   let logsMessageId: string | undefined;
-  try {
-    const altsMessage = await thread.send({ embeds: [placeholderEmbed('alts')] });
-    altsMessageId = altsMessage.id;
-    const guildsMessage = await thread.send({ embeds: [placeholderEmbed('guilds')] });
-    guildsMessageId = guildsMessage.id;
-    const logsMessage = await thread.send({ embeds: [placeholderEmbed('logs')] });
-    logsMessageId = logsMessage.id;
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    logger.warn(
-      'Applications',
-      `Failed to post intel placeholders for application #${applicationId}: ${error.message}`,
-    );
+  // Skipped entirely when there is no character to sweep: no job will be queued,
+  // so reserving positions nothing can ever edit is what left three embeds reading
+  // "searching…" forever. Not an error, so it must not log one.
+  if (characters.length > 0) {
+    try {
+      const altsMessage = await thread.send({ embeds: [placeholderEmbed('alts')] });
+      altsMessageId = altsMessage.id;
+      const guildsMessage = await thread.send({ embeds: [placeholderEmbed('guilds')] });
+      guildsMessageId = guildsMessage.id;
+      const logsMessage = await thread.send({ embeds: [placeholderEmbed('logs')] });
+      logsMessageId = logsMessage.id;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn(
+        'Applications',
+        `Failed to post intel placeholders for application #${applicationId}: ${error.message}`,
+      );
+    }
   }
 
   try {

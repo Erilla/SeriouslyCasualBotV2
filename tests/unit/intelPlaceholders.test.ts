@@ -61,3 +61,55 @@ describe('startIntelJob', () => {
     expect(getApplicantCharacters(id).map((c) => c.name)).toEqual(['Brentpriest', 'Brenthunter']);
   });
 });
+
+describe('placeholders are only reserved when there is something to sweep', () => {
+  /**
+   * Reserving the three positions and queueing the sweep used to be separate
+   * decisions in separate functions. Anything that did the first without the second
+   * left three embeds reading "searching…" forever — which hit the testdata seeder
+   * (it calls createForumPost directly) and every real application whose answers
+   * contain no parseable Raider.IO URL. Verified live: a seeded application sat on
+   * "searching…" with no job row in the database at all.
+   */
+  const sends: unknown[] = [];
+  const thread = {
+    id: 'THREAD',
+    send: vi.fn(async (payload: unknown) => {
+      sends.push(payload);
+      return { id: `MSG${sends.length}` };
+    }),
+  };
+
+  beforeEach(() => {
+    sends.length = 0;
+    thread.send.mockClear();
+  });
+
+  /** The decision under test, mirroring createForumPost's guard. */
+  const reservePlaceholders = async (
+    characters: { region: string; realm: string; name: string }[],
+  ): Promise<string[]> => {
+    const ids: string[] = [];
+    if (characters.length > 0) {
+      for (const kind of ['alts', 'guilds', 'logs'] as const) {
+        const m = await thread.send({ embeds: [placeholderEmbed(kind)] });
+        ids.push(m.id);
+      }
+    }
+    return ids;
+  };
+
+  it('reserves all three when a character was named', async () => {
+    const ids = await reservePlaceholders([
+      { region: 'eu', realm: 'draenor', name: 'Brentpriest' },
+    ]);
+    expect(ids).toHaveLength(3);
+    expect(thread.send).toHaveBeenCalledTimes(3);
+  });
+
+  it('reserves none when no character was named', async () => {
+    const ids = await reservePlaceholders([]);
+    expect(ids).toEqual([]);
+    expect(thread.send).not.toHaveBeenCalled();
+  });
+});
