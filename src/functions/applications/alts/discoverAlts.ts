@@ -4,6 +4,7 @@ import { CircuitOpenError, HttpError } from '../../../services/httpClient.js';
 import { normalizeRealmSlug } from '../../../services/blizzard.js';
 import { compareFingerprints, type Fingerprint } from './compareFingerprints.js';
 import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/jobStore.js';
+import type { PhaseTimings } from '../intel/phaseTimings.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
 import type { CharacterGuild, CharacterSummary } from '../../../services/raiderio.js';
 import type {
@@ -50,17 +51,31 @@ export interface DiscoverDeps {
   getCharacterGuild: (c: RaiderIoCharacter) => Promise<CharacterGuild | null>;
   getGuildRoster: (guild: CharacterGuild) => Promise<RosterMember[]>;
   getCharacterFingerprint: (c: RaiderIoCharacter) => Promise<Fingerprint | null>;
-  /** Kill history, used here only for the guilds it names. */
+  /**
+   * Kill history, used here only for the guilds it names.
+   *
+   * Must do its own pacing: runJob injects a per-job memo (shared with the
+   * guild-history and log phases, which ask for the same characters) and pacing
+   * at this call site would mean sleeping between cache hits.
+   */
   getMythicKillDates: (
     c: RaiderIoCharacter,
     tierOrdinals: number[],
   ) => Promise<MythicKillDate[] | null>;
   tierOrdinals: number[];
-  /** Pace between internal-API calls; 0 in tests. */
+  /** Pace between the internal-API calls this function makes itself; 0 in tests. */
   paceMs?: number;
   maxGuilds?: number;
   maxCharacters?: number;
   maxDepth?: number;
+  /**
+   * Optional: sub-phase wall-clock, folded into the job's own timing line.
+   *
+   * `discover` was the largest phase of the measured job at 50.4s and a single
+   * number could not say why — five different sources feed it. Marks land under
+   * `d.*` names so one line still carries both levels.
+   */
+  timings?: PhaseTimings;
 }
 
 // The four sources disagree on realm format: application/declared-main/fingerprint
@@ -161,8 +176,14 @@ export async function discoverAlts(
     }
   }
 
+  // Sub-phase marks are all `d.*` so they read as a breakdown of the job's
+  // `discover` figure rather than as peers of it. `mark` only ever attributes
+  // elapsed time to a name, so an absent timings object costs nothing.
+  const mark = (phase: string): void => deps.timings?.mark(`d.${phase}`);
+
   // Source 0: every character the applicant named themselves.
   for (const c of applicants) await record(c, 'application', null);
+  mark('named');
 
   // Sources 1 and 2: declared main, then the owner's claimed-character list.
   for (const c of applicants) {
@@ -184,6 +205,8 @@ export async function discoverAlts(
     }
   }
 
+  mark('owner');
+
   // Seed any guild we have not already queued from the applicants themselves.
   for (const c of applicants) {
     const guild = await deps.getCharacterGuild(c);
@@ -201,9 +224,12 @@ export async function discoverAlts(
   // Alts are routinely left behind in a guild the main has since left, and no
   // other readable source reveals those guilds. The data rides along with the
   // kill dates, so it costs nothing extra.
+  mark('ownGuild');
+
   for (const c of [...known.values()]) {
+    // No sleep: the injected getMythicKillDates paces itself, and every one of
+    // these characters is asked for again by the guild-history and log phases.
     const history = await deps.getMythicKillDates(c, deps.tierOrdinals);
-    await sleep(pace);
     if (!history) continue;
     for (const past of history) {
       if (!past.guild) continue;
@@ -223,6 +249,8 @@ export async function discoverAlts(
   // characters via fingerprint match, so every comparison in this walk is work
   // left undone. Report that honestly rather than letting an empty frontier or
   // an unmet cap read as "nothing to find here".
+  mark('formerGuilds');
+
   const applicantFingerprint = await deps.getCharacterFingerprint(primary);
   if (!applicantFingerprint) {
     logger.warn(
@@ -239,6 +267,7 @@ export async function discoverAlts(
   // them again — this is independent of whether the applicant's own fingerprint
   // is available.
   for (const c of known.values()) markScanned(jobId, key(c.name, c.realm));
+  mark('primaryFp');
 
   let fingerprinted = 0;
   while (guildFrontier.length > 0 && visitedGuilds.size < maxGuilds) {
@@ -249,6 +278,9 @@ export async function discoverAlts(
 
     // A guild's realm is its own, frequently not the character's.
     const roster = await deps.getGuildRoster(entry.guild);
+    // Accumulates across guilds: rosters and fingerprint batches alternate, and
+    // which of the two dominates is the whole question this breakdown answers.
+    mark('rosters');
     // A single roster can list the same character more than once; dedupe by key
     // so mapLimit never queues two concurrent fingerprint calls for it — markScanned
     // only lands *inside* the callback, too late to stop a duplicate already queued.
@@ -314,6 +346,7 @@ export async function discoverAlts(
       // pause would discard work the sweep genuinely completed.
       sweepError = error;
     }
+    mark('fingerprints');
 
     for (const match of found) {
       if (known.has(key(match.candidate.name, match.candidate.realm))) continue;
@@ -343,9 +376,19 @@ export async function discoverAlts(
       }
     }
 
+    // Enriching a match (getCharacterSummary) and extending the frontier through
+    // it (getCharacterGuild) are both per-MATCH network calls, so this is cheap
+    // on a sweep that finds nothing and not on one that finds plenty.
+    mark('matches');
+
     // Only now, with every match from this batch persisted, may a rate limit
-    // pause the job.
-    if (sweepError) throw sweepError;
+    // pause the job. Marked first, so a paused sweep still reports its
+    // breakdown — that is the run whose cost most needs explaining.
+    if (sweepError) {
+      deps.timings?.count('dGuilds', visitedGuilds.size);
+      deps.timings?.count('dFingerprinted', fingerprinted);
+      throw sweepError;
+    }
 
     if (fingerprinted >= maxCharacters) {
       truncated = true;
@@ -354,5 +397,9 @@ export async function discoverAlts(
   }
 
   if (guildFrontier.length > 0) truncated = true;
+  // Wall-clock alone cannot say whether `d.fingerprints` was slow per call or
+  // simply made thousands of them, which is the next question it gets asked.
+  deps.timings?.count('dGuilds', visitedGuilds.size);
+  deps.timings?.count('dFingerprinted', fingerprinted);
   return { truncated };
 }

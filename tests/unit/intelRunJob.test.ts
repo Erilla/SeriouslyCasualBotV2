@@ -710,6 +710,56 @@ describe('runJob — the log-sweep candidate list is enumerated once', () => {
     expect(calls).toBeGreaterThan(1);
   });
 
+  /**
+   * Three places wanted the same kill history — the sweep's former-guild walk,
+   * the guild-history phase and gatherMythicLogs' date matching — and nothing
+   * cached it, so each swept character was fetched up to three times from a
+   * 1,029ms endpoint, paying the 700ms pace every time.
+   */
+  it('fetches a character’s kill history once for all three consumers', async () => {
+    const getMythicKillDates = vi.fn(async () => [] as MythicKillDate[]);
+    // Both stand-ins ask for the same character the guild-history loop will.
+    const discover = vi.fn(async (_id, applicants, discoverDeps) => {
+      await discoverDeps.getMythicKillDates(applicants[0], [35]);
+      return { truncated: false };
+    });
+    const gather = vi.fn(async (_a, swept, _z, gatherDeps) => {
+      await gatherDeps.getMythicKillDates(swept[0], [35]);
+      return [];
+    });
+
+    await runJob(
+      jobId,
+      deps({
+        getMythicKillDates,
+        discover: discover as never,
+        gather: gather as never,
+      }),
+    );
+
+    const asked = getMythicKillDates.mock.calls.map(
+      (c) => (c as unknown as [{ name: string }])[0].name,
+    );
+    expect(new Set(asked).size).toBe(asked.length);
+    expect(asked).toContain('Brentpriest');
+  });
+
+  it('does not serve a different tier set from the memo', async () => {
+    const getMythicKillDates = vi.fn(async () => [] as MythicKillDate[]);
+    const gather = vi.fn(async (_a, swept, _z, gatherDeps) => {
+      await gatherDeps.getMythicKillDates(swept[0], [35]);
+      // A different question deserves its own answer.
+      await gatherDeps.getMythicKillDates(swept[0], [34, 33]);
+      return [];
+    });
+
+    await runJob(jobId, deps({ getMythicKillDates, gather: gather as never }));
+    const tiers = getMythicKillDates.mock.calls.map((c) =>
+      (c as unknown as [unknown, number[]])[1].join(','),
+    );
+    expect(tiers).toContain('34,33');
+  });
+
   it('enumerates a character discovered only on the later attempt', async () => {
     const getRaidReports = vi.fn(async () => []);
     await runJob(jobId, deps({ getRaidReports }));

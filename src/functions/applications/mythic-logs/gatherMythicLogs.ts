@@ -148,16 +148,17 @@ export interface GatherDeps {
   getEncounterKills: (c: RaiderIoCharacter, encounterId: number) => Promise<EncounterKill[]>;
   getRaidReports: (c: RaiderIoCharacter, zoneIds: Set<number>) => Promise<RaidReportRef[]>;
   getReportWipes: (code: string) => Promise<WipePull[]>;
+  /**
+   * Must do its own pacing. runJob injects a per-job memo that serves every
+   * swept character from the fetch the guild-history phase already made, so
+   * sleeping between calls here would be sleeping between cache hits.
+   */
   getMythicKillDates: (
     c: RaiderIoCharacter,
     tierOrdinals: number[],
   ) => Promise<MythicKillDate[] | null>;
   tierOrdinals: number[];
-  paceMs?: number;
 }
-
-const sleep = (ms: number): Promise<void> =>
-  ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 
 /**
  * Pool Mythic progression across the swept characters into at most five tiers.
@@ -172,7 +173,6 @@ export async function gatherMythicLogs(
   zones: WclZone[],
   deps: GatherDeps,
 ): Promise<RenderedTier[]> {
-  const pace = deps.paceMs ?? 0;
   const applicantNames = new Set(applicants.map((a) => a.name.toLowerCase()));
   const accountNames = new Set(swept.map((c) => c.name.toLowerCase()));
   const zoneById = new Map(zones.map((z) => [z.id, z]));
@@ -181,7 +181,6 @@ export async function gatherMythicLogs(
   const datesByCharacter = new Map<string, Map<number, string>>();
   for (const c of swept) {
     const raw = await deps.getMythicKillDates(c, deps.tierOrdinals);
-    await sleep(pace);
     // null means UNKNOWN — record nothing rather than "no kills", which would
     // hand first-kill credit to a different character.
     if (!raw) continue;

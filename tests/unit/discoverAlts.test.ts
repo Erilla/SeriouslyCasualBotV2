@@ -17,6 +17,7 @@ import {
   type DiscoverDeps,
 } from '../../src/functions/applications/alts/discoverAlts.js';
 import { HttpError } from '../../src/services/httpClient.js';
+import { PhaseTimings } from '../../src/functions/applications/intel/phaseTimings.js';
 
 const applicant = { region: 'eu', realm: 'draenor', name: 'Brentpriest' };
 
@@ -409,5 +410,75 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
 
     // The match found before the rate limit must survive the pause.
     expect(getFindings(jobId).map((f) => f.name)).toContain('Brenthunter');
+  });
+
+  /**
+   * `discover` was 50.4s of a measured 160.8s job and five different sources feed
+   * it, so one number could not say which. The marks are optional and namespaced
+   * `d.*` so they read as a breakdown of that figure rather than peers of it.
+   */
+  describe('sub-phase timings', () => {
+    it('reports a breakdown, and counts of what the sweep actually did', async () => {
+      const timings = new PhaseTimings();
+      await discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          timings,
+          getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
+          getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
+        }),
+      );
+
+      const summary = timings.summary();
+      for (const phase of [
+        'd.named',
+        'd.owner',
+        'd.ownGuild',
+        'd.formerGuilds',
+        'd.primaryFp',
+        'd.rosters',
+        'd.fingerprints',
+        'd.matches',
+      ]) {
+        expect(summary).toContain(phase);
+      }
+      expect(summary).toContain('dGuilds=1');
+      expect(summary).toContain('dFingerprinted=1');
+    });
+
+    /** A paused sweep is the run whose cost most needs explaining. */
+    it('still reports its counts when the sweep pauses on a rate limit', async () => {
+      const timings = new PhaseTimings();
+      await discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          timings,
+          getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
+          getGuildRoster: vi.fn(async () => [{ name: 'Ratelimited', realm: 'Draenor' }]),
+          getCharacterFingerprint: vi.fn(async (c) => {
+            if (c.name === 'Ratelimited') {
+              throw new HttpError({
+                service: 'blizzard',
+                status: 429,
+                attempts: 1,
+                message: 'slow down',
+                retryAfterMs: 1000,
+              });
+            }
+            return fingerprints[c.name.toLowerCase()] ?? null;
+          }),
+        }),
+      ).catch(() => {});
+
+      expect(timings.summary()).toContain('dGuilds=1');
+    });
+
+    it('works without a timings object at all', async () => {
+      await expect(discoverAlts(jobId, [applicant], deps())).resolves.toEqual({
+        truncated: false,
+      });
+    });
   });
 });

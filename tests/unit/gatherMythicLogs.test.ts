@@ -30,7 +30,8 @@ function deps(over: Partial<GatherDeps> = {}): GatherDeps {
     getReportWipes: vi.fn(async () => []),
     getMythicKillDates: vi.fn(async () => []),
     tierOrdinals: [35, 34, 33],
-    paceMs: 0,
+    // No paceMs: the injected getMythicKillDates owns its own pacing now, since
+    // in production it is a memo whose hits must not be slept between.
     ...over,
   };
 }

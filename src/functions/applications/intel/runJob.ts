@@ -31,6 +31,7 @@ import {
   type SweepCandidate,
 } from '../mythic-logs/selectMythicReports.js';
 import { mapLimit } from '../../../utils/concurrency.js';
+import { PhaseTimings } from './phaseTimings.js';
 import type { WclZone } from '../mythic-logs/zoneCatalogue.js';
 import { WclPointsExhausted, type RaidReportRef } from '../../../services/warcraftlogs.js';
 import type { MythicKillDate } from '../../../services/raiderioInternal.js';
@@ -49,33 +50,9 @@ export const ALT_SWEEP_SLOTS = 4;
  */
 const CANDIDATE_CONCURRENCY = 6;
 
-/**
- * Wall-clock per phase, logged as one line per job.
- *
- * Optimising this feature was guesswork until the phases were measured: the
- * intuitive suspect (the 3,000-fingerprint Blizzard sweep) turned out to be 24% of
- * a job, while 8 serial calls to a 1,029ms Raider.IO endpoint were 52%. One
- * summary line keeps that visible per run without spamming the log.
- */
-class PhaseTimings {
-  private readonly ms = new Map<string, number>();
-  private readonly started = Date.now();
-  private last = Date.now();
-
-  /** Attribute everything since the previous mark to `phase`. */
-  mark(phase: string): void {
-    const now = Date.now();
-    this.ms.set(phase, (this.ms.get(phase) ?? 0) + (now - this.last));
-    this.last = now;
-  }
-
-  /** Whatever phases completed, so a paused job still reports where it got to. */
-  summary(): string {
-    const parts = [...this.ms.entries()].map(([k, v]) => `${k}=${(v / 1000).toFixed(1)}s`);
-    parts.push(`total=${((Date.now() - this.started) / 1000).toFixed(1)}s`);
-    return parts.join(' ');
-  }
-}
+/** Pace between Raider.IO-internal calls, owned by the kill-dates memo below. */
+const sleep = (ms: number): Promise<void> =>
+  ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 
 /**
  * Paging metadata handed to `editMessage` so the durable `intelpage:` /
@@ -272,6 +249,52 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   // early phase like discover fails first).
   let currentPhase: string = job.phase;
 
+  /**
+   * One Raider.IO kill-history fetch per character per job.
+   *
+   * Three separate places wanted the same payload: the sweep walks it for FORMER
+   * guilds, the guild-history phase aggregates it, and gatherMythicLogs matches
+   * first-kill dates onto WCL encounters. Nothing cached it at any level, so each
+   * swept character was fetched up to three times from an endpoint measured at
+   * 1,029ms — and paid the 700ms pace each time.
+   *
+   * In-memory and per job, deliberately: it is discarded when the job ends. The
+   * data is worth nothing later (an applicant does not reapply) but a great deal
+   * forty seconds later, in the same run.
+   *
+   * The PACE lives here rather than at the call sites, which is also the correct
+   * home for it: it exists to space out REQUESTS, and the callers each slept
+   * unconditionally after asking — so a cache hit used to sleep 700ms having made
+   * no request at all.
+   */
+  const killDatesByCharacter = new Map<string, Promise<MythicKillDate[] | null>>();
+  const getMythicKillDatesOnce = async (
+    c: RaiderIoCharacter,
+    tierOrdinals: number[],
+  ): Promise<MythicKillDate[] | null> => {
+    // Keyed on the tiers too: a caller asking for a different set must not be
+    // served another's answer.
+    const ck = `${characterKey(c.name, c.realm)}:${tierOrdinals.join(',')}`;
+    let pending = killDatesByCharacter.get(ck);
+    if (!pending) {
+      pending = (async () => {
+        const entries = await deps.getMythicKillDates(c, tierOrdinals);
+        await sleep(deps.paceMs ?? 0);
+        return entries;
+      })();
+      killDatesByCharacter.set(ck, pending);
+    }
+    try {
+      return await pending;
+    } catch (error) {
+      // getMythicKillDates reports failure as null rather than throwing, so this
+      // is belt-and-braces: never leave a rejection in the memo, or every later
+      // caller in the run fails instantly on a stale error instead of retrying.
+      killDatesByCharacter.delete(ck);
+      throw error;
+    }
+  };
+
   try {
     // Phase: alt sources + fingerprint sweep.
     setPhase(jobId, 'alt_sources');
@@ -296,10 +319,14 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       },
       getCharacterFingerprint: (await import('../../../services/blizzard.js'))
         .getCharacterFingerprint,
-      getMythicKillDates: (await import('../../../services/raiderioInternal.js'))
-        .getMythicKillDates,
+      // The shared memo, not the raw module function: the sweep's former-guild
+      // walk asks for every KNOWN character, which the guild-history and log
+      // phases then ask for again. It paces itself, so the sweep no longer
+      // sleeps after this particular call.
+      getMythicKillDates: getMythicKillDatesOnce,
       tierOrdinals: deps.tierOrdinals,
       paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
+      timings,
     });
     // Surfaced to the READER, not just the log: `truncated` also covers "the
     // applicant's own fingerprint was unavailable, so no comparison happened at
@@ -423,10 +450,13 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     sweptCount = swept.length;
 
     // Guild history rides along with the kill dates the log sweep needs
-    // anyway. Uses deps.getMythicKillDates/deps.paceMs directly (not an
-    // inline import of the real module): runJob calls this itself rather
-    // than merely passing it through to a mocked discover/gather, so an
-    // uninjected real import here would hit the network in every test.
+    // anyway — and, via getMythicKillDatesOnce, off the same fetch: for a
+    // character the sweep already walked for former guilds this loop now costs
+    // nothing at all. Goes through the memo (which wraps the injected
+    // deps.getMythicKillDates) rather than an inline import of the real module:
+    // runJob calls this itself rather than merely passing it through to a
+    // mocked discover/gather, so an uninjected real import here would hit the
+    // network in every test.
     const killHistory: { character: string; entries: MythicKillDate[] }[] = [];
     // getMythicKillDates swallows EVERYTHING (including a 429) and reports
     // failure only as `null`, so a total Raider.IO-internal outage otherwise
@@ -435,8 +465,8 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // failed fetch away, so it must be tracked, not assumed away.
     let killDatesFailed = false;
     for (const c of swept.length > 0 ? swept : applicants) {
-      const entries = await deps.getMythicKillDates(c, deps.tierOrdinals);
-      await new Promise((r) => setTimeout(r, deps.paceMs ?? 0));
+      // The memo paces itself, so there is no sleep here any more.
+      const entries = await getMythicKillDatesOnce(c, deps.tierOrdinals);
       if (entries) killHistory.push({ character: c.name, entries });
       else killDatesFailed = true;
     }
@@ -472,10 +502,10 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       getEncounterKills: (await import('../../../services/warcraftlogs.js')).getEncounterKills,
       getRaidReports: getRaidReportsOnce,
       getReportWipes: (await import('../../../services/warcraftlogs.js')).getReportWipes,
-      getMythicKillDates: (await import('../../../services/raiderioInternal.js'))
-        .getMythicKillDates,
+      // Every swept character has already been fetched by the guild-history loop
+      // immediately above, so this whole phase of the gather is now free.
+      getMythicKillDates: getMythicKillDatesOnce,
       tierOrdinals: deps.tierOrdinals,
-      paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
     });
     logsComputed = true;
 
