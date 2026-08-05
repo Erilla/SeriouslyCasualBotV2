@@ -511,7 +511,9 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
 
     timings.mark('gather');
 
-    logger.info('Intel', `Job #${jobId} timings: ${timings.summary()}`);
+    // debug, not info: this exists for optimisation work, and the phases are
+    // measured now. Raise it again when the next round needs them.
+    logger.debug('Intel', `Job #${jobId} timings: ${timings.summary()}`);
     setPhase(jobId, 'done');
     currentPhase = 'done';
     setStatus(jobId, 'done');
@@ -559,7 +561,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       return;
     }
 
-    logger.info('Intel', `Job #${jobId} timings (incomplete): ${timings.summary()}`);
+    logger.debug('Intel', `Job #${jobId} timings (incomplete): ${timings.summary()}`);
     const decision = classifyError(error, job.attempts + 1);
     const age = now().getTime() - parseUtcTimestamp(job.created_at).getTime();
     const exhausted = job.attempts + 1 >= MAX_JOB_ATTEMPTS || age >= MAX_JOB_AGE_MS;
