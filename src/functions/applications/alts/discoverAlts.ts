@@ -7,10 +7,11 @@ import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/
 import type { PhaseTimings } from '../intel/phaseTimings.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
 import type { CharacterGuild, CharacterSummary } from '../../../services/raiderio.js';
-import type {
-  CharacterOwner,
-  ClaimedCharacter,
-  MythicKillDate,
+import {
+  RAIDERIO_INTERNAL_CHARACTER_CONCURRENCY,
+  type CharacterOwner,
+  type ClaimedCharacter,
+  type MythicKillDate,
 } from '../../../services/raiderioInternal.js';
 
 /**
@@ -226,10 +227,23 @@ export async function discoverAlts(
   // kill dates, so it costs nothing extra.
   mark('ownGuild');
 
-  for (const c of [...known.values()]) {
-    // No sleep: the injected getMythicKillDates paces itself, and every one of
-    // these characters is asked for again by the guild-history and log phases.
-    const history = await deps.getMythicKillDates(c, deps.tierOrdinals);
+  //
+  // Fetched concurrently, and the frontier extended afterwards in a serial pass.
+  // Timing this phase is what exposed it: 38.0s of a 151.9s job, one paced
+  // request per claimed character. mapLimit preserves input order, so the
+  // frontier is still built in `known` order — that decides which guilds fall
+  // inside the maxGuilds cap, so a completion-order frontier would make the
+  // sweep's reach vary run to run.
+  //
+  // No sleep here: the injected getMythicKillDates paces itself (per worker), and
+  // every one of these characters is asked for again by the guild-history and log
+  // phases, which the memo serves from this fetch.
+  const histories = await mapLimit(
+    [...known.values()],
+    RAIDERIO_INTERNAL_CHARACTER_CONCURRENCY,
+    (c) => deps.getMythicKillDates(c, deps.tierOrdinals),
+  );
+  for (const history of histories) {
     if (!history) continue;
     for (const past of history) {
       if (!past.guild) continue;

@@ -109,4 +109,77 @@ describe('confirmDiscord', () => {
     expect(result.confirmed).toBe(1);
     expect(getFindings(jobId).find((f) => f.name === 'Broken')!.discordStatus).toBeNull();
   });
+
+  /**
+   * The first job to run this pass for real spent 88.5s of 151.9s in it — one
+   * paced request per character, strictly serially. The lookups now overlap, and
+   * every verdict must survive that.
+   */
+  describe('concurrency', () => {
+    it('overlaps the lookups and still records every verdict', async () => {
+      const names = Array.from({ length: 9 }, (_, i) => `Alt${i}`);
+      for (const n of names) addFinding(jobId, finding(n));
+
+      let live = 0;
+      let peak = 0;
+      const result = await confirmDiscord(jobId, 'eu', 'binded', {
+        getCharacterOwner: (async (c: { name: string }) => {
+          live++;
+          peak = Math.max(peak, live);
+          await new Promise((r) => setTimeout(r, 5));
+          live--;
+          // Half match the applicant, half belong to someone else.
+          const n = Number(c.name.replace('Alt', ''));
+          return {
+            user: null,
+            discordProfile: n % 2 === 0 ? 'binded' : 'somebodyelse',
+            declaredMain: null,
+          };
+        }) as ConfirmDeps['getCharacterOwner'],
+        paceMs: 0,
+      });
+
+      expect(peak).toBeGreaterThan(1);
+      expect(result).toEqual({ confirmed: 5, mismatched: 4 });
+      const stored = getFindings(jobId);
+      expect(stored.filter((f) => f.discordStatus === 'confirmed')).toHaveLength(5);
+      expect(stored.filter((f) => f.discordStatus === 'mismatch')).toHaveLength(4);
+    });
+
+    /**
+     * A rejection must be caught INSIDE the worker: escaping it would cancel the
+     * whole batch, and a character never looked at would read as one exposing no
+     * handle.
+     */
+    it('one throwing lookup does not lose the concurrent ones', async () => {
+      const names = ['Broken', ...Array.from({ length: 6 }, (_, i) => `Alt${i}`)];
+      for (const n of names) addFinding(jobId, finding(n));
+
+      const result = await confirmDiscord(jobId, 'eu', 'binded', {
+        getCharacterOwner: (async (c: { name: string }) => {
+          if (c.name === 'Broken') throw new Error('boom');
+          await new Promise((r) => setTimeout(r, 5));
+          return { user: null, discordProfile: 'binded', declaredMain: null };
+        }) as ConfirmDeps['getCharacterOwner'],
+        paceMs: 0,
+      });
+
+      expect(result.confirmed).toBe(6);
+    });
+
+    /** The pace is per worker, so it must not have been dropped along the way. */
+    it('still paces each worker', async () => {
+      for (const n of ['A', 'B']) addFinding(jobId, finding(n));
+      const started = Date.now();
+      await confirmDiscord(jobId, 'eu', 'binded', {
+        getCharacterOwner: (async () => ({
+          user: null,
+          discordProfile: 'binded',
+          declaredMain: null,
+        })) as ConfirmDeps['getCharacterOwner'],
+        paceMs: 30,
+      });
+      expect(Date.now() - started).toBeGreaterThanOrEqual(30);
+    });
+  });
 });

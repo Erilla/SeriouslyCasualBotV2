@@ -132,6 +132,96 @@ describe('discoverAlts', () => {
     );
   });
 
+  /**
+   * The former-guild walk was 38.0s of a measured 151.9s job: one paced request
+   * per claimed character, strictly serially. It now fetches concurrently and
+   * extends the frontier in a second, serial pass — because frontier ORDER
+   * decides which guilds fall inside maxGuilds, so a completion-ordered frontier
+   * would make the sweep's reach vary from run to run.
+   */
+  describe('former guilds, fetched concurrently', () => {
+    const claimed = Array.from({ length: 6 }, (_, i) => ({
+      name: `Alt${i}`,
+      realm: 'Draenor',
+      className: 'Mage',
+      level: 80,
+    }));
+
+    /** Each character last raided with a guild of its own, named after it. */
+    const killDatesPerCharacter = async (c: { name: string }) => [
+      {
+        bossName: 'imperator-averzian',
+        firstDefeated: '2024-12-05T00:00:00.000Z',
+        guild: { name: `Guild-${c.name}`, realm: 'silvermoon' },
+        raid: null,
+      },
+    ];
+
+    it('walks the guilds in character order however the fetches resolve', async () => {
+      const getGuildRoster = vi.fn(async () => []);
+      await discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterOwner: vi.fn(async () => ({
+            user: 'brent',
+            discordProfile: null,
+            declaredMain: null,
+          })),
+          getClaimedCharacters: vi.fn(async () => claimed),
+          getCharacterGuild: vi.fn(async () => null),
+          getGuildRoster,
+          // Deliberately inverted: the LAST character resolves first.
+          getMythicKillDates: vi.fn(async (c) => {
+            const n = Number(c.name.replace('Alt', ''));
+            await new Promise((r) => setTimeout(r, Number.isNaN(n) ? 30 : (6 - n) * 3));
+            return killDatesPerCharacter(c);
+          }),
+          maxGuilds: 12,
+        }),
+      );
+
+      const walked = getGuildRoster.mock.calls.map(
+        (call) => (call as unknown as [{ name: string }])[0].name,
+      );
+      expect(walked).toEqual([
+        'Guild-Brentpriest',
+        'Guild-Alt0',
+        'Guild-Alt1',
+        'Guild-Alt2',
+        'Guild-Alt3',
+        'Guild-Alt4',
+        'Guild-Alt5',
+      ]);
+    });
+
+    it('overlaps the fetches', async () => {
+      let live = 0;
+      let peak = 0;
+      await discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterOwner: vi.fn(async () => ({
+            user: 'brent',
+            discordProfile: null,
+            declaredMain: null,
+          })),
+          getClaimedCharacters: vi.fn(async () => claimed),
+          getGuildRoster: vi.fn(async () => []),
+          getMythicKillDates: vi.fn(async () => {
+            live++;
+            peak = Math.max(peak, live);
+            await new Promise((r) => setTimeout(r, 10));
+            live--;
+            return [];
+          }),
+        }),
+      );
+      expect(peak).toBeGreaterThan(1);
+    });
+  });
+
   it("seeds the BFS from a guild's own realm, not the character's", async () => {
     const getGuildRoster = vi.fn(async () => []);
     await discoverAlts(

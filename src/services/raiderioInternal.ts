@@ -17,6 +17,28 @@ const SERVICE = 'raiderio-internal' as const;
  *  character. Callers pace their loops by this. */
 export const RAIDERIO_INTERNAL_PACE_MS = 700;
 
+/**
+ * Characters a caller may have in flight against this API at once, each worker
+ * still pacing itself by RAIDERIO_INTERNAL_PACE_MS.
+ *
+ * The two consumers that walk every found character — the sweep's former-guild
+ * lookup and the Discord confirmation pass — were strictly serial, and at 18-19
+ * characters they were 83% of a measured job (38.0s and 88.5s of 151.9s).
+ *
+ * Verified before raising, exactly as the 8-tier parallel fetch below was: 19
+ * characters fetched paced-serially and then at concurrency 4 returned
+ * BYTE-IDENTICAL payloads for both the owner lookup and the kill dates, zero
+ * differences. That check matters more here than the speed does — this module's
+ * dropped-payload warning is about SILENT loss, which for kill dates means
+ * first-kill credit moving to the wrong character and for the owner lookup means
+ * a character reading as having no Discord handle when it has one.
+ *
+ * Do not raise it without repeating that comparison. Note getMythicKillDates
+ * already fans out one request per tier, so it puts `concurrency x tiers`
+ * requests in flight, not `concurrency`.
+ */
+export const RAIDERIO_INTERNAL_CHARACTER_CONCURRENCY = 4;
+
 export interface CharacterOwner {
   user: string | null;
   discordProfile: string | null;
