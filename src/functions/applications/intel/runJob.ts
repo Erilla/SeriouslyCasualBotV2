@@ -350,16 +350,32 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // WarcraftLogs and filters by zone client-side, so the candidate enumeration
     // below and gatherMythicLogs' wipe scan were each paying for the same walk;
     // fetch the full zone set once and filter locally for both.
-    const reportsByCharacter = new Map<string, RaidReportRef[]>();
+    //
+    // Memoises the PROMISE, not the resolved value: gatherMythicLogs' wipe scan
+    // now runs its zones concurrently, so several zones ask for the same
+    // character's reports at once. Caching only the settled value leaves a
+    // window where every concurrent caller misses and pays for its own
+    // paginated walk — the exact duplication this memo exists to prevent.
+    const reportsByCharacter = new Map<string, Promise<RaidReportRef[]>>();
     const getRaidReportsOnce = async (
       c: RaiderIoCharacter,
       wanted: Set<number>,
     ): Promise<RaidReportRef[]> => {
       const ck = characterKey(c.name, c.realm);
-      let all = reportsByCharacter.get(ck);
-      if (!all) {
-        all = await deps.getRaidReports(c, zoneIds);
-        reportsByCharacter.set(ck, all);
+      let pending = reportsByCharacter.get(ck);
+      if (!pending) {
+        pending = deps.getRaidReports(c, zoneIds);
+        reportsByCharacter.set(ck, pending);
+      }
+      let all: RaidReportRef[];
+      try {
+        all = await pending;
+      } catch (error) {
+        // Do not cache a rejection: a paused-and-resumed rate limit would
+        // otherwise make every later caller in this run fail instantly on the
+        // same stale error instead of retrying.
+        reportsByCharacter.delete(ck);
+        throw error;
       }
       return all.filter((r) => wanted.has(r.zoneId));
     };

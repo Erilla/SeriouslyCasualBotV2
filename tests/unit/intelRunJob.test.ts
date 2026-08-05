@@ -663,6 +663,53 @@ describe('runJob — the log-sweep candidate list is enumerated once', () => {
     expect(getMythicKillCount).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * gatherMythicLogs' wipe scan now runs its tiers concurrently, so several
+   * callers ask for one character's reports at the same instant. Memoising the
+   * settled value (rather than the promise) leaves them all missing the cache
+   * and each paying for its own paginated walk.
+   */
+  it('serves concurrent asks for one character from a single walk', async () => {
+    const getRaidReports = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      return [];
+    });
+    // Stands in for the wipe scan: the same character, several tiers at once.
+    const gather = vi.fn(async (_a, swept, _z, gatherDeps) => {
+      await Promise.all(
+        [46, 45, 44].map((zoneId) => gatherDeps.getRaidReports(swept[0], new Set([zoneId]))),
+      );
+      return [];
+    });
+
+    await runJob(jobId, deps({ getRaidReports, gather: gather as never }));
+    // Once per distinct character, however many callers ask concurrently: the
+    // three simultaneous wipe-scan asks must add no walks of their own.
+    const walked = getRaidReports.mock.calls.map(
+      (c) => (c as unknown as [{ name: string }])[0].name,
+    );
+    expect(new Set(walked).size).toBe(walked.length);
+  });
+
+  it('retries rather than caching a failed reports walk', async () => {
+    let calls = 0;
+    const getRaidReports = vi.fn(async () => {
+      calls++;
+      if (calls === 1) throw new Error('WCL down');
+      return [];
+    });
+    const gather = vi.fn(async (_a, swept, _z, gatherDeps) => {
+      await gatherDeps.getRaidReports(swept[0], new Set([46]));
+      return [];
+    });
+
+    // The first attempt's enumeration fails, so the job pauses or fails; the
+    // point is only that the rejection is not left in the memo for this run.
+    await runJob(jobId, deps({ getRaidReports, gather: gather as never })).catch(() => {});
+    await runJob(jobId, deps({ getRaidReports, gather: gather as never }));
+    expect(calls).toBeGreaterThan(1);
+  });
+
   it('enumerates a character discovered only on the later attempt', async () => {
     const getRaidReports = vi.fn(async () => []);
     await runJob(jobId, deps({ getRaidReports }));

@@ -242,6 +242,119 @@ describe('gatherMythicLogs', () => {
   });
 });
 
+/**
+ * The wipe scan overlaps its tiers, and the report scans within a character. The
+ * SELECTION must not move with it: whichever report resolves first, the line has
+ * to be the one the serial newest-first walk would have chosen.
+ */
+describe('gatherMythicLogs — wipe scan runs concurrently', () => {
+  const reports = [
+    { code: 'NEWEST', startTime: 30, zoneId: 46 },
+    { code: 'MIDDLE', startTime: 20, zoneId: 46 },
+    { code: 'OLDEST', startTime: 10, zoneId: 46 },
+  ];
+  const wipe = (percent: number) => [
+    { encounterId: 3183, fightId: 1, fightPercentage: percent, players: ['Brenthunter'] },
+  ];
+
+  it('keeps the newest matching report even when an older one resolves first', async () => {
+    const tiers = await gatherMythicLogs(
+      [applicant],
+      [hunter],
+      [zone],
+      deps({
+        getZoneKills: vi.fn(async () => [{ encounterId: 3182, totalKills: 1 }]),
+        // Deliberately shuffled: the oldest report is returned first, so a
+        // correct implementation must sort rather than trust arrival order.
+        getRaidReports: vi.fn(async () => [reports[2], reports[0], reports[1]]),
+        getReportWipes: vi.fn(async (code: string) => {
+          // NEWEST is slowest AND has the worst pull — order must still win.
+          if (code === 'NEWEST') {
+            await new Promise((r) => setTimeout(r, 20));
+            return wipe(90);
+          }
+          return wipe(5);
+        }),
+      }),
+    );
+    const line = tiers[0].lines.find((l) => l.kind === 'wipe')!;
+    expect(line.reportCode).toBe('NEWEST');
+    expect(line.percent).toBe(90);
+  });
+
+  it('falls through to an older report when the newest has no matching wipe', async () => {
+    const tiers = await gatherMythicLogs(
+      [applicant],
+      [hunter],
+      [zone],
+      deps({
+        getZoneKills: vi.fn(async () => [{ encounterId: 3182, totalKills: 1 }]),
+        getRaidReports: vi.fn(async () => reports),
+        getReportWipes: vi.fn(async (code: string) => (code === 'MIDDLE' ? wipe(42) : [])),
+      }),
+    );
+    const line = tiers[0].lines.find((l) => l.kind === 'wipe')!;
+    expect(line.reportCode).toBe('MIDDLE');
+  });
+
+  it('prefers the first swept character with a wipe, not the fastest', async () => {
+    const getReportWipes = vi.fn(async (code: string) => {
+      if (code === 'HUNTER') {
+        await new Promise((r) => setTimeout(r, 20));
+        return wipe(70);
+      }
+      return wipe(3);
+    });
+    const tiers = await gatherMythicLogs(
+      [applicant],
+      [hunter, prietwo],
+      [zone],
+      deps({
+        getZoneKills: vi.fn(async () => [{ encounterId: 3182, totalKills: 1 }]),
+        getRaidReports: vi.fn(async (c) => [
+          {
+            code: c.name === 'Brenthunter' ? 'HUNTER' : 'PRIETWO',
+            startTime: 10,
+            zoneId: 46,
+          },
+        ]),
+        getReportWipes,
+      }),
+    );
+    const line = tiers[0].lines.find((l) => l.kind === 'wipe')!;
+    expect(line.reportCode).toBe('HUNTER');
+    // Brenthunter matched, so Brentprietwo's report is never scanned at all —
+    // the early exit that keeps the characters serial has to still hold.
+    expect(getReportWipes.mock.calls.map((c) => c[0])).toEqual(['HUNTER']);
+  });
+
+  it('scans several tiers at once', async () => {
+    const zones = Array.from({ length: 3 }, (_, i) => ({ ...zone, id: 40 + i }));
+    let live = 0;
+    let peak = 0;
+    const tiers = await gatherMythicLogs(
+      [applicant],
+      [hunter],
+      zones,
+      deps({
+        getZoneKills: vi.fn(async () => [{ encounterId: 3182, totalKills: 1 }]),
+        getRaidReports: vi.fn(async (_c, zoneIds) => [
+          { code: `Z${[...zoneIds][0]}`, startTime: 10, zoneId: [...zoneIds][0] },
+        ]),
+        getReportWipes: vi.fn(async () => {
+          live++;
+          peak = Math.max(peak, live);
+          await new Promise((r) => setTimeout(r, 10));
+          live--;
+          return wipe(50);
+        }),
+      }),
+    );
+    expect(peak).toBeGreaterThan(1);
+    expect(tiers.every((t) => t.lines.some((l) => l.kind === 'wipe'))).toBe(true);
+  });
+});
+
 describe('aggregateGuildHistory — naming raids outside the WCL window', () => {
   const kill = (
     bossName: string,

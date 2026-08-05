@@ -137,6 +137,12 @@ export function aggregateGuildHistory(
 /** Reports scanned per tier when looking for a wipe on the next boss. */
 const WIPE_SCAN_REPORTS = 8;
 
+/**
+ * Tiers scanned for a wipe at once. Capped at MAX_TIERS because that is how many
+ * entries the wipe scan can ever have to work through.
+ */
+const WIPE_ZONE_CONCURRENCY = MAX_TIERS;
+
 export interface GatherDeps {
   getZoneKills: (c: RaiderIoCharacter, zoneId: number) => Promise<ZoneKill[]>;
   getEncounterKills: (c: RaiderIoCharacter, encounterId: number) => Promise<EncounterKill[]>;
@@ -258,41 +264,69 @@ export async function gatherMythicLogs(
   }
 
   // One wipe line per tier: the boss immediately after the deepest kill.
-  for (const [zoneId, evidence] of evidenceByZone) {
-    const zone = zoneById.get(zoneId)!;
-    const deepest = Math.max(...evidence.map((e) => e.bossIndex));
-    const target = zone.encounters[deepest + 1];
-    if (!target) continue;
+  //
+  // Zones run concurrently (they are wholly independent — each appends only to
+  // its own evidence array) and, within a character, the up-to-8 report scans do
+  // too. Serially this was the last untouched hot path in the phase: 5 zones x up
+  // to 8 sequential getReportWipes, and the measured job spent 54.9s in `gather`.
+  //
+  // The selection is deliberately unchanged: still the FIRST character in `swept`
+  // order to yield a wipe, and within that character the first report in
+  // newest-first order that contains one. Only the fetching overlaps, so the
+  // published line is identical to the serial version's.
+  //
+  // The one real cost: a character's 8 report scans are now all issued, where
+  // the serial loop stopped at the first match. WCL bills by points, so that is
+  // extra spend in the lucky case (bounded at 8 per character per tier, which
+  // the serial worst case already paid) and the 90% points pre-emption still
+  // guards the budget.
+  await mapLimit(
+    [...evidenceByZone.entries()],
+    WIPE_ZONE_CONCURRENCY,
+    async ([zoneId, evidence]) => {
+      const zone = zoneById.get(zoneId)!;
+      const deepest = Math.max(...evidence.map((e) => e.bossIndex));
+      const target = zone.encounters[deepest + 1];
+      if (!target) return;
 
-    let found: BossEvidence | null = null;
-    for (const c of swept) {
-      if (found) break;
-      const reports = (await deps.getRaidReports(c, new Set([zoneId])))
-        .sort((a, b) => b.startTime - a.startTime)
-        .slice(0, WIPE_SCAN_REPORTS);
-      for (const report of reports) {
-        const wipes = (await deps.getReportWipes(report.code))
-          .filter((w) => w.encounterId === target.id)
-          .filter((w) => w.players.some((p) => accountNames.has(p.toLowerCase())))
-          .sort((a, b) => a.fightPercentage - b.fightPercentage);
-        const best = wipes[0];
-        if (!best) continue;
-        const who = best.players.find((p) => accountNames.has(p.toLowerCase()))!;
-        found = {
-          encounterId: target.id,
-          bossIndex: deepest + 1,
-          bossName: target.name,
-          who,
-          kind: 'wipe',
-          percent: best.fightPercentage,
-          reportCode: report.code,
-          isApplicantCharacter: applicantNames.has(who.toLowerCase()),
-        };
-        break;
+      let found: BossEvidence | null = null;
+      // Characters stay SERIAL: the first one with a wipe wins, so running them
+      // concurrently would buy latency by paying for scans of characters the
+      // serial version never touched.
+      for (const c of swept) {
+        if (found) break;
+        const reports = (await deps.getRaidReports(c, new Set([zoneId])))
+          .sort((a, b) => b.startTime - a.startTime)
+          .slice(0, WIPE_SCAN_REPORTS);
+        const wipesPerReport = await mapLimit(reports, WCL_CONCURRENCY, (report) =>
+          deps.getReportWipes(report.code),
+        );
+        // mapLimit preserves input order, so this walks the reports newest-first
+        // exactly as the serial loop did.
+        for (let i = 0; i < reports.length; i++) {
+          const wipes = wipesPerReport[i]
+            .filter((w) => w.encounterId === target.id)
+            .filter((w) => w.players.some((p) => accountNames.has(p.toLowerCase())))
+            .sort((a, b) => a.fightPercentage - b.fightPercentage);
+          const best = wipes[0];
+          if (!best) continue;
+          const who = best.players.find((p) => accountNames.has(p.toLowerCase()))!;
+          found = {
+            encounterId: target.id,
+            bossIndex: deepest + 1,
+            bossName: target.name,
+            who,
+            kind: 'wipe',
+            percent: best.fightPercentage,
+            reportCode: reports[i].code,
+            isApplicantCharacter: applicantNames.has(who.toLowerCase()),
+          };
+          break;
+        }
       }
-    }
-    if (found) evidence.push(found);
-  }
+      if (found) evidence.push(found);
+    },
+  );
 
   const tiers: RenderedTier[] = [];
   for (const [zoneId, evidence] of evidenceByZone) {
