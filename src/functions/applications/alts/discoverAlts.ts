@@ -6,7 +6,11 @@ import { compareFingerprints, type Fingerprint } from './compareFingerprints.js'
 import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/jobStore.js';
 import type { PhaseTimings } from '../intel/phaseTimings.js';
 import type { RaiderIoCharacter } from '../raiderIoName.js';
-import type { CharacterGuild, CharacterSummary } from '../../../services/raiderio.js';
+import {
+  RAIDERIO_CHARACTER_CONCURRENCY,
+  type CharacterGuild,
+  type CharacterSummary,
+} from '../../../services/raiderio.js';
 import {
   RAIDERIO_INTERNAL_CHARACTER_CONCURRENCY,
   type CharacterOwner,
@@ -120,35 +124,44 @@ export async function discoverAlts(
   const visitedGuilds = new Set<string>();
   let truncated = false;
 
-  async function record(
+  /**
+   * The enrichment half of recording a character, split out so a batch of them
+   * can be fetched concurrently.
+   *
+   * getCharacterSummary rethrows a 429 / open circuit (it seeds the guild
+   * frontier, so swallowing one would publish an empty frontier as "only the
+   * declared characters exist"). But that throw must not also LOSE the finding:
+   * in the post-match loop every member of the batch is already markScanned, so
+   * an alt matched and then dropped here is excluded from this job's `pending`
+   * forever — a smaller found-characters list on the resumed run, presented as if
+   * it were measured. So the enrichment is attempted separately and the finding
+   * is written either way; only then is the rate limit propagated, to pause and
+   * resume the REST of the sweep.
+   */
+  async function fetchSummary(
     c: RaiderIoCharacter,
+  ): Promise<{ normalized: RaiderIoCharacter; summary: CharacterSummary | null; error?: unknown }> {
+    const normalized: RaiderIoCharacter = { ...c, realm: normalizeRealmSlug(c.realm) };
+    try {
+      return { normalized, summary: await deps.getCharacterSummary(normalized) };
+    } catch (error) {
+      return { normalized, summary: null, error };
+    }
+  }
+
+  /** The durable half: no network, so it is always safe to run in input order. */
+  function commit(
+    original: RaiderIoCharacter,
+    normalized: RaiderIoCharacter,
+    summary: CharacterSummary | null,
     source: IntelFinding['source'],
     confidence: number | null,
-  ): Promise<void> {
-    const realm = normalizeRealmSlug(c.realm);
-    const normalized: RaiderIoCharacter = { ...c, realm };
-    known.set(key(c.name, c.realm), normalized);
-
-    // getCharacterSummary rethrows a 429 / open circuit (it seeds the guild
-    // frontier, so swallowing one would publish an empty frontier as "only the
-    // declared characters exist"). But that throw must not also LOSE the
-    // finding: in the post-match loop every member of the batch is already
-    // markScanned, so an alt matched and then dropped here is excluded from
-    // this job's `pending` forever — a smaller found-characters list on the
-    // resumed run, presented as if it were measured. So the enrichment is
-    // attempted separately and the finding is written either way; only then is
-    // the rate limit propagated, to pause and resume the REST of the sweep.
-    let summary: CharacterSummary | null = null;
-    let rateLimited: unknown;
-    try {
-      summary = await deps.getCharacterSummary(normalized);
-    } catch (error) {
-      rateLimited = error;
-    }
+  ): void {
+    known.set(key(original.name, original.realm), normalized);
 
     addFinding(jobId, {
       name: normalized.name,
-      realm,
+      realm: normalized.realm,
       className: summary?.className ?? null,
       guildName: summary?.guild?.name ?? null,
       guildRealm: summary?.guild?.realm ?? null,
@@ -159,13 +172,6 @@ export async function discoverAlts(
       discordProfile: null,
     });
 
-    // A single addFinding per character, deliberately: writing a stub first and
-    // enriching afterwards would be a no-op, because addFinding's SOURCE_RANK
-    // guard drops a second write of the SAME source, and re-writing with a
-    // different source would corrupt provenance. Keeping one write also keeps
-    // the COALESCE Discord-verdict protection meaningful.
-    if (rateLimited) throw rateLimited;
-
     if (summary?.guild) {
       const gk = key(summary.guild.name, summary.guild.realm);
       if (
@@ -175,6 +181,21 @@ export async function discoverAlts(
         guildFrontier.push({ guild: summary.guild, depth: 0 });
       }
     }
+  }
+
+  async function record(
+    c: RaiderIoCharacter,
+    source: IntelFinding['source'],
+    confidence: number | null,
+  ): Promise<void> {
+    const { normalized, summary, error } = await fetchSummary(c);
+    commit(c, normalized, summary, source, confidence);
+    // A single addFinding per character, deliberately: writing a stub first and
+    // enriching afterwards would be a no-op, because addFinding's SOURCE_RANK
+    // guard drops a second write of the SAME source, and re-writing with a
+    // different source would corrupt provenance. Keeping one write also keeps
+    // the COALESCE Discord-verdict protection meaningful.
+    if (error) throw error;
   }
 
   // Sub-phase marks are all `d.*` so they read as a breakdown of the job's
@@ -199,10 +220,46 @@ export async function discoverAlts(
     if (owner.user) {
       const claimed = await deps.getClaimedCharacters(owner.user);
       await sleep(pace);
-      for (const ch of claimed) {
-        if (known.has(key(ch.name, ch.realm))) continue;
-        await record({ region: c.region, realm: ch.realm, name: ch.name }, 'raider.io', 100);
+
+      // One getCharacterSummary per claimed character, and a claimed list runs to
+      // ~20. Serially that measured 41.2s of a 119.2s job — the largest phase in
+      // it — so the enrichment fetches overlap and the durable writes then happen
+      // in list order.
+      //
+      // Deduped up front rather than by `known.has` inside the loop: `known` is
+      // only written by `commit`, so concurrent fetches cannot see each other's
+      // characters and a list naming one twice would be fetched (and committed)
+      // twice.
+      const seenClaimed = new Set<string>();
+      const fresh = claimed.filter((ch) => {
+        const ck = key(ch.name, ch.realm);
+        if (known.has(ck) || seenClaimed.has(ck)) return false;
+        seenClaimed.add(ck);
+        return true;
+      });
+
+      const enriched = await mapLimit(fresh, RAIDERIO_CHARACTER_CONCURRENCY, (ch) =>
+        fetchSummary({ region: c.region, realm: ch.realm, name: ch.name }).then((r) => ({
+          ...r,
+          original: { region: c.region, realm: ch.realm, name: ch.name },
+        })),
+      );
+
+      // Committed in list order, stopping at the FIRST failure exactly as the
+      // serial version did: that character's finding is still written (with no
+      // enrichment), and the ones after it are left unrecorded for the resumed
+      // run to derive properly. Committing them here instead would make their
+      // missing class and guild permanent — addFinding's SOURCE_RANK guard drops
+      // the second write of the same source, so there is no later repair.
+      let claimedError: unknown;
+      for (const e of enriched) {
+        commit(e.original, e.normalized, e.summary, 'raider.io', 100);
+        if (e.error) {
+          claimedError = e.error;
+          break;
+        }
       }
+      if (claimedError) throw claimedError;
     }
   }
 

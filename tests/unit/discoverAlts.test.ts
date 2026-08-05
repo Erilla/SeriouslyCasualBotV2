@@ -133,6 +133,131 @@ describe('discoverAlts', () => {
   });
 
   /**
+   * The claimed-character enrichment (one getCharacterSummary each, ~20 of them)
+   * was 41.2s of a 119.2s job — the largest phase in it — purely because it was
+   * serial. The fetches now overlap; the durable writes must not move.
+   */
+  describe('claimed characters, enriched concurrently', () => {
+    const claimedList = (names: string[]) =>
+      names.map((name) => ({ name, realm: 'Draenor', className: 'Mage', level: 80 }));
+    const owner = vi.fn(async () => ({
+      user: 'brent',
+      discordProfile: null,
+      declaredMain: null,
+    }));
+
+    it('overlaps the lookups and records every character', async () => {
+      const names = ['Altone', 'Alttwo', 'Altthree', 'Altfour', 'Altfive', 'Altsix', 'Altseven'];
+      let live = 0;
+      let peak = 0;
+      await discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterOwner: owner,
+          getClaimedCharacters: vi.fn(async () => claimedList(names)),
+          getCharacterSummary: vi.fn(async () => {
+            live++;
+            peak = Math.max(peak, live);
+            await new Promise((r) => setTimeout(r, 5));
+            live--;
+            return { className: 'Mage', guild: null };
+          }),
+        }),
+      );
+
+      expect(peak).toBeGreaterThan(1);
+      const found = getFindings(jobId).map((f) => f.name);
+      for (const n of names) expect(found).toContain(n);
+    });
+
+    /**
+     * A claimed list naming the same character twice used to be caught by
+     * `known.has` inside the loop. Concurrent fetches cannot see each other's
+     * characters, so the dedupe has to happen before the batch.
+     */
+    it('fetches a duplicated claimed character only once', async () => {
+      const getCharacterSummary = vi.fn(async () => ({ className: 'Mage', guild: null }));
+      await discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterOwner: owner,
+          getClaimedCharacters: vi.fn(async () => claimedList(['Altone', 'Altone', 'Alttwo'])),
+          getCharacterSummary,
+        }),
+      );
+      const looked = getCharacterSummary.mock.calls.map(
+        (call) => (call as unknown as [{ name: string }])[0].name,
+      );
+      expect(looked.filter((n) => n === 'Altone')).toHaveLength(1);
+    });
+
+    /**
+     * The serial version stopped at the first rate limit: that character's
+     * finding was written unenriched, and the ones after it were left for the
+     * resumed run. Committing them anyway would make their missing class and
+     * guild PERMANENT, because addFinding's SOURCE_RANK guard drops a second
+     * write of the same source.
+     */
+    it('commits up to the first failure and no further, then pauses', async () => {
+      const rateLimit = new HttpError({
+        service: 'raiderio',
+        status: 429,
+        attempts: 1,
+        message: 'slow down',
+        retryAfterMs: 1000,
+      });
+
+      await expect(
+        discoverAlts(
+          jobId,
+          [applicant],
+          deps({
+            getCharacterOwner: owner,
+            getClaimedCharacters: vi.fn(async () =>
+              claimedList(['Altone', 'Alttwo', 'Altthree', 'Altfour']),
+            ),
+            getCharacterSummary: vi.fn(async (c) => {
+              if (c.name === 'Alttwo') throw rateLimit;
+              return { className: 'Mage', guild: null };
+            }),
+          }),
+        ),
+      ).rejects.toBe(rateLimit);
+
+      const found = getFindings(jobId).map((f) => f.name);
+      // The applicant, the one before the failure, and the failure itself.
+      expect(found).toContain('Altone');
+      expect(found).toContain('Alttwo');
+      // Left unrecorded, so the resumed run derives them WITH their class/guild.
+      expect(found).not.toContain('Altthree');
+      expect(found).not.toContain('Altfour');
+      // The one that failed is recorded, but honestly unenriched.
+      expect(getFindings(jobId).find((f) => f.name === 'Alttwo')!.className).toBeNull();
+    });
+
+    it('records the claimed characters in list order', async () => {
+      const names = ['Zeta', 'Alpha', 'Mu', 'Beta'];
+      await discoverAlts(
+        jobId,
+        [applicant],
+        deps({
+          getCharacterOwner: owner,
+          getClaimedCharacters: vi.fn(async () => claimedList(names)),
+          // Reverse-ordered latency: the last character resolves first.
+          getCharacterSummary: vi.fn(async (c) => {
+            await new Promise((r) => setTimeout(r, (names.length - names.indexOf(c.name)) * 4));
+            return { className: 'Mage', guild: null };
+          }),
+        }),
+      );
+      const found = getFindings(jobId).map((f) => f.name);
+      expect(found).toEqual([applicant.name, ...names]);
+    });
+  });
+
+  /**
    * The former-guild walk was 38.0s of a measured 151.9s job: one paced request
    * per claimed character, strictly serially. It now fetches concurrently and
    * extends the frontier in a second, serial pass — because frontier ORDER
