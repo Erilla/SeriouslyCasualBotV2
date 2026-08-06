@@ -36,6 +36,29 @@ let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 let inFlightToken: Promise<string> | null = null;
 
+/**
+ * KNOWN INCOMPLETE — do not "fix" this with the obvious one-liner. See
+ * .scratch/applicant-intel-linked-characters/issues/09-realm-slug-normalisation.md.
+ *
+ * Blizzard's actual rule (verified against /data/wow/realm/index, 797 realms) is:
+ * strip everything that is not a Unicode letter, digit or space, lowercase, then
+ * collapse whitespace to hyphens. Accents are preserved rather than folded, and
+ * apostrophes AND pre-existing hyphens are deleted — `Zul'jin` -> `zuljin`,
+ * `Azjol-Nerub` -> `azjolnerub`. This function does space-to-hyphen only, so it is
+ * wrong on 71 player-facing realms: `getCharacterGuild` returns realm *display
+ * names* which discoverAlts feeds in here, and the resulting `zul'jin` 404s on the
+ * Blizzard API and 400s on Raider.IO, silently costing that applicant their
+ * fingerprint.
+ *
+ * The reason the real rule cannot simply be dropped in: callers pass BOTH display
+ * names AND already-hyphenated raider.io slugs (see the comment at
+ * discoverAlts.ts:86). The real rule deletes hyphens, so it would turn a working
+ * `argent-dawn` into `argentdawn` — trading a bug on 71 realms for a bug on every
+ * multi-word realm. Disambiguating `tarren-mill` (separator, keep) from
+ * `azjol-nerub` (deleted character, drop) needs a realm alias table, not a regex.
+ *
+ * Also used for guild-name slugs (see getGuildRoster), which follow the same rule.
+ */
 export function normalizeRealmSlug(realm: string): string {
   return realm.trim().toLowerCase().replace(/\s+/g, '-');
 }

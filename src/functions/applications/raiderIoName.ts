@@ -68,6 +68,24 @@ function decodeName(raw: string): string | null {
 }
 
 /**
+ * Realm segments are percent-encoded in the URL for accented realms
+ * (`aggra-portugu%C3%AAs`). Every downstream consumer runs the realm through
+ * `encodeURIComponent`, so handing them a still-encoded realm double-encodes it to
+ * `aggra-portugu%25C3%25AAs` and the request 400s — which made every accented realm
+ * unresolvable from a pasted URL. Decode here, at the boundary, exactly as the name
+ * segment beside it already is.
+ */
+function decodeRealm(raw: string): string {
+  try {
+    return decodeURIComponent(raw).toLowerCase();
+  } catch {
+    // Malformed percent-encoding — degrade to the raw slug rather than dropping
+    // the character, matching decodeName's behaviour.
+    return raw.toLowerCase();
+  }
+}
+
+/**
  * Region, realm slug and name from the first Raider.IO character URL in `text`.
  * WarcraftLogs and Blizzard both need all three, so unlike
  * parseRaiderIoCharacterName this keeps the path segments.
@@ -77,7 +95,7 @@ export function parseRaiderIoCharacter(text: string): RaiderIoCharacter | null {
   if (!match) return null;
   const name = decodeName(match[3]);
   if (!name) return null;
-  return { region: match[1].toLowerCase(), realm: match[2].toLowerCase(), name };
+  return { region: match[1].toLowerCase(), realm: decodeRealm(match[2]), name };
 }
 
 /**
@@ -93,7 +111,7 @@ export function collectRaiderIoCharacters(answers: { answer: string }[]): Raider
     for (const m of a.answer.matchAll(RAIDER_IO_CHARACTER_URL_G)) {
       const name = decodeName(m[3]);
       if (!name) continue;
-      const realm = m[2].toLowerCase();
+      const realm = decodeRealm(m[2]);
       const key = `${realm}/${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
