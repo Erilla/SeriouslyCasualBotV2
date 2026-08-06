@@ -11,6 +11,8 @@ db.sqlite*
 .claude/*.local.*
 .claude/scheduled_tasks.lock
 .worktrees/
+.scratch/
+.superpowers/
 .env.test
 tests/e2e/.data/
 !tests/e2e/.data/.gitkeep
