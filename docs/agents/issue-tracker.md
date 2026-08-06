@@ -73,10 +73,17 @@ finishes, so expect to wait between merging and promoting.
 
 ### Waiting for CI (read this before concluding CI is broken)
 
-**A workflow run can take ~90 seconds to be created after a PR is opened.** During that window
-`gh pr checks <n>` lists only the fast checks (GitGuardian), `gh api .../actions/runs?branch=...`
-returns `total_count: 0`, and `mergeStateStatus` is `BLOCKED`. That looks identical to "the
-required check will never run" — and it is not.
+**A workflow run can take minutes to even be created after a PR is opened, and minutes more to
+start.** During that window `gh pr checks <n>` lists only the fast checks (GitGuardian),
+`gh api .../actions/runs?branch=...` returns `total_count: 0`, and `mergeStateStatus` is
+`BLOCKED`. That looks identical to "the required check will never run" — and it is not.
+
+Two measured examples from this repo, both docs-only PRs:
+
+| PR | Run created after open | Started after created | Total to green |
+| -- | ---------------------- | --------------------- | -------------- |
+| #69 | 88s | ~2 min | ~8 min |
+| #80 | ~4.5 min | ~5.5 min | ~11 min |
 
 So when polling:
 
@@ -84,8 +91,8 @@ So when polling:
   is "pending" will exit immediately and report a false deadlock.
 - Poll until a run named `ci` exists **and** reaches `completed`, e.g.
   `gh api "repos/<owner>/<repo>/actions/runs?branch=<branch>" --jq '[.workflow_runs[] | select(.name=="CI")] | if length==0 then "absent" else .[0].status end'`
-- Allow at least 3-4 minutes before suspecting a real problem; runs have sat `queued` for several
-  minutes before starting.
+- **Allow at least 15 minutes** before suspecting a real problem, and poll on a slow interval
+  (20-30s) rather than tightly. Absence in the first 5 minutes means nothing.
 - **Do not close/reopen the PR to "retrigger" it.** If the original run was already created,
   closing the PR orphans it in `queued` forever — and orphaned runs cannot be cancelled
   (`/cancel` and `/force-cancel` both return `Server Error`), so they linger in the run list.
