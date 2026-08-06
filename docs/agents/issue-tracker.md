@@ -70,3 +70,25 @@ change goes through a PR.
 `prod` — blocks deletion and force-pushes; requires `ci` to pass **on the exact commit being
 pushed**. A promotion immediately after a merge is rejected until that commit's own CI run
 finishes, so expect to wait between merging and promoting.
+
+### Waiting for CI (read this before concluding CI is broken)
+
+**A workflow run can take ~90 seconds to be created after a PR is opened.** During that window
+`gh pr checks <n>` lists only the fast checks (GitGuardian), `gh api .../actions/runs?branch=...`
+returns `total_count: 0`, and `mergeStateStatus` is `BLOCKED`. That looks identical to "the
+required check will never run" — and it is not.
+
+So when polling:
+
+- Treat an **absent** `ci` check as *not ready*, never as done. A loop that exits when no check
+  is "pending" will exit immediately and report a false deadlock.
+- Poll until a run named `ci` exists **and** reaches `completed`, e.g.
+  `gh api "repos/<owner>/<repo>/actions/runs?branch=<branch>" --jq '[.workflow_runs[] | select(.name=="CI")] | if length==0 then "absent" else .[0].status end'`
+- Allow at least 3-4 minutes before suspecting a real problem; runs have sat `queued` for several
+  minutes before starting.
+- **Do not close/reopen the PR to "retrigger" it.** If the original run was already created,
+  closing the PR orphans it in `queued` forever — and orphaned runs cannot be cancelled
+  (`/cancel` and `/force-cancel` both return `Server Error`), so they linger in the run list.
+
+The workflow has no `paths` filter, so every PR targeting `main` or `prod` triggers `ci`,
+docs-only changes included.
