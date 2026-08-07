@@ -99,3 +99,66 @@ So when polling:
 
 The workflow has no `paths` filter, so every PR targeting `main` or `prod` triggers `ci`,
 docs-only changes included.
+
+### Recovering a genuinely orphaned run
+
+Everything above is about *not* concluding CI is broken too early. This section is the opposite
+case: how to tell when a run really is dead, and what actually revives it.
+
+**Closing/reopening is not the only way to orphan a run.** A [GitHub Actions
+outage](https://www.githubstatus.com/) does it too, with no help from you — PR #80's run was created
+at 17:58Z during the 6 August incident, was never acquired by a runner, and was still `queued`
+fourteen hours later with the incident long resolved. So the "wait longer" advice above has a limit:
+once Actions is operational again and the run still has not started, waiting will not fix it.
+
+**Diagnosis.** The run sits `queued` with an `updated_at` that stopped advancing, and the PR's check
+rollup contains no `ci` entry at all (only the fast checks), so `mergeStateStatus` is `BLOCKED` with
+nothing to wait for.
+
+**All three recovery endpoints refuse it** — GitHub simultaneously believes the run is live (so it
+will not cancel) and already running (so it will not re-run):
+
+| Call | Response |
+| ---- | -------- |
+| `POST .../actions/runs/<id>/cancel` | `409` — *Cannot cancel a workflow re-run that has not yet queued* |
+| `POST .../actions/runs/<id>/force-cancel` | `409` — same |
+| `POST .../actions/runs/<id>/rerun` | `403` — *This workflow is already running* |
+
+(The earlier close/reopen case returned `Server Error` from both cancel endpoints instead. Either
+way: not cancellable.)
+
+**The only fix is a new head commit**, which creates a fresh run and detaches the PR from the dead
+one. Prefer a rebase onto `main` — it also brings the branch up to date, and the repo is squash-only
+so the branch's own history is discarded at merge anyway:
+
+```sh
+git rebase origin/main
+git push --force-with-lease origin <branch>
+```
+
+An empty commit (`git commit --allow-empty`) works too and avoids the force-push, if the branch is
+shared or you would rather not rewrite it.
+
+The dead run stays `queued` in the run list forever. That is cosmetic once nothing references it.
+
+### Railway deploys are separate from CI
+
+A green `Release` workflow does **not** mean the deploy succeeded. Railway builds from the branch
+independently, so check it directly rather than inferring from GitHub:
+
+```sh
+railway status                    # "Deploy failed" shows here even while status is Online
+railway deployment list --json    # per-deployment status, commit, and meta.configErrors
+```
+
+A failure inside Railway's own build orchestrator — e.g.
+`StartSnapshotAndBuild UNKNOWN: failed to start workflow: context deadline exceeded` — is
+infrastructure, not the commit. The service keeps serving the previous build (status stays `Online`),
+so this fails quietly: the branch moved but the running code did not. Retry it with:
+
+```sh
+railway redeploy --from-source -y
+```
+
+`--from-source` is the important flag — a bare `railway redeploy` re-runs the *existing* deployment,
+which is the older commit, not the one that failed to build.
