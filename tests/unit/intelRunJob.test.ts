@@ -42,7 +42,7 @@ function deps(over: Partial<RunDeps> = {}): RunDeps {
     editMessage: vi.fn(async () => {}),
     discover: vi.fn(async () => ({ truncated: false })),
     gather: vi.fn(async () => []),
-    confirm: vi.fn(async () => ({ confirmed: 0, mismatched: 0 })),
+    confirm: vi.fn(async () => ({ confirmed: 0, mismatched: 0, backLinked: 0 })),
     getZoneCatalogue: vi.fn(async () => [zone]),
     getMythicKillCount: vi.fn(async () => 0),
     getRaidReports: vi.fn(async () => []),
@@ -612,14 +612,15 @@ describe('runJob', () => {
   // were exposed".
   // ---------------------------------------------------------------------------
 
-  it('logs the Discord confirmation summary even when nothing was confirmed', async () => {
+  it('logs the owner-lookup summary even when nothing was confirmed', async () => {
     await runJob(jobId, deps());
     const infoCalls = (logger.info as unknown as { mock: { calls: unknown[][] } }).mock.calls;
     const summary = infoCalls.find(
-      ([, msg]) => typeof msg === 'string' && msg.includes('Discord confirmation attempted on'),
+      ([, msg]) => typeof msg === 'string' && msg.includes('owner lookup attempted on'),
     );
-    expect(summary?.[1]).toContain('0 confirmed');
+    expect(summary?.[1]).toContain('0 Discord-confirmed');
     expect(summary?.[1]).toContain('0 mismatched');
+    expect(summary?.[1]).toContain('0 declaring an applicant character as their main');
   });
 });
 

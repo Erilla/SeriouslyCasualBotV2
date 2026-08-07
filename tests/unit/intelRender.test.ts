@@ -69,6 +69,36 @@ describe('renderFoundCharacters', () => {
     expect(pages[0]).toContain('undeclared (93% confidence)');
   });
 
+  /**
+   * A back-link is still an undeclared character, but "100% confidence" alone
+   * does not tell a reviewer WHY — and the claim runs the opposite way to a
+   * `declared main`, which is exactly the thing worth being explicit about.
+   */
+  it('says a back-linked character names the applicant as its main', () => {
+    const pages = renderFoundCharacters(
+      [finding({ source: 'declared alt', confidence: 100 })],
+      'Regnipaw',
+      'eu',
+    );
+    expect(pages[0]).toContain('undeclared (names Regnipaw as their main)');
+  });
+
+  it('keeps the Discord verdict alongside a back-link', () => {
+    const pages = renderFoundCharacters(
+      [
+        finding({
+          source: 'declared alt',
+          confidence: 100,
+          discordStatus: 'confirmed',
+          discordProfile: 'binded',
+        }),
+      ],
+      'Regnipaw',
+      'eu',
+    );
+    expect(pages[0]).toContain('undeclared (names Regnipaw as their main · Discord verified)');
+  });
+
   it('appends the Discord verdict when the handle was confirmed', () => {
     const pages = renderFoundCharacters(
       [finding({ discordStatus: 'confirmed', discordProfile: 'binded' })],

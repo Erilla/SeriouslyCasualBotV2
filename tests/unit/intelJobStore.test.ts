@@ -159,6 +159,49 @@ describe('intel job store', () => {
     expect(found[0].confidence).toBe(100);
   });
 
+  /**
+   * The back-link (this character names the applicant as its main) is a
+   * self-asserted fact from the same account, so it must upgrade a fingerprint
+   * guess — the whole reason the confirmation pass records it at all.
+   */
+  it('upgrades a fingerprint finding when the character declares the applicant as its main', () => {
+    const id = createJob({ applicationId: 1, targetChannelId: '1', character });
+    const base = {
+      name: 'Dragonii',
+      realm: 'aggra-português',
+      className: 'Evoker',
+      guildName: 'Killing Pixels',
+      guildRealm: 'draenor',
+      discordStatus: null,
+      discordProfile: null,
+    };
+    addFinding(id, { ...base, source: 'fingerprint', confidence: 79 });
+    addFinding(id, { ...base, source: 'declared alt', confidence: 100 });
+
+    const found = getFindings(id);
+    expect(found).toHaveLength(1);
+    expect(found[0].source).toBe('declared alt');
+    expect(found[0].confidence).toBe(100);
+  });
+
+  /** Nothing outranks a character the applicant named themselves. */
+  it('does not let a back-link downgrade an application character', () => {
+    const id = createJob({ applicationId: 1, targetChannelId: '1', character });
+    const base = {
+      name: 'Xplendor',
+      realm: 'aggra-português',
+      className: 'Hunter',
+      guildName: 'Aeterna',
+      guildRealm: 'silvermoon',
+      discordStatus: null,
+      discordProfile: null,
+    };
+    addFinding(id, { ...base, source: 'application', confidence: null });
+    addFinding(id, { ...base, source: 'declared alt', confidence: 100 });
+
+    expect(getFindings(id)[0].source).toBe('application');
+  });
+
   it('returns an empty guild history for a job with none persisted', () => {
     const id = createJob({ applicationId: 1, targetChannelId: '1', character });
     expect(getGuildHistory(id)).toEqual([]);

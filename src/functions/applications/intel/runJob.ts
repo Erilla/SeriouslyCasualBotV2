@@ -347,10 +347,9 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // time it is edited (at the end of this function, or on a pause/failure
     // in a later phase).
     // Candidates the pass will actually try: it skips 'application' findings
-    // (nothing to confirm) and does nothing at all without a declared handle.
-    const confirmable = job.applicant_discord
-      ? getFindings(jobId).filter((f) => f.source !== 'application').length
-      : 0;
+    // (nothing to confirm). No longer gated on a declared handle — the pass also
+    // reads each character's declared main, which needs no Discord handle.
+    const confirmable = getFindings(jobId).filter((f) => f.source !== 'application').length;
     const discord = await deps.confirm(jobId, applicant.region, job.applicant_discord, {
       getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
       paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
@@ -360,8 +359,9 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // indistinguishable from "no handles were exposed".
     logger.info(
       'Intel',
-      `Job #${jobId}: Discord confirmation attempted on ${confirmable} character(s) — ` +
-        `${discord.confirmed} confirmed, ${discord.mismatched} mismatched`,
+      `Job #${jobId}: owner lookup attempted on ${confirmable} character(s) — ` +
+        `${discord.confirmed} Discord-confirmed, ${discord.mismatched} mismatched, ` +
+        `${discord.backLinked} declaring an applicant character as their main`,
     );
 
     // Phase: which characters deserve a log sweep, then the sweep itself.

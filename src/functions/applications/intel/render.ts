@@ -72,7 +72,7 @@ export function discordDate(iso: string): string {
   return `<t:${Math.floor(ms / 1000)}:D>`;
 }
 
-function findingLine(f: IntelFinding, region: string): string {
+function findingLine(f: IntelFinding, region: string, applicantName: string): string {
   const link = `[${f.name}-${displayRealm(f.realm)}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
   const guild = f.guildName
     ? `${f.guildName} (${f.guildRealm ? displayRealm(f.guildRealm) : '?'})`
@@ -83,10 +83,15 @@ function findingLine(f: IntelFinding, region: string): string {
       : f.discordStatus === 'mismatch'
         ? ` · ⚠ Discord mismatch: ${f.discordProfile ?? 'unknown'}`
         : '';
+  // A back-link is a stated fact, not a score, and the claim runs the opposite
+  // way to a `declared main` — so it says who names whom rather than showing the
+  // flat 100% that a reviewer would read as just a very good fingerprint match.
+  const evidence =
+    f.source === 'declared alt'
+      ? `names ${applicantName} as their main`
+      : `${Math.round(f.confidence ?? 100)}% confidence`;
   const provenance =
-    f.source === 'application'
-      ? 'from the application'
-      : `undeclared (${Math.round(f.confidence ?? 100)}% confidence${discord})`;
+    f.source === 'application' ? 'from the application' : `undeclared (${evidence}${discord})`;
   return `${link} · ${f.className ?? 'Unknown'} · ${guild} — ${provenance}`;
 }
 
@@ -116,7 +121,7 @@ export function renderFoundCharacters(
   const pages: string[] = [];
   let current = `${heading}\n\n`;
   for (const f of sorted) {
-    const line = `${findingLine(f, region)}\n`;
+    const line = `${findingLine(f, region, applicantName)}\n`;
     if (current.length + line.length > PAGE_BUDGET) {
       pages.push(current.trimEnd());
       current = '';

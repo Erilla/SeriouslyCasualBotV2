@@ -55,7 +55,7 @@ describe('confirmDiscord', () => {
     addFinding(jobId, finding('Monkni'));
     const result = await confirmDiscord(jobId, 'eu', 'Binded', deps({ Monkni: 'binded' }));
 
-    expect(result).toEqual({ confirmed: 1, mismatched: 0 });
+    expect(result).toEqual({ confirmed: 1, mismatched: 0, backLinked: 0 });
     const stored = getFindings(jobId).find((f) => f.name === 'Monkni')!;
     expect(stored.discordStatus).toBe('confirmed');
     expect(stored.discordProfile).toBe('binded');
@@ -65,7 +65,7 @@ describe('confirmDiscord', () => {
     addFinding(jobId, finding('Someoneelse'));
     const result = await confirmDiscord(jobId, 'eu', 'binded', deps({ Someoneelse: 'notthem' }));
 
-    expect(result).toEqual({ confirmed: 0, mismatched: 1 });
+    expect(result).toEqual({ confirmed: 0, mismatched: 1, backLinked: 0 });
     const stored = getFindings(jobId).find((f) => f.name === 'Someoneelse')!;
     expect(stored.discordStatus).toBe('mismatch');
     expect(stored.discordProfile).toBe('notthem');
@@ -84,13 +84,17 @@ describe('confirmDiscord', () => {
     expect(d.getCharacterOwner).not.toHaveBeenCalled();
   });
 
-  it('does nothing when the applicant Discord handle is unknown', async () => {
+  /**
+   * The lookup still happens — it is what finds the declared-main back-link — but
+   * with no handle to compare against there is nothing to confirm or contradict.
+   */
+  it('records no Discord verdict when the applicant handle is unknown', async () => {
     addFinding(jobId, finding('Monkni'));
     const d = deps({ Monkni: 'binded' });
     const result = await confirmDiscord(jobId, 'eu', null, d);
 
-    expect(result).toEqual({ confirmed: 0, mismatched: 0 });
-    expect(d.getCharacterOwner).not.toHaveBeenCalled();
+    expect(result).toEqual({ confirmed: 0, mismatched: 0, backLinked: 0 });
+    expect(getFindings(jobId).find((f) => f.name === 'Monkni')!.discordStatus).toBeNull();
   });
 
   it('keeps going when one lookup throws', async () => {
@@ -108,6 +112,130 @@ describe('confirmDiscord', () => {
 
     expect(result.confirmed).toBe(1);
     expect(getFindings(jobId).find((f) => f.name === 'Broken')!.discordStatus).toBeNull();
+  });
+
+  /**
+   * The reverse of `declared main`, which discoverAlts only ever reads forwards
+   * ("who does the applicant say their main is?"). Raider.IO records the claim on
+   * the ALT — Dragonii-Aggra Português names Xplendor as its main, while Xplendor
+   * names nobody — and this pass already fetches exactly that payload for the
+   * Discord handle, so the strongest evidence there is was being discarded.
+   */
+  describe('declared-main back-link', () => {
+    const backLink = (main: { name: string; realm: string } | null): ConfirmDeps => ({
+      getCharacterOwner: vi.fn(async () => ({
+        user: null,
+        discordProfile: null,
+        declaredMain: main ? { region: 'eu', ...main } : null,
+      })),
+      paceMs: 0,
+    });
+
+    it('upgrades a fingerprint match that names an applicant character as its main', async () => {
+      addFinding(jobId, finding('Regnipaw', { source: 'application', confidence: null }));
+      addFinding(jobId, finding('Dragonii', { confidence: 79 }));
+
+      const result = await confirmDiscord(
+        jobId,
+        'eu',
+        'binded',
+        backLink({ name: 'Regnipaw', realm: 'draenor' }),
+      );
+
+      const stored = getFindings(jobId).find((f) => f.name === 'Dragonii')!;
+      expect(stored.source).toBe('declared alt');
+      expect(stored.confidence).toBe(100);
+      expect(result.backLinked).toBe(1);
+    });
+
+    /**
+     * The sources disagree on realm format — findings hold a slug, Raider.IO's
+     * main_character hands back whatever the path carried — so an exact string
+     * compare would silently never match.
+     */
+    it('matches the applicant across realm display-name and slug forms', async () => {
+      addFinding(
+        jobId,
+        finding('Regnipaw', { source: 'application', confidence: null, realm: 'tarren-mill' }),
+      );
+      addFinding(jobId, finding('Dragonii'));
+
+      await confirmDiscord(
+        jobId,
+        'eu',
+        'binded',
+        backLink({ name: 'Regnipaw', realm: 'Tarren Mill' }),
+      );
+
+      expect(getFindings(jobId).find((f) => f.name === 'Dragonii')!.source).toBe('declared alt');
+    });
+
+    it('ignores a main that is not one of the applicant characters', async () => {
+      addFinding(jobId, finding('Regnipaw', { source: 'application', confidence: null }));
+      addFinding(jobId, finding('Stranger'));
+
+      const result = await confirmDiscord(
+        jobId,
+        'eu',
+        'binded',
+        backLink({ name: 'Someoneelse', realm: 'draenor' }),
+      );
+
+      expect(getFindings(jobId).find((f) => f.name === 'Stranger')!.source).toBe('fingerprint');
+      expect(result.backLinked).toBe(0);
+    });
+
+    /**
+     * The pass used to return immediately without a handle, so an application
+     * with no Discord given never got the back-link either — the one signal that
+     * does not depend on Discord at all.
+     */
+    it('still finds the back-link when the applicant gave no Discord handle', async () => {
+      addFinding(jobId, finding('Regnipaw', { source: 'application', confidence: null }));
+      addFinding(jobId, finding('Dragonii'));
+
+      const result = await confirmDiscord(
+        jobId,
+        'eu',
+        null,
+        backLink({ name: 'Regnipaw', realm: 'draenor' }),
+      );
+
+      expect(getFindings(jobId).find((f) => f.name === 'Dragonii')!.source).toBe('declared alt');
+      expect(result).toEqual({ confirmed: 0, mismatched: 0, backLinked: 1 });
+    });
+
+    /** An upgrade rewrites the row; the verdict recorded from the same payload must survive it. */
+    it('keeps the Discord verdict when the same character is also back-linked', async () => {
+      addFinding(jobId, finding('Regnipaw', { source: 'application', confidence: null }));
+      addFinding(jobId, finding('Dragonii'));
+
+      await confirmDiscord(jobId, 'eu', 'binded', {
+        getCharacterOwner: vi.fn(async () => ({
+          user: null,
+          discordProfile: 'binded',
+          declaredMain: { region: 'eu', realm: 'draenor', name: 'Regnipaw' },
+        })),
+        paceMs: 0,
+      });
+
+      const stored = getFindings(jobId).find((f) => f.name === 'Dragonii')!;
+      expect(stored.source).toBe('declared alt');
+      expect(stored.discordStatus).toBe('confirmed');
+      expect(stored.discordProfile).toBe('binded');
+    });
+
+    /** Enrichment already on the row must not be blanked by the upgrade write. */
+    it('preserves the class and guild already recorded for the character', async () => {
+      addFinding(jobId, finding('Regnipaw', { source: 'application', confidence: null }));
+      addFinding(jobId, finding('Dragonii', { className: 'Evoker', guildName: 'Killing Pixels' }));
+
+      await confirmDiscord(jobId, 'eu', null, backLink({ name: 'Regnipaw', realm: 'draenor' }));
+
+      const stored = getFindings(jobId).find((f) => f.name === 'Dragonii')!;
+      expect(stored.className).toBe('Evoker');
+      expect(stored.guildName).toBe('Killing Pixels');
+    });
   });
 
   /**
@@ -140,7 +268,7 @@ describe('confirmDiscord', () => {
       });
 
       expect(peak).toBeGreaterThan(1);
-      expect(result).toEqual({ confirmed: 5, mismatched: 4 });
+      expect(result).toEqual({ confirmed: 5, mismatched: 4, backLinked: 0 });
       const stored = getFindings(jobId);
       expect(stored.filter((f) => f.discordStatus === 'confirmed')).toHaveLength(5);
       expect(stored.filter((f) => f.discordStatus === 'mismatch')).toHaveLength(4);

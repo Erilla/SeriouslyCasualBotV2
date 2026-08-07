@@ -5,7 +5,12 @@ import type { GuildHistoryEntry } from './render.js';
 
 export type JobPhase = 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'done';
 export type JobStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed';
-export type FindingSource = 'application' | 'raider.io' | 'declared main' | 'fingerprint';
+export type FindingSource =
+  | 'application'
+  | 'raider.io'
+  | 'declared main'
+  | 'declared alt'
+  | 'fingerprint';
 
 export type DiscordStatus = 'confirmed' | 'mismatch';
 
@@ -24,11 +29,16 @@ export interface IntelFinding {
 }
 
 /** Strongest-first: a later fingerprint hit must never downgrade a Raider.IO
- *  fact, and nothing outranks a character the applicant named themselves. */
+ *  fact, and nothing outranks a character the applicant named themselves.
+ *
+ *  `declared alt` is the mirror of `declared main` — the claim recorded on the
+ *  ALT ("my main is <applicant>") rather than on the applicant — and is the same
+ *  self-assertion by the same account owner, so it ranks with it. */
 const SOURCE_RANK: Record<FindingSource, number> = {
   application: 3,
   'raider.io': 2,
   'declared main': 2,
+  'declared alt': 2,
   fingerprint: 1,
 };
 
