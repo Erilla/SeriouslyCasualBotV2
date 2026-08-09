@@ -6,6 +6,7 @@ import { audit, alertOfficers } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
 import { startApplication } from '../functions/applications/startApplication.js';
 import { submitApplication } from '../functions/applications/submitApplication.js';
+import { buildSummaryRow } from '../functions/applications/summaryButtons.js';
 import {
   activeSessions,
   enterEditMode,
@@ -37,8 +38,56 @@ async function apply(interaction: ButtonInteraction, _params: string[]): Promise
   }
 }
 
+const ALREADY_SUBMITTED = 'Application already submitted.';
+
+/**
+ * Whether the application is still open to Edit/Confirm/Cancel.
+ *
+ * The summary DM's buttons use static custom IDs on a message that is never
+ * deleted, so Discord will happily route a click that arrives days after the
+ * application was submitted. Every handler therefore re-checks state rather
+ * than trusting that the button was clickable.
+ */
+function isOpenForEditing(applicationId: number): boolean {
+  const row = getDatabase()
+    .prepare('SELECT status FROM applications WHERE id = ?')
+    .get(applicationId) as { status: string } | undefined;
+  return row?.status === 'in_progress';
+}
+
+/**
+ * Grey out the summary buttons once they can no longer do anything. Best-effort:
+ * the DM may be too old to edit, and this is cosmetic — the state checks above
+ * are what actually prevent duplicate work.
+ */
+async function spendSummaryButtons(
+  interaction: ButtonInteraction,
+  applicationId: number,
+): Promise<void> {
+  try {
+    await interaction.message.edit({
+      components: [buildSummaryRow(applicationId, { disabled: true })],
+    });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.debug(
+      'Applications',
+      `Could not disable summary buttons for application #${applicationId}: ${error.message}`,
+    );
+  }
+}
+
 async function edit(interaction: ButtonInteraction, params: string[]): Promise<void> {
   const applicationId = parseInt(params[0], 10);
+
+  // Editing after submission rewrote the stored answers while the Q&A already
+  // posted to the channel and forum thread stayed a stale snapshot, then handed
+  // back a fresh Confirm & Submit — the loop that produced a duplicate.
+  if (!isOpenForEditing(applicationId)) {
+    await interaction.reply({ content: ALREADY_SUBMITTED, flags: MessageFlags.Ephemeral });
+    await spendSummaryButtons(interaction, applicationId);
+    return;
+  }
 
   enterEditMode(interaction.user.id, applicationId);
   startSessionTimeout(interaction.user);
@@ -67,10 +116,16 @@ async function confirm(interaction: ButtonInteraction, params: string[]): Promis
   });
 
   try {
-    await submitApplication(interaction.client, applicationId, interaction.user);
+    const result = await submitApplication(interaction.client, applicationId, interaction.user);
     await interaction.editReply({
-      content: 'Your application has been submitted! Officers will review it shortly.',
+      content:
+        result === 'already_submitted'
+          ? ALREADY_SUBMITTED
+          : 'Your application has been submitted! Officers will review it shortly.',
     });
+    // Only on a settled outcome. A failed submission leaves the buttons live so
+    // the applicant can retry from the same message.
+    await spendSummaryButtons(interaction, applicationId);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.error(
@@ -100,6 +155,15 @@ async function confirm(interaction: ButtonInteraction, params: string[]): Promis
 async function cancel(interaction: ButtonInteraction, params: string[]): Promise<void> {
   const applicationId = parseInt(params[0], 10);
   const db = getDatabase();
+
+  // Cancelling used to be unconditional, so a late click would retire a live
+  // application officers were already voting on while leaving its channel and
+  // forum thread standing.
+  if (!isOpenForEditing(applicationId)) {
+    await interaction.reply({ content: ALREADY_SUBMITTED, flags: MessageFlags.Ephemeral });
+    await spendSummaryButtons(interaction, applicationId);
+    return;
+  }
 
   db.prepare('UPDATE applications SET status = ? WHERE id = ?').run('abandoned', applicationId);
 

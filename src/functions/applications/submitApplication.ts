@@ -28,14 +28,25 @@ interface AnswerWithQuestion {
   sort_order: number;
 }
 
+export type SubmitApplicationResult = 'submitted' | 'already_submitted';
+
 /**
  * Submit a confirmed application: create text channel + forum post, update DB, notify overlords.
+ *
+ * Returns 'already_submitted' — without touching Discord — when the application
+ * has already been through here. The summary DM's Confirm/Edit/Cancel buttons use
+ * static custom IDs and are never removed by Discord, so a click can arrive at any
+ * time, including days after submission (see resumeSessions for why they're
+ * deliberately persistent). Without this guard a second click re-ran the whole
+ * submission: a second app-* channel, a second forum thread, a second intel job,
+ * and an UPDATE that repointed the row at the new pair — orphaning the original
+ * channel and thread officers were already reviewing in.
  */
 export async function submitApplication(
   client: Client,
   applicationId: number,
   user: User,
-): Promise<void> {
+): Promise<SubmitApplicationResult> {
   const db = getDatabase();
 
   const application = db.prepare('SELECT * FROM applications WHERE id = ?').get(applicationId) as
@@ -66,6 +77,29 @@ export async function submitApplication(
     throw new Error('Guild not found');
   }
 
+  // Claim the application before any Discord work. A conditional UPDATE is the
+  // guard rather than a read-then-check, because everything below is async: two
+  // clicks landing in the same window would both observe status='in_progress'
+  // and both proceed. SQLite applies this atomically, so exactly one caller can
+  // ever see changes === 1. The claim is on submitted_at rather than a new
+  // status value so the existing status vocabulary — which several queries
+  // filter on — stays untouched.
+  const claim = db
+    .prepare(
+      `UPDATE applications
+          SET submitted_at = datetime('now')
+        WHERE id = ? AND status = 'in_progress' AND submitted_at IS NULL`,
+    )
+    .run(applicationId);
+
+  if (claim.changes === 0) {
+    logger.info(
+      'Applications',
+      `Ignored duplicate submission of application #${applicationId} by ${user.tag} (status: ${application.status})`,
+    );
+    return 'already_submitted';
+  }
+
   // Prefer the character name parsed from the applicant's Raider.IO URL; fall
   // back to the name seeded at creation (their Discord display name).
   const parsedCharacterName = deriveCharacterNameFromAnswers(answers);
@@ -78,6 +112,15 @@ export async function submitApplication(
   // Build the Q&A text
   const qaText = buildQAText(answers, user, characterName);
 
+  // Give the claim back if submission fails, so the applicant can retry from the
+  // same summary message. Without this a transient Discord error would leave the
+  // application permanently stuck reporting "already submitted".
+  const releaseClaim = (): void => {
+    db.prepare(
+      `UPDATE applications SET submitted_at = NULL WHERE id = ? AND status = 'in_progress'`,
+    ).run(applicationId);
+  };
+
   // Step 1: Create text channel
   let channel: TextChannel;
   try {
@@ -89,6 +132,7 @@ export async function submitApplication(
       `Failed to create application channel for #${applicationId}: ${error.message}`,
       error,
     );
+    releaseClaim();
     throw new Error(`Failed to create application channel: ${error.message}`, { cause: err });
   }
 
@@ -140,6 +184,7 @@ export async function submitApplication(
       `Failed to update application #${applicationId} record: ${error.message}`,
       error,
     );
+    releaseClaim();
     throw new Error(`Failed to update application record: ${error.message}`, { cause: err });
   }
 
@@ -205,6 +250,8 @@ export async function submitApplication(
     'Applications',
     `Application #${applicationId} submitted by ${user.tag} (${characterName}) - channel: ${channel.id}`,
   );
+
+  return 'submitted';
 }
 
 // ─── Channel Creation ─────────────────────────────────────────

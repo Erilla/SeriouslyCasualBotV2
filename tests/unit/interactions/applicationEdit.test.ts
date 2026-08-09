@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ButtonInteraction } from 'discord.js';
+import { closeDatabase, getDatabase } from '../../../src/database/db.js';
+import { createTables } from '../../../src/database/schema.js';
 
 vi.mock('../../../src/config.js', () => ({ config: {} }));
 vi.mock('../../../src/services/logger.js', () => ({
@@ -30,15 +32,33 @@ function stubInteraction(sendImpl?: () => Promise<unknown>) {
       id: 'U1',
       send: sendImpl ? vi.fn(sendImpl) : vi.fn().mockResolvedValue(undefined),
     },
+    message: { edit: vi.fn().mockResolvedValue(undefined) },
     reply: vi.fn().mockResolvedValue(undefined),
     deferUpdate: vi.fn().mockResolvedValue(undefined),
   } as unknown as ButtonInteraction;
 }
 
+/**
+ * The edit handler now checks the application is still open before reopening
+ * editing, so these cases need a real row at id 42 to exercise the happy path.
+ */
+function seedOpenApplication(applicationId: number): void {
+  getDatabase()
+    .prepare('INSERT INTO applications (id, applicant_user_id, status) VALUES (?, ?, ?)')
+    .run(applicationId, 'U1', 'in_progress');
+}
+
 describe('application:edit button', () => {
   beforeEach(() => {
+    closeDatabase();
+    createTables(getDatabase(':memory:'));
+    seedOpenApplication(42);
     vi.clearAllMocks();
     activeSessions.clear();
+  });
+
+  afterEach(() => {
+    closeDatabase();
   });
 
   it('DMs the edit prompt and enters edit mode', async () => {

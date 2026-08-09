@@ -1,7 +1,8 @@
-import { type Message, type User, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { type Message, type User } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getQuestions } from './applicationQuestions.js';
+import { buildSummaryRow } from './summaryButtons.js';
 
 // ─── Session Tracking ─────────────────────────────────────────
 
@@ -234,20 +235,7 @@ export async function showSummary(user: User, applicationId: number): Promise<vo
     await user.send(msg);
   }
 
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`application:edit:${applicationId}`)
-      .setLabel('Edit Answer')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`application:confirm:${applicationId}`)
-      .setLabel('Confirm & Submit')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`application:cancel:${applicationId}`)
-      .setLabel('Cancel')
-      .setStyle(ButtonStyle.Danger),
-  );
+  const row = buildSummaryRow(applicationId);
 
   const confirmPrompt =
     'We try to review and respond to applications as quickly as we can. Please be warned that it can take up to a week for us to come to a decision.\n\n' +
