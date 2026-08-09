@@ -1,7 +1,8 @@
-import { type Message, type User, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { type Message, type User } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getQuestions } from './applicationQuestions.js';
+import { buildSummaryRow } from './summaryButtons.js';
 
 // ─── Session Tracking ─────────────────────────────────────────
 
@@ -17,6 +18,19 @@ export interface ApplicationSession {
 export const activeSessions = new Map<string, ApplicationSession>();
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Drop a user's DM session and disarm its inactivity timeout.
+ *
+ * Deleting the map entry alone is not enough: the pending setTimeout closes over
+ * the user and still fires, and its callback marks the application 'abandoned'.
+ * Any path that ends a session for good must come through here.
+ */
+export function clearSession(userId: string): void {
+  const session = activeSessions.get(userId);
+  if (session?.timeout) clearTimeout(session.timeout);
+  activeSessions.delete(userId);
+}
 
 /**
  * Start or reset the inactivity timeout for a session.
@@ -36,8 +50,26 @@ export function startSessionTimeout(user: User): void {
 
     activeSessions.delete(user.id);
 
+    // Only ever retire an application that is still genuinely unfinished. The
+    // conditions match the submission claim: a row that has been submitted, or
+    // is being submitted right now, must not be abandoned out from under the
+    // applicant — that silently retired live applications whose channel and
+    // forum thread stayed standing.
     const db = getDatabase();
-    db.prepare('UPDATE applications SET status = ? WHERE id = ?').run('abandoned', s.applicationId);
+    const abandoned = db
+      .prepare(
+        `UPDATE applications SET status = 'abandoned'
+          WHERE id = ? AND status = 'in_progress' AND submitted_at IS NULL`,
+      )
+      .run(s.applicationId);
+
+    if (abandoned.changes === 0) {
+      logger.debug(
+        'Applications',
+        `Session for application #${s.applicationId} timed out but the application was no longer open; left as-is`,
+      );
+      return;
+    }
 
     try {
       await user.send('Your application has timed out. You can restart with /apply.');
@@ -234,20 +266,7 @@ export async function showSummary(user: User, applicationId: number): Promise<vo
     await user.send(msg);
   }
 
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`application:edit:${applicationId}`)
-      .setLabel('Edit Answer')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`application:confirm:${applicationId}`)
-      .setLabel('Confirm & Submit')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`application:cancel:${applicationId}`)
-      .setLabel('Cancel')
-      .setStyle(ButtonStyle.Danger),
-  );
+  const row = buildSummaryRow(applicationId);
 
   const confirmPrompt =
     'We try to review and respond to applications as quickly as we can. Please be warned that it can take up to a week for us to come to a decision.\n\n' +

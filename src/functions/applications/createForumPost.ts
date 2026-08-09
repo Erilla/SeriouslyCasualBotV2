@@ -100,8 +100,20 @@ export async function createForumPost(
     });
   }
 
+  // Non-fatal for the same reason as the channel's Q&A: the thread already
+  // exists, and throwing past this point would discard its id, leaving an
+  // orphaned thread nothing can find and a retry free to post a second one.
   for (let i = 1; i < messages.length; i++) {
-    await thread.send(messages[i]);
+    try {
+      await thread.send(messages[i]);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn(
+        'Applications',
+        `Failed to post Q&A part ${i + 1} to thread ${thread.id}: ${error.message}`,
+      );
+      break;
+    }
   }
 
   // Add overlords as members of the post so they see it and can review.

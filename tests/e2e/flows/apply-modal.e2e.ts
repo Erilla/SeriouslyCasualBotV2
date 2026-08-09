@@ -140,9 +140,11 @@ describe('apply — DM Q&A flow', () => {
 
     await applyCmd.execute(iact as unknown as ChatInputCommandInteraction);
 
-    // 1. Ephemeral ack was sent.
-    expect(iact.__replies).toHaveLength(1);
-    expect(iact.__replies[0]!.ephemeral).toBe(true);
+    // 1. Ephemeral ack was sent. /apply defers, because it cannot know what to
+    //    say until startApplication has run, so the ack lands in __deferred.
+    expect(iact.__replies).toHaveLength(0);
+    expect(iact.__deferred).not.toBeNull();
+    expect(iact.__deferred!.ephemeral).toBe(true);
 
     // 2. An in_progress application row was created.
     const app = queryOne<ApplicationRow>(

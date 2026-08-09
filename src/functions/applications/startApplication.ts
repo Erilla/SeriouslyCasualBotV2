@@ -1,15 +1,114 @@
-import type { User } from 'discord.js';
+import type { GuildMember, User } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getQuestions } from './applicationQuestions.js';
 import { activeSessions, startSessionTimeout } from './dmQuestionnaire.js';
-import type { ApplicationRow } from '../../types/index.js';
+import type { ApplicationRow, ConfigRow } from '../../types/index.js';
+
+/** How long a rejected applicant must wait before applying again. */
+export const REAPPLY_AFTER_DAYS = 7;
+
+export type StartApplicationRefusal =
+  | 'already_raider'
+  | 'application_pending'
+  | 'recently_rejected';
+
+export type StartApplicationResult =
+  | { outcome: 'started' }
+  | { outcome: 'dm_failed' }
+  | { outcome: 'refused'; reason: StartApplicationRefusal; message: string };
+
+type RefusedResult = Extract<StartApplicationResult, { outcome: 'refused' }>;
+
+/** Whether the applicant is already a raider, so there is nothing to apply for. */
+function hasRaiderRole(member: GuildMember | null): boolean {
+  // A member we could not resolve is not evidence of anything — never refuse on it.
+  if (!member) return false;
+
+  const roleId = (
+    getDatabase().prepare('SELECT value FROM config WHERE key = ?').get('raider_role_id') as
+      | ConfigRow
+      | undefined
+  )?.value;
+  if (!roleId) return false;
+
+  return member.roles.cache.has(roleId);
+}
+
+/**
+ * Refuse the application if the applicant already has one that counts.
+ *
+ * Only an undecided application blocks. Three statuses are deliberately absent:
+ *
+ * - 'in_progress' — the caller resumes those instead.
+ * - 'abandoned' — a cancelled or timed-out attempt must never block a retry.
+ * - 'accepted' — people get accepted, leave, and come back. Whether someone is
+ *   currently in the guild is what should stop them applying, and the raider-role
+ *   check is what expresses that; a years-old accepted row is not evidence of it.
+ *   Including it here also let an accepted row mask a more recent rejection, so a
+ *   returning applicant was refused outright instead of waiting out the cooldown.
+ *
+ * Date arithmetic stays in SQLite so it runs against the same clock and UTC
+ * representation that wrote resolved_at.
+ */
+function findBlockingApplication(userId: string): RefusedResult | null {
+  const db = getDatabase();
+
+  const pending = db
+    .prepare(
+      `SELECT status FROM applications
+        WHERE applicant_user_id = ? AND status IN ('submitted', 'active')
+        ORDER BY id DESC LIMIT 1`,
+    )
+    .get(userId) as { status: string } | undefined;
+
+  if (pending) {
+    return {
+      outcome: 'refused',
+      reason: 'application_pending',
+      message:
+        'You already have an application awaiting a decision. Officers will get back to you — ' +
+        'it can take up to a week.',
+    };
+  }
+
+  const rejected = db
+    .prepare(
+      `SELECT strftime('%s', resolved_at, '+${REAPPLY_AFTER_DAYS} days') AS retry_epoch
+         FROM applications
+        WHERE applicant_user_id = ?
+          AND status = 'rejected'
+          AND resolved_at IS NOT NULL
+          AND datetime(resolved_at, '+${REAPPLY_AFTER_DAYS} days') > datetime('now')
+        ORDER BY resolved_at DESC LIMIT 1`,
+    )
+    .get(userId) as { retry_epoch: string } | undefined;
+
+  if (rejected) {
+    return {
+      outcome: 'refused',
+      reason: 'recently_rejected',
+      // A Discord timestamp renders in each reader's own timezone, which a
+      // formatted UTC string would not.
+      message:
+        `Your last application was declined. You're welcome to apply again after ` +
+        `<t:${rejected.retry_epoch}:F>.`,
+    };
+  }
+
+  return null;
+}
 
 /**
  * Start (or resume) a DM questionnaire for a user.
- * Returns true if DM was sent successfully, false if DMs are disabled.
+ *
+ * `member` is optional so callers outside a guild context still work; when it is
+ * absent the raider-role check is skipped rather than assumed either way.
  */
-export async function startApplication(user: User): Promise<boolean> {
+export async function startApplication(
+  user: User,
+  member: GuildMember | null = null,
+): Promise<StartApplicationResult> {
   const db = getDatabase();
 
   const questions = getQuestions();
@@ -19,10 +118,27 @@ export async function startApplication(user: User): Promise<boolean> {
       await user.send(
         'No application questions are currently configured. Please contact an officer.',
       );
-      return true;
+      return { outcome: 'started' };
     } catch {
-      return false;
+      return { outcome: 'dm_failed' };
     }
+  }
+
+  // Refuse BEFORE the session cleanup below. A refusal must leave the applicant
+  // exactly as it found them: clearing the session first stranded anyone midway
+  // through the questionnaire, because the session and its inactivity timeout
+  // were both gone, so every answer they went on to DM was silently dropped and
+  // the row sat 'in_progress' forever.
+  if (hasRaiderRole(member)) {
+    logger.info(
+      'Applications',
+      `Refused application from ${user.tag}: already has the raider role`,
+    );
+    return {
+      outcome: 'refused',
+      reason: 'already_raider',
+      message: "You're already a raider — there's no need to apply.",
+    };
   }
 
   // Clean up any stale in-memory session for this user before proceeding.
@@ -43,6 +159,14 @@ export async function startApplication(user: User): Promise<boolean> {
     return await resumeApplication(user, existing, questions);
   }
 
+  // Only reached when there is nothing to resume, so this never interferes with
+  // an application the applicant is still filling in.
+  const blocked = findBlockingApplication(user.id);
+  if (blocked) {
+    logger.info('Applications', `Refused application from ${user.tag}: ${blocked.reason}`);
+    return blocked;
+  }
+
   // No in_progress application exists - create a new one
   return await createNewApplication(user, questions);
 }
@@ -51,7 +175,7 @@ async function resumeApplication(
   user: User,
   application: ApplicationRow,
   questions: { id: number; question: string; sort_order: number }[],
-): Promise<boolean> {
+): Promise<StartApplicationResult> {
   const db = getDatabase();
 
   // Verify the existing answers still align with current questions.
@@ -85,9 +209,9 @@ async function resumeApplication(
     const { showSummary } = await import('./dmQuestionnaire.js');
     try {
       await showSummary(user, application.id);
-      return true;
+      return { outcome: 'started' };
     } catch {
-      return false;
+      return { outcome: 'dm_failed' };
     }
   }
 
@@ -109,10 +233,10 @@ async function resumeApplication(
     await user.send(
       `Welcome back! Resuming your application.\n\n**Application Question ${questionIndex + 1}/${questions.length}:**\n${questions[questionIndex].question}`,
     );
-    return true;
+    return { outcome: 'started' };
   } catch {
     activeSessions.delete(user.id);
-    return false;
+    return { outcome: 'dm_failed' };
   }
 }
 
@@ -122,7 +246,7 @@ async function resumeApplication(
 async function createNewApplication(
   user: User,
   questions: { id: number; question: string; sort_order: number }[],
-): Promise<boolean> {
+): Promise<StartApplicationResult> {
   const db = getDatabase();
 
   // Seed character_name with the applicant's Discord display name. The
@@ -149,10 +273,10 @@ async function createNewApplication(
 
   try {
     await user.send(`**Application Question 1/${questions.length}:**\n${questions[0].question}`);
-    return true;
+    return { outcome: 'started' };
   } catch {
     activeSessions.delete(user.id);
     db.prepare('UPDATE applications SET status = ? WHERE id = ?').run('abandoned', applicationId);
-    return false;
+    return { outcome: 'dm_failed' };
   }
 }
