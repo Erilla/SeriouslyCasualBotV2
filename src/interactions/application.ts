@@ -24,6 +24,14 @@ import {
 } from '../functions/applications/rejectApplication.js';
 
 async function apply(interaction: ButtonInteraction, _params: string[]): Promise<void> {
+  // Deferred before any of the work below. Discord invalidates the interaction
+  // token 3 seconds after delivery, and this path fetches the guild member and
+  // sends a DM before it knows what to say — on a cold member cache or a
+  // rate-limited DM that is enough to blow the window, leaving the applicant
+  // looking at "This interaction failed" even though their application was
+  // created. Deferring buys 15 minutes for the editReply below.
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
   const result = await startApplication(interaction.user, await resolveMember(interaction));
 
   const content =
@@ -33,7 +41,7 @@ async function apply(interaction: ButtonInteraction, _params: string[]): Promise
         ? 'I was unable to send you a DM. Please make sure your DMs are open and try again.'
         : result.message;
 
-  await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+  await interaction.editReply({ content });
 }
 
 const ALREADY_SUBMITTED = 'Application already submitted.';

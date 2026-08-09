@@ -7,15 +7,6 @@ import { getDatabase } from '../../../src/database/db.js';
 import applyCmd from '../../../src/commands/apply.js';
 
 // ---------------------------------------------------------------------------
-// Helper: extract reply content string from a FakeReply.
-// ---------------------------------------------------------------------------
-function replyContent(reply: { options: unknown }): string {
-  const opts = reply.options;
-  if (typeof opts === 'string') return opts;
-  return (opts as { content?: string }).content ?? '';
-}
-
-// ---------------------------------------------------------------------------
 // Helper: extract editReply content string.
 // ---------------------------------------------------------------------------
 function editContent(reply: { options: unknown } | null): string {
@@ -37,7 +28,7 @@ describe('/apply', () => {
   // Happy path — fresh user (no in_progress application)
   // =========================================================================
 
-  it('fresh user — replies ephemeral with "Check your DMs!" immediately', async () => {
+  it('fresh user — defers ephemerally, then edits in "Check your DMs!"', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
@@ -53,11 +44,12 @@ describe('/apply', () => {
 
     await applyCmd.execute(iact as unknown as ChatInputCommandInteraction);
 
-    // The handler always sends the ephemeral ack first.
-    expect(iact.__replies.length).toBe(1);
-    const reply = iact.__replies[0]!;
-    expect(reply.ephemeral).toBe(true);
-    expect(replyContent(reply)).toContain('Check your DMs');
+    // The handler defers first — it cannot know what to say until startApplication
+    // has run — so the ack lands in __deferred and the content arrives via editReply.
+    expect(iact.__replies.length).toBe(0);
+    expect(iact.__deferred).not.toBeNull();
+    expect(iact.__deferred!.ephemeral).toBe(true);
+    expect(editContent(iact.__editedReply)).toContain('Check your DMs');
   });
 
   it('fresh user — does NOT show a modal (DM flow, not modal flow)', async () => {
@@ -118,7 +110,7 @@ describe('/apply', () => {
   // Existing in_progress application — resume path
   // =========================================================================
 
-  it('user with existing in_progress application — still replies ephemeral "Check your DMs!"', async () => {
+  it('user with existing in_progress application — still defers, then edits in "Check your DMs!"', async () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
@@ -147,11 +139,11 @@ describe('/apply', () => {
 
     await applyCmd.execute(iact as unknown as ChatInputCommandInteraction);
 
-    // The handler's first action is always the same ephemeral ack.
-    expect(iact.__replies.length).toBe(1);
-    const reply = iact.__replies[0]!;
-    expect(reply.ephemeral).toBe(true);
-    expect(replyContent(reply)).toContain('Check your DMs');
+    // The handler's first action is always the same ephemeral deferral.
+    expect(iact.__replies.length).toBe(0);
+    expect(iact.__deferred).not.toBeNull();
+    expect(iact.__deferred!.ephemeral).toBe(true);
+    expect(editContent(iact.__editedReply)).toContain('Check your DMs');
   });
 
   // =========================================================================
@@ -181,9 +173,10 @@ describe('/apply', () => {
 
     await applyCmd.execute(iact as unknown as ChatInputCommandInteraction);
 
-    // The initial ack is still sent.
-    expect(iact.__replies.length).toBe(1);
-    expect(iact.__replies[0]!.ephemeral).toBe(true);
+    // The initial ack is still sent, as a deferral.
+    expect(iact.__replies.length).toBe(0);
+    expect(iact.__deferred).not.toBeNull();
+    expect(iact.__deferred!.ephemeral).toBe(true);
 
     // The handler edits the reply to report the failure.
     expect(iact.__editedReply).not.toBeNull();
