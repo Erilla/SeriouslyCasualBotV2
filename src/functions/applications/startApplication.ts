@@ -10,7 +10,6 @@ export const REAPPLY_AFTER_DAYS = 7;
 
 export type StartApplicationRefusal =
   | 'already_raider'
-  | 'already_accepted'
   | 'application_pending'
   | 'recently_rejected';
 
@@ -39,32 +38,31 @@ function hasRaiderRole(member: GuildMember | null): boolean {
 /**
  * Refuse the application if the applicant already has one that counts.
  *
- * 'in_progress' is deliberately absent: the caller resumes those instead.
- * 'abandoned' is absent too — a cancelled or timed-out attempt should never
- * block a genuine retry. Date arithmetic stays in SQLite so it is done against
- * the same clock and UTC representation that wrote resolved_at.
+ * Only an undecided application blocks. Three statuses are deliberately absent:
+ *
+ * - 'in_progress' — the caller resumes those instead.
+ * - 'abandoned' — a cancelled or timed-out attempt must never block a retry.
+ * - 'accepted' — people get accepted, leave, and come back. Whether someone is
+ *   currently in the guild is what should stop them applying, and the raider-role
+ *   check is what expresses that; a years-old accepted row is not evidence of it.
+ *   Including it here also let an accepted row mask a more recent rejection, so a
+ *   returning applicant was refused outright instead of waiting out the cooldown.
+ *
+ * Date arithmetic stays in SQLite so it runs against the same clock and UTC
+ * representation that wrote resolved_at.
  */
 function findBlockingApplication(userId: string): RefusedResult | null {
   const db = getDatabase();
 
-  const settled = db
+  const pending = db
     .prepare(
       `SELECT status FROM applications
-        WHERE applicant_user_id = ? AND status IN ('submitted', 'active', 'accepted')
+        WHERE applicant_user_id = ? AND status IN ('submitted', 'active')
         ORDER BY id DESC LIMIT 1`,
     )
     .get(userId) as { status: string } | undefined;
 
-  if (settled?.status === 'accepted') {
-    return {
-      outcome: 'refused',
-      reason: 'already_accepted',
-      message:
-        'Your application has already been accepted. If something looks wrong, please contact an officer.',
-    };
-  }
-
-  if (settled) {
+  if (pending) {
     return {
       outcome: 'refused',
       reason: 'application_pending',

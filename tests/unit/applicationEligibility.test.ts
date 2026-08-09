@@ -99,12 +99,39 @@ describe('startApplication eligibility', () => {
     expect(countApplications()).toBe(1);
   });
 
-  it('refuses, as already accepted, when an accepted application is on record', async () => {
+  it('lets a previously accepted applicant who has since left apply again', async () => {
+    // Being accepted once is not a life sentence: people leave and come back.
+    // Current membership is what should block, and the raider-role check is
+    // what expresses that — an old accepted row on its own must not.
     seedApplication('accepted', '2026-08-01 10:00:00');
 
     const result = await startApplication(fakeUser(), fakeMember([]));
 
-    expect(result).toMatchObject({ outcome: 'refused', reason: 'already_accepted' });
+    expect(result.outcome).toBe('started');
+    expect(countApplications()).toBe(2);
+  });
+
+  it('still refuses an accepted applicant who is currently a raider', async () => {
+    seedApplication('accepted', '2026-08-01 10:00:00');
+
+    const result = await startApplication(fakeUser(), fakeMember([RAIDER_ROLE_ID]));
+
+    expect(result).toMatchObject({ outcome: 'refused', reason: 'already_raider' });
+  });
+
+  it('applies the rejection cooldown to someone whose older application was accepted', async () => {
+    // An accepted row must not mask a more recent rejection: filtering it in
+    // ahead of the cooldown query reported "already accepted" and blocked the
+    // applicant permanently instead of for a week.
+    seedApplication('accepted', '2026-01-01 10:00:00');
+    const rejectedId = seedApplication('rejected');
+    getDatabase()
+      .prepare(`UPDATE applications SET resolved_at = datetime('now', '-2 days') WHERE id = ?`)
+      .run(rejectedId);
+
+    const result = await startApplication(fakeUser(), fakeMember([]));
+
+    expect(result).toMatchObject({ outcome: 'refused', reason: 'recently_rejected' });
   });
 
   it('refuses a re-application within 7 days of being rejected', async () => {
