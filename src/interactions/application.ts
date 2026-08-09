@@ -5,6 +5,7 @@ import { getDatabase } from '../database/db.js';
 import { audit, alertOfficers } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
 import { startApplication } from '../functions/applications/startApplication.js';
+import { resolveMember } from '../functions/applications/resolveMember.js';
 import { submitApplication } from '../functions/applications/submitApplication.js';
 import { buildSummaryRow } from '../functions/applications/summaryButtons.js';
 import {
@@ -23,19 +24,16 @@ import {
 } from '../functions/applications/rejectApplication.js';
 
 async function apply(interaction: ButtonInteraction, _params: string[]): Promise<void> {
-  const success = await startApplication(interaction.user);
+  const result = await startApplication(interaction.user, await resolveMember(interaction));
 
-  if (success) {
-    await interaction.reply({
-      content: "Check your DMs! I've sent you the application questions.",
-      flags: MessageFlags.Ephemeral,
-    });
-  } else {
-    await interaction.reply({
-      content: 'I was unable to send you a DM. Please make sure your DMs are open and try again.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
+  const content =
+    result.outcome === 'started'
+      ? "Check your DMs! I've sent you the application questions."
+      : result.outcome === 'dm_failed'
+        ? 'I was unable to send you a DM. Please make sure your DMs are open and try again.'
+        : result.message;
+
+  await interaction.reply({ content, flags: MessageFlags.Ephemeral });
 }
 
 const ALREADY_SUBMITTED = 'Application already submitted.';
