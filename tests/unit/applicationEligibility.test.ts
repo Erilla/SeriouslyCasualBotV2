@@ -195,6 +195,30 @@ describe('startApplication eligibility', () => {
     expect(user.send).toHaveBeenCalledWith(expect.stringContaining('Welcome back'));
   });
 
+  it('refuses a raider who has an unfinished application, rather than resuming it', async () => {
+    // The guards sat after the in_progress early return, so an applicant who
+    // gained the raider role mid-questionnaire was resumed straight past them.
+    const user = fakeUser();
+    await startApplication(user, fakeMember([]));
+
+    const result = await startApplication(user, fakeMember([RAIDER_ROLE_ID]));
+
+    expect(result).toMatchObject({ outcome: 'refused', reason: 'already_raider' });
+  });
+
+  it('leaves an in-flight questionnaire session intact when it refuses', async () => {
+    // The refusal was inserted after the unconditional session cleanup, so it
+    // destroyed the session and its timeout: every later DM answer was dropped
+    // and the row lingered in_progress forever.
+    const user = fakeUser();
+    await startApplication(user, fakeMember([]));
+    expect(activeSessions.has(user.id)).toBe(true);
+
+    await startApplication(user, fakeMember([RAIDER_ROLE_ID]));
+
+    expect(activeSessions.has(user.id)).toBe(true);
+  });
+
   it('reports a DM failure distinctly from a refusal', async () => {
     const user = {
       ...fakeUser(),

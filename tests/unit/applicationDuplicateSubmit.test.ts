@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Guild } from 'discord.js';
+import { ChannelType, type Guild } from 'discord.js';
 import { closeDatabase, getDatabase } from '../../src/database/db.js';
 import { createTables } from '../../src/database/schema.js';
 
@@ -36,15 +36,24 @@ vi.mock('../../src/functions/applications/applicationLogCategory.js', () => ({
 
 import { submitApplication } from '../../src/functions/applications/submitApplication.js';
 
-function makeGuild(createChannel: ReturnType<typeof vi.fn>): Guild {
+function makeGuild(
+  createChannel: ReturnType<typeof vi.fn>,
+  /** Channels that already exist in the guild, keyed by id, for reuse-on-retry. */
+  existing: Record<string, unknown> = {},
+): Guild {
   return {
     id: 'guild-1',
     channels: {
       create: createChannel,
-      cache: { get: vi.fn(() => undefined) },
-      fetch: vi.fn(async () => null),
+      cache: { get: vi.fn((id: string) => existing[id]) },
+      fetch: vi.fn(async (id: string) => existing[id] ?? null),
     },
   } as unknown as Guild;
+}
+
+/** A stand-in for an application text channel that already exists in Discord. */
+function existingTextChannel(id: string) {
+  return { id, type: ChannelType.GuildText, send: vi.fn(async () => undefined) };
 }
 
 function makeClient(guild: Guild) {
@@ -172,6 +181,129 @@ describe('submitApplication duplicate protection', () => {
     expect(results.filter((r) => r === 'submitted')).toHaveLength(1);
     expect(results.filter((r) => r === 'already_submitted')).toHaveLength(1);
     expect(createChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('records the channel before posting the Q&A, and a failed post does not fail submission', async () => {
+    // The Q&A send loop used to sit outside any catch, so a throw there left a
+    // real channel behind while the caller treated the whole submission as
+    // failed and released the claim — the retry then built a second channel.
+    const applicationId = seedApplication('in_progress');
+    const createChannel = vi.fn(async () => ({
+      id: 'channel-1',
+      send: vi.fn(async () => {
+        throw new Error('Missing Permissions');
+      }),
+    }));
+
+    const result = await submitApplication(
+      makeClient(makeGuild(createChannel)),
+      applicationId,
+      applicant,
+    );
+
+    expect(result).toBe('submitted');
+    const row = getDatabase()
+      .prepare('SELECT channel_id, status FROM applications WHERE id = ?')
+      .get(applicationId) as { channel_id: string; status: string };
+    expect(row.channel_id).toBe('channel-1');
+    expect(row.status).toBe('active');
+  });
+
+  it('reuses the channel already recorded instead of creating a second one', async () => {
+    // The retry path the previous fix deliberately enables must not rebuild
+    // artefacts that survived the failed attempt.
+    const applicationId = seedApplication('in_progress');
+    getDatabase()
+      .prepare('UPDATE applications SET channel_id = ? WHERE id = ?')
+      .run('channel-1', applicationId);
+    const createChannel = vi.fn(async () => ({ id: 'channel-2', send: vi.fn() }));
+
+    const result = await submitApplication(
+      makeClient(makeGuild(createChannel, { 'channel-1': existingTextChannel('channel-1') })),
+      applicationId,
+      applicant,
+    );
+
+    expect(result).toBe('submitted');
+    expect(createChannel).not.toHaveBeenCalled();
+    const row = getDatabase()
+      .prepare('SELECT channel_id FROM applications WHERE id = ?')
+      .get(applicationId) as { channel_id: string };
+    expect(row.channel_id).toBe('channel-1');
+  });
+
+  it('creates a new channel when the recorded one has been deleted', async () => {
+    const applicationId = seedApplication('in_progress');
+    getDatabase()
+      .prepare('UPDATE applications SET channel_id = ? WHERE id = ?')
+      .run('deleted-channel', applicationId);
+    const createChannel = vi.fn(async () => ({ id: 'channel-2', send: vi.fn() }));
+
+    await submitApplication(makeClient(makeGuild(createChannel)), applicationId, applicant);
+
+    expect(createChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the forum thread already recorded instead of posting a second one', async () => {
+    const applicationId = seedApplication('in_progress');
+    getDatabase()
+      .prepare('UPDATE applications SET thread_id = ?, forum_post_id = ? WHERE id = ?')
+      .run('thread-1', 'forum-1', applicationId);
+
+    await submitApplication(
+      makeClient(
+        makeGuild(
+          vi.fn(async () => ({ id: 'channel-1', send: vi.fn() })),
+          {
+            'thread-1': {
+              id: 'thread-1',
+              isThread: () => true,
+              send: vi.fn(async () => undefined),
+            },
+          },
+        ),
+      ),
+      applicationId,
+      applicant,
+    );
+
+    expect(mockedCreateForumPost).not.toHaveBeenCalled();
+  });
+
+  it('lets a claim abandoned by a crash be retried once the lease expires', async () => {
+    // A crash between the claim and the record update used to leave submitted_at
+    // set with status still 'in_progress', which no in-process release could ever
+    // undo — every later click answered "already submitted" forever.
+    const applicationId = seedApplication('in_progress');
+    getDatabase()
+      .prepare(`UPDATE applications SET submitted_at = datetime('now', '-30 minutes') WHERE id = ?`)
+      .run(applicationId);
+
+    const result = await submitApplication(
+      makeClient(makeGuild(vi.fn(async () => ({ id: 'channel-1', send: vi.fn() })))),
+      applicationId,
+      applicant,
+    );
+
+    expect(result).toBe('submitted');
+  });
+
+  it('still refuses a second click while the first is genuinely in flight', async () => {
+    // The lease must not weaken the double-click guard: a fresh claim is held.
+    const applicationId = seedApplication('in_progress');
+    getDatabase()
+      .prepare(`UPDATE applications SET submitted_at = datetime('now') WHERE id = ?`)
+      .run(applicationId);
+    const createChannel = vi.fn(async () => ({ id: 'channel-2', send: vi.fn() }));
+
+    const result = await submitApplication(
+      makeClient(makeGuild(createChannel)),
+      applicationId,
+      applicant,
+    );
+
+    expect(result).toBe('already_submitted');
+    expect(createChannel).not.toHaveBeenCalled();
   });
 
   it('releases the claim when submission fails so the applicant can retry', async () => {

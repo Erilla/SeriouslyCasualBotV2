@@ -31,6 +31,15 @@ interface AnswerWithQuestion {
 export type SubmitApplicationResult = 'submitted' | 'already_submitted';
 
 /**
+ * How long one submission attempt may hold the claim before another may take it.
+ *
+ * Long enough that a genuinely in-flight attempt (several Discord round-trips)
+ * is never displaced, short enough that an applicant whose submission died with
+ * the process isn't left stuck for long.
+ */
+export const SUBMISSION_LEASE_MINUTES = 10;
+
+/**
  * Submit a confirmed application: create text channel + forum post, update DB, notify overlords.
  *
  * Returns 'already_submitted' — without touching Discord — when the application
@@ -84,13 +93,21 @@ export async function submitApplication(
   // ever see changes === 1. The claim is on submitted_at rather than a new
   // status value so the existing status vocabulary — which several queries
   // filter on — stays untouched.
+  //
+  // It is a LEASE, not a permanent flag. A claim only ever released in-process
+  // is lost if the process dies mid-submission — and Railway restarts the bot on
+  // every deploy — which left the row 'in_progress' with submitted_at set and no
+  // way back: every later click answered "already submitted" forever. Past the
+  // lease the row can be claimed again, and the reuse logic below stops that
+  // retry from duplicating anything the dead attempt had already created.
   const claim = db
     .prepare(
       `UPDATE applications
           SET submitted_at = datetime('now')
-        WHERE id = ? AND status = 'in_progress' AND submitted_at IS NULL`,
+        WHERE id = ? AND status = 'in_progress'
+          AND (submitted_at IS NULL OR submitted_at <= datetime('now', ?))`,
     )
-    .run(applicationId);
+    .run(applicationId, `-${SUBMISSION_LEASE_MINUTES} minutes`);
 
   if (claim.changes === 0) {
     logger.info(
@@ -121,19 +138,37 @@ export async function submitApplication(
     ).run(applicationId);
   };
 
-  // Step 1: Create text channel
-  let channel: TextChannel;
-  try {
-    channel = await createApplicationChannel(guild, channelName, user, qaText);
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    logger.error(
+  // Step 1: Create text channel — unless a previous attempt already made one.
+  // Reuse is what makes the retry above safe: without it, a submission that
+  // failed after creating the channel would build a second one, which is exactly
+  // the duplicate this whole guard exists to prevent.
+  let channel = await findExistingChannel(guild, application.channel_id);
+
+  if (channel) {
+    logger.info(
       'Applications',
-      `Failed to create application channel for #${applicationId}: ${error.message}`,
-      error,
+      `Reusing existing channel ${channel.id} for application #${applicationId}`,
     );
-    releaseClaim();
-    throw new Error(`Failed to create application channel: ${error.message}`, { cause: err });
+  } else {
+    try {
+      channel = await createApplicationChannel(guild, channelName, user, qaText);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error(
+        'Applications',
+        `Failed to create application channel for #${applicationId}: ${error.message}`,
+        error,
+      );
+      releaseClaim();
+      throw new Error(`Failed to create application channel: ${error.message}`, { cause: err });
+    }
+
+    // Persist immediately, not at Step 3. Everything between here and there can
+    // fail, and an id recorded only at the end is an id a retry cannot reuse.
+    db.prepare('UPDATE applications SET channel_id = ? WHERE id = ?').run(
+      channel.id,
+      applicationId,
+    );
   }
 
   // Step 2: Create forum post
@@ -147,21 +182,46 @@ export async function submitApplication(
   // those were separate decisions an application with no parseable Raider.IO URL
   // got placeholders that nothing would ever edit.
   const named = collectRaiderIoCharacters(answers);
-  try {
-    const result = await createForumPost(guild, characterName, user, qaText, applicationId, named);
-    forumPost = result.forumPost;
-    threadId = result.threadId;
-    altsMessageId = result.altsMessageId;
-    guildsMessageId = result.guildsMessageId;
-    logsMessageId = result.logsMessageId;
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    logger.error(
+  const existingThread = await findExistingThread(guild, application.thread_id);
+
+  if (existingThread) {
+    // Same reasoning as the channel: a retry must not post the applicant a
+    // second time into the forum officers are already reviewing in.
+    logger.info(
       'Applications',
-      `Failed to create forum post for #${applicationId}: ${error.message}`,
-      error,
+      `Reusing existing forum thread ${existingThread} for application #${applicationId}`,
     );
-    // Don't throw here - the text channel was already created, so update the record with what we have
+    threadId = existingThread;
+    forumPost = application.forum_post_id ? { id: application.forum_post_id } : null;
+  } else {
+    try {
+      const result = await createForumPost(
+        guild,
+        characterName,
+        user,
+        qaText,
+        applicationId,
+        named,
+      );
+      forumPost = result.forumPost;
+      threadId = result.threadId;
+      altsMessageId = result.altsMessageId;
+      guildsMessageId = result.guildsMessageId;
+      logsMessageId = result.logsMessageId;
+      db.prepare('UPDATE applications SET forum_post_id = ?, thread_id = ? WHERE id = ?').run(
+        forumPost?.id ?? null,
+        threadId,
+        applicationId,
+      );
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error(
+        'Applications',
+        `Failed to create forum post for #${applicationId}: ${error.message}`,
+        error,
+      );
+      // Don't throw here - the text channel was already created, so update the record with what we have
+    }
   }
 
   // Step 3: Update application record
@@ -316,6 +376,35 @@ export function buildApplicationChannelOverwrites(
   });
 }
 
+/**
+ * The application's text channel from a previous attempt, if it still exists.
+ *
+ * A recorded id whose channel has since been deleted returns null so a fresh one
+ * is created — the point is never to duplicate a channel that is still there.
+ */
+async function findExistingChannel(
+  guild: Guild,
+  channelId: string | null | undefined,
+): Promise<TextChannel | null> {
+  if (!channelId) return null;
+
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel || channel.type !== ChannelType.GuildText) return null;
+
+  return channel as TextChannel;
+}
+
+/** The application's forum thread from a previous attempt, if it still exists. */
+async function findExistingThread(
+  guild: Guild,
+  threadId: string | null | undefined,
+): Promise<string | null> {
+  if (!threadId) return null;
+
+  const thread = await guild.channels.fetch(threadId).catch(() => null);
+  return thread ? threadId : null;
+}
+
 async function createApplicationChannel(
   guild: Guild,
   channelName: string,
@@ -367,10 +456,19 @@ async function createApplicationChannel(
     );
   }
 
-  // Post Q&A (split if > 2000 chars)
+  // Post Q&A (split if > 2000 chars). Deliberately non-fatal: the channel now
+  // exists, so throwing here would report a failed submission while leaving a
+  // real channel behind, and the retry that followed would create a second one.
+  // The same Q&A also goes to the forum thread, which is where officers review.
   const messages = splitMessage(qaText);
   for (const msg of messages) {
-    await channel.send(msg);
+    try {
+      await channel.send(msg);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.warn('Applications', `Failed to post Q&A to channel ${channel.id}: ${error.message}`);
+      break;
+    }
   }
 
   return channel;

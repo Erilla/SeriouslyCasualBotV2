@@ -9,7 +9,7 @@ import { resolveMember } from '../functions/applications/resolveMember.js';
 import { submitApplication } from '../functions/applications/submitApplication.js';
 import { buildSummaryRow } from '../functions/applications/summaryButtons.js';
 import {
-  activeSessions,
+  clearSession,
   enterEditMode,
   startSessionTimeout,
 } from '../functions/applications/dmQuestionnaire.js';
@@ -45,20 +45,33 @@ async function apply(interaction: ButtonInteraction, _params: string[]): Promise
 }
 
 const ALREADY_SUBMITTED = 'Application already submitted.';
+const SUBMISSION_IN_FLIGHT = 'Your application is being submitted — give it a moment.';
+const NO_LONGER_OPEN = 'This application is no longer open. Start a new one any time with /apply.';
 
 /**
- * Whether the application is still open to Edit/Confirm/Cancel.
+ * Why the summary buttons can no longer act on an application, or null when they
+ * still can.
  *
  * The summary DM's buttons use static custom IDs on a message that is never
- * deleted, so Discord will happily route a click that arrives days after the
- * application was submitted. Every handler therefore re-checks state rather
- * than trusting that the button was clickable.
+ * deleted, so Discord will happily route a click that arrives days later. Every
+ * handler therefore re-checks state rather than trusting the button was
+ * clickable — and the reason matters, because "already submitted" told an
+ * applicant whose application had merely lapsed that officers had it.
+ *
+ * `submitted_at` is part of the test, not just status: the submission claim
+ * holds status at 'in_progress' for the several seconds the Discord work takes,
+ * so a status-only check let Cancel and Edit act on an in-flight submission.
  */
-function isOpenForEditing(applicationId: number): boolean {
+function closedReason(applicationId: number): string | null {
   const row = getDatabase()
-    .prepare('SELECT status FROM applications WHERE id = ?')
-    .get(applicationId) as { status: string } | undefined;
-  return row?.status === 'in_progress';
+    .prepare('SELECT status, submitted_at FROM applications WHERE id = ?')
+    .get(applicationId) as { status: string; submitted_at: string | null } | undefined;
+
+  if (!row) return NO_LONGER_OPEN;
+  if (row.status !== 'in_progress') {
+    return row.status === 'abandoned' ? NO_LONGER_OPEN : ALREADY_SUBMITTED;
+  }
+  return row.submitted_at ? SUBMISSION_IN_FLIGHT : null;
 }
 
 /**
@@ -89,8 +102,9 @@ async function edit(interaction: ButtonInteraction, params: string[]): Promise<v
   // Editing after submission rewrote the stored answers while the Q&A already
   // posted to the channel and forum thread stayed a stale snapshot, then handed
   // back a fresh Confirm & Submit — the loop that produced a duplicate.
-  if (!isOpenForEditing(applicationId)) {
-    await interaction.reply({ content: ALREADY_SUBMITTED, flags: MessageFlags.Ephemeral });
+  const editClosed = closedReason(applicationId);
+  if (editClosed) {
+    await interaction.reply({ content: editClosed, flags: MessageFlags.Ephemeral });
     await spendSummaryButtons(interaction, applicationId);
     return;
   }
@@ -105,7 +119,7 @@ async function edit(interaction: ButtonInteraction, params: string[]): Promise<v
     // would be redundant. Just acknowledge the click silently.
     await interaction.deferUpdate();
   } catch {
-    activeSessions.delete(interaction.user.id);
+    clearSession(interaction.user.id);
     await interaction.reply({
       content: 'I was unable to send you a DM. Please make sure your DMs are open.',
       flags: MessageFlags.Ephemeral,
@@ -129,6 +143,12 @@ async function confirm(interaction: ButtonInteraction, params: string[]): Promis
           ? ALREADY_SUBMITTED
           : 'Your application has been submitted! Officers will review it shortly.',
     });
+    // The Edit flow arms a 30-minute inactivity timeout that marks the
+    // application 'abandoned'. Clicking Confirm instead of answering left it
+    // running, so a submitted application quietly went 'abandoned' half an hour
+    // later while its channel and forum thread stayed up.
+    clearSession(interaction.user.id);
+
     // Only on a settled outcome. A failed submission leaves the buttons live so
     // the applicant can retry from the same message.
     await spendSummaryButtons(interaction, applicationId);
@@ -165,15 +185,16 @@ async function cancel(interaction: ButtonInteraction, params: string[]): Promise
   // Cancelling used to be unconditional, so a late click would retire a live
   // application officers were already voting on while leaving its channel and
   // forum thread standing.
-  if (!isOpenForEditing(applicationId)) {
-    await interaction.reply({ content: ALREADY_SUBMITTED, flags: MessageFlags.Ephemeral });
+  const cancelClosed = closedReason(applicationId);
+  if (cancelClosed) {
+    await interaction.reply({ content: cancelClosed, flags: MessageFlags.Ephemeral });
     await spendSummaryButtons(interaction, applicationId);
     return;
   }
 
   db.prepare('UPDATE applications SET status = ? WHERE id = ?').run('abandoned', applicationId);
 
-  activeSessions.delete(interaction.user.id);
+  clearSession(interaction.user.id);
 
   try {
     await interaction.user.send(

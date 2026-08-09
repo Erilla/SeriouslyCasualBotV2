@@ -124,14 +124,11 @@ export async function startApplication(
     }
   }
 
-  // Clean up any stale in-memory session for this user before proceeding.
-  // This prevents duplicate messages if a previous session wasn't fully cleaned up.
-  const staleSession = activeSessions.get(user.id);
-  if (staleSession?.timeout) {
-    clearTimeout(staleSession.timeout);
-  }
-  activeSessions.delete(user.id);
-
+  // Refuse BEFORE the session cleanup below. A refusal must leave the applicant
+  // exactly as it found them: clearing the session first stranded anyone midway
+  // through the questionnaire, because the session and its inactivity timeout
+  // were both gone, so every answer they went on to DM was silently dropped and
+  // the row sat 'in_progress' forever.
   if (hasRaiderRole(member)) {
     logger.info(
       'Applications',
@@ -143,6 +140,14 @@ export async function startApplication(
       message: "You're already a raider — there's no need to apply.",
     };
   }
+
+  // Clean up any stale in-memory session for this user before proceeding.
+  // This prevents duplicate messages if a previous session wasn't fully cleaned up.
+  const staleSession = activeSessions.get(user.id);
+  if (staleSession?.timeout) {
+    clearTimeout(staleSession.timeout);
+  }
+  activeSessions.delete(user.id);
 
   // Check for existing in_progress application
   const existing = db

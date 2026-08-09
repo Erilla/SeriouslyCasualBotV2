@@ -3,8 +3,9 @@ import type { ButtonInteraction } from 'discord.js';
 import { closeDatabase, getDatabase } from '../../../src/database/db.js';
 import { createTables } from '../../../src/database/schema.js';
 
-const { mockedSubmitApplication } = vi.hoisted(() => ({
+const { mockedSubmitApplication, mockedClearSession } = vi.hoisted(() => ({
   mockedSubmitApplication: vi.fn(),
+  mockedClearSession: vi.fn(),
 }));
 
 vi.mock('../../../src/config.js', () => ({ config: {} }));
@@ -22,6 +23,7 @@ vi.mock('../../../src/functions/applications/dmQuestionnaire.js', () => ({
   activeSessions: new Map(),
   enterEditMode: vi.fn(),
   startSessionTimeout: vi.fn(),
+  clearSession: mockedClearSession,
 }));
 
 import { buttons } from '../../../src/interactions/application.js';
@@ -48,11 +50,13 @@ function stubInteraction() {
   };
 }
 
-function seedApplication(status: string): number {
+function seedApplication(status: string, submittedAt: string | null = null): number {
   return Number(
     getDatabase()
-      .prepare('INSERT INTO applications (applicant_user_id, status) VALUES (?, ?)')
-      .run('U1', status).lastInsertRowid,
+      .prepare(
+        'INSERT INTO applications (applicant_user_id, status, submitted_at) VALUES (?, ?, ?)',
+      )
+      .run('U1', status, submittedAt).lastInsertRowid,
   );
 }
 
@@ -112,6 +116,20 @@ describe('application:confirm button', () => {
     expect(rendered.every((b) => b.disabled === true)).toBe(true);
   });
 
+  it('clears the DM session so its inactivity timeout cannot abandon the live application', async () => {
+    // Edit Answer arms a 30-minute timeout that flips the row to 'abandoned'.
+    // Clicking Confirm instead of answering left that timer running, so a
+    // successfully submitted application quietly went 'abandoned' half an hour
+    // later while its channel and forum thread stayed up.
+    const applicationId = seedApplication('in_progress');
+    mockedSubmitApplication.mockResolvedValue('submitted');
+    const { interaction } = stubInteraction();
+
+    await getHandler('application:confirm')(interaction, [String(applicationId)]);
+
+    expect(mockedClearSession).toHaveBeenCalledWith('U1');
+  });
+
   it('leaves the buttons active when submission fails so the applicant can retry', async () => {
     const applicationId = seedApplication('in_progress');
     mockedSubmitApplication.mockRejectedValue(new Error('Missing Permissions'));
@@ -142,6 +160,22 @@ describe('application:cancel button', () => {
     );
   });
 
+  it('refuses to cancel while a submission is in flight', async () => {
+    // The claim leaves status='in_progress' for the several seconds the Discord
+    // work takes. A status-only guard let Cancel through that window: the row
+    // went to 'abandoned', then Step 3 set it back to 'active' — the applicant
+    // was told they had cancelled while officers got a live application.
+    const applicationId = seedApplication('in_progress', '2026-08-09 11:00:00');
+    const { interaction } = stubInteraction();
+
+    await getHandler('application:cancel')(interaction, [String(applicationId)]);
+
+    const row = getDatabase()
+      .prepare('SELECT status FROM applications WHERE id = ?')
+      .get(applicationId) as { status: string };
+    expect(row.status).toBe('in_progress');
+  });
+
   it('still cancels an application that has not been submitted', async () => {
     const applicationId = seedApplication('in_progress');
     const { interaction } = stubInteraction();
@@ -152,6 +186,33 @@ describe('application:cancel button', () => {
       .prepare('SELECT status FROM applications WHERE id = ?')
       .get(applicationId) as { status: string };
     expect(row.status).toBe('abandoned');
+  });
+});
+
+describe('summary button wording', () => {
+  it('tells an applicant whose application lapsed to start again, not that it was submitted', async () => {
+    // 'abandoned' is not 'submitted'. Reporting it as such left the applicant
+    // believing officers had their application and steered them away from the
+    // /apply retry that would actually fix it.
+    const applicationId = seedApplication('abandoned');
+    const { interaction } = stubInteraction();
+
+    await getHandler('application:cancel')(interaction, [String(applicationId)]);
+
+    const content = vi.mocked(interaction.reply).mock.calls[0]![0] as { content: string };
+    expect(content.content).not.toContain('already submitted');
+    expect(content.content).toMatch(/\/apply/);
+  });
+
+  it('still reports a genuinely submitted application as already submitted', async () => {
+    const applicationId = seedApplication('active');
+    const { interaction } = stubInteraction();
+
+    await getHandler('application:cancel')(interaction, [String(applicationId)]);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Application already submitted.' }),
+    );
   });
 });
 

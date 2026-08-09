@@ -7,11 +7,17 @@ vi.mock('../../../src/config.js', () => ({ config: {} }));
 vi.mock('../../../src/services/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('../../../src/functions/applications/dmQuestionnaire.js', () => ({
-  activeSessions: new Map(),
-  enterEditMode: vi.fn(),
-  startSessionTimeout: vi.fn(),
-}));
+vi.mock('../../../src/functions/applications/dmQuestionnaire.js', () => {
+  const sessions = new Map();
+  return {
+    activeSessions: sessions,
+    enterEditMode: vi.fn(),
+    startSessionTimeout: vi.fn(),
+    // Mirrors the real helper's observable effect, so the assertion below still
+    // proves the session was dropped rather than that a mock was called.
+    clearSession: vi.fn((userId: string) => sessions.delete(userId)),
+  };
+});
 
 import { buttons } from '../../../src/interactions/application.js';
 import {
