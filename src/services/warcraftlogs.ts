@@ -254,6 +254,98 @@ async function query<T extends RateLimitEnvelope>(
   return result.data;
 }
 
+interface WclCharacterById {
+  name?: string | null;
+  hidden?: boolean | null;
+  canonicalID?: number | null;
+  server?: {
+    slug?: string | null;
+    region?: { slug?: string | null } | null;
+  } | null;
+}
+
+interface WclCharacterBatch extends RateLimitEnvelope {
+  characterData: Record<string, WclCharacterById | null>;
+}
+
+function isPositiveInteger(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
+}
+
+async function resolveWclCharacterBatch(
+  ids: number[],
+): Promise<Map<number, WclCharacterById | null>> {
+  if (ids.length === 0) return new Map();
+
+  const variables = Object.fromEntries(ids.map((id, index) => [`id${index}`, id]));
+  const definitions = ids.map((_, index) => `$id${index}: Int!`).join(', ');
+  const fields = ids
+    .map(
+      (_, index) => `
+        c${index}: character(id: $id${index}) {
+          name
+          hidden
+          canonicalID
+          server { slug region { slug } }
+        }`,
+    )
+    .join('');
+  const gql = `
+    query resolveWclCharacters(${definitions}) {
+      characterData {${fields}
+      }
+      rateLimitData { limitPerHour pointsSpentThisHour }
+    }
+  `;
+  const data = await query<WclCharacterBatch>(gql, variables);
+  return new Map(ids.map((id, index) => [id, data.characterData[`c${index}`] ?? null]));
+}
+
+function wclCharacterIdentity(character: WclCharacterById | null): RaiderIoCharacter | null {
+  const name = character?.name?.trim();
+  const realm = character?.server?.slug?.trim();
+  const region = character?.server?.region?.slug?.trim();
+  if (!name || !realm || !region) return null;
+  return {
+    region: region.toLocaleLowerCase(),
+    realm: realm.toLocaleLowerCase(),
+    name,
+  };
+}
+
+/** Resolve numeric WCL profile IDs, following each canonical redirect at most once. */
+export async function resolveWclCharacterIds(
+  ids: number[],
+): Promise<Map<number, RaiderIoCharacter | null>> {
+  const resolved = new Map<number, RaiderIoCharacter | null>();
+  for (const id of ids) resolved.set(id, null);
+
+  const positiveIds = [...new Set(ids.filter(isPositiveInteger))];
+  if (positiveIds.length === 0) return resolved;
+
+  const initial = await resolveWclCharacterBatch(positiveIds);
+  const canonicalIds = [
+    ...new Set(
+      positiveIds
+        .map((id) => initial.get(id)?.canonicalID)
+        .filter((id): id is number => id !== undefined && id !== null && isPositiveInteger(id)),
+    ),
+  ];
+  const canonical = await resolveWclCharacterBatch(canonicalIds);
+
+  for (const id of positiveIds) {
+    const direct = initial.get(id) ?? null;
+    const canonicalId = direct?.canonicalID;
+    const character =
+      canonicalId !== undefined && canonicalId !== null && isPositiveInteger(canonicalId)
+        ? (canonical.get(canonicalId) ?? direct)
+        : direct;
+    resolved.set(id, wclCharacterIdentity(character));
+  }
+
+  return resolved;
+}
+
 export interface ZoneKill {
   encounterId: number;
   totalKills: number;
