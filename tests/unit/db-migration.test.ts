@@ -245,7 +245,9 @@ describe('runMigrations — v11 adds the applicant intel tables', () => {
     const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
       v: number;
     };
-    expect(version.v).toBe(11);
+    // Not an equality check: this test is about v11 landing, and pinning the head
+    // version here means every later migration breaks an unrelated test.
+    expect(version.v).toBeGreaterThanOrEqual(11);
 
     const tableNames = db
       .prepare(
@@ -336,7 +338,9 @@ describe('runMigrations — v11 adds the applicant intel tables', () => {
     const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
       v: number;
     };
-    expect(version.v).toBe(11);
+    // Not an equality check: this test is about v11 landing, and pinning the head
+    // version here means every later migration breaks an unrelated test.
+    expect(version.v).toBeGreaterThanOrEqual(11);
   });
 
   it('is non-destructive — a pre-existing table keeps its rows across the migration', () => {
@@ -378,5 +382,82 @@ describe('initDatabase — seeds default application questions', () => {
       db.prepare('SELECT COUNT(*) as count FROM application_questions').get() as { count: number }
     ).count;
     expect(count).toBe(9);
+  });
+});
+
+describe('runMigrations — v12 adds applications.departed_notified_at', () => {
+  /** Reduce the fresh schema back to its v11 shape: the column did not exist. */
+  function downgradeToV11(db: ReturnType<typeof getDatabase>): void {
+    db.exec('ALTER TABLE applications DROP COLUMN departed_notified_at;');
+    db.exec('DELETE FROM schema_version WHERE version >= 12;');
+  }
+
+  const columnNames = (db: ReturnType<typeof getDatabase>): string[] =>
+    (db.pragma('table_info(applications)') as { name: string }[]).map((c) => c.name);
+
+  it('adds the column to a v11 database', () => {
+    const db = getDatabase();
+    downgradeToV11(db);
+    expect(columnNames(db)).not.toContain('departed_notified_at');
+
+    runMigrations(db);
+
+    expect(columnNames(db)).toContain('departed_notified_at');
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
+    expect(version.v).toBeGreaterThanOrEqual(12);
+  });
+
+  it('leaves existing applications with a NULL marker, so nothing counts as notified', () => {
+    const db = getDatabase();
+    downgradeToV11(db);
+    db.prepare(
+      "INSERT INTO applications (character_name, applicant_user_id, status) VALUES (?, ?, 'submitted')",
+    ).run('Brentpriest', 'user-1');
+
+    runMigrations(db);
+
+    const row = db
+      .prepare('SELECT departed_notified_at FROM applications WHERE applicant_user_id = ?')
+      .get('user-1') as { departed_notified_at: string | null };
+    expect(row.departed_notified_at).toBeNull();
+  });
+
+  it('is idempotent — running it twice does not throw or duplicate the column', () => {
+    const db = getDatabase();
+    downgradeToV11(db);
+
+    runMigrations(db);
+    runMigrations(db);
+
+    expect(columnNames(db).filter((n) => n === 'departed_notified_at')).toHaveLength(1);
+  });
+
+  it('does not throw when the applications table does not exist at all', () => {
+    // A legacy database can predate the applications table entirely. pragma
+    // table_info returns [] for a missing table, so a naive column guard falls
+    // through to an ALTER against nothing.
+    const db = getDatabase();
+    db.exec('DROP TABLE IF EXISTS application_votes;');
+    db.exec('DROP TABLE IF EXISTS application_answers;');
+    db.exec('DROP TABLE IF EXISTS applications;');
+    db.exec('DELETE FROM schema_version WHERE version >= 12;');
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const version = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as {
+      v: number;
+    };
+    expect(version.v).toBeGreaterThanOrEqual(12);
+  });
+
+  it('is a no-op on a fresh database, where createTables already defines the column', () => {
+    const db = getDatabase();
+    expect(columnNames(db)).toContain('departed_notified_at');
+
+    runMigrations(db);
+
+    expect(columnNames(db).filter((n) => n === 'departed_notified_at')).toHaveLength(1);
   });
 });

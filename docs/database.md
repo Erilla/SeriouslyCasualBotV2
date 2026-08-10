@@ -51,7 +51,7 @@ Migrations are inline, forward-only version blocks in `runMigrations()` (in `db.
 2. Reads the highest applied version number (`0` on a fresh DB)
 3. Runs each `if (currentVersion < N)` block in order, recording version `N` in `schema_version` inside the same transaction
 
-The current head is **version 8**. Applied migrations:
+The current head is **version 12**. Applied migrations:
 
 | Version | Change |
 |---|---|
@@ -63,6 +63,10 @@ The current head is **version 8**. Applied migrations:
 | 6 | Drop the orphaned `officer_role_id` config key (officer role now env-only) |
 | 7 | Add the `quip_history` table (anti-repetition memory for signup quips) |
 | 8 | Add the `build_info` table (build-number cache, keyed by deployed commit SHA) |
+| 9 | Add `achievements_manual.icon` and backfill icons for the known manual rows |
+| 10 | Add the `achievement_ce_overrides` table (officer-managed CE cutoffs) |
+| 11 | Add the four `applicant_intel_*` tables (resumable applicant-intel sweep) |
+| 12 | Add `applications.departed_notified_at` (applicant-departure notified once, ever) |
 
 When adding a migration, also bump the hardcoded latest-version assertion in
 `tests/integration/database-schema.test.ts` — CI runs the integration suite
@@ -70,4 +74,4 @@ and fails otherwise.
 
 Migrations must stay idempotent against fresh DBs, where `createTables()` has already produced the final schema — guard `ALTER`/`DROP` accordingly (e.g. v5 checks `table_info` before adding the column, drops use `IF EXISTS`).
 
-To add a migration, append a new `if (currentVersion < 9) { ... }` block that ends by inserting the version row.
+To add a migration, append a new `if (currentVersion < 13) { ... }` block that ends by inserting the version row.

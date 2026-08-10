@@ -71,7 +71,11 @@ export function createTables(db: Database.Database): void {
       thread_id TEXT,
       started_at TEXT DEFAULT (datetime('now')),
       submitted_at TEXT,
-      resolved_at TEXT
+      resolved_at TEXT,
+      -- When overlords were told the applicant left the Discord. NULL means not
+      -- yet told, so the startup sweep can find departures missed while the bot
+      -- was restarting without ever notifying twice.
+      departed_notified_at TEXT
     );
 
     -- 10. application_answers (FK to applications, application_questions)

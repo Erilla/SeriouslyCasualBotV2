@@ -76,6 +76,8 @@ export interface ApplicationRow {
   started_at: string;
   submitted_at: string | null;
   resolved_at: string | null;
+  /** When overlords were told the applicant left the Discord; NULL if they have not been. */
+  departed_notified_at: string | null;
 }
 
 export interface ApplicationQuestionRow {

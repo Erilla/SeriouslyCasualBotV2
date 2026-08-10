@@ -282,6 +282,30 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(11);
     })();
   }
+
+  if (currentVersion < 12) {
+    // Applicant departures: overlords are told once when the Discord user behind
+    // an undecided application leaves. The marker has to be durable, because the
+    // gateway event is missed on every redeploy and the startup sweep that
+    // catches up would otherwise re-notify on each boot.
+    //
+    // Fresh databases already have the column from createTables, so guard on
+    // table_info rather than letting a duplicate ALTER throw. The table itself
+    // may also be absent — table_info returns [] for a missing table, so check
+    // sqlite_master first or the ALTER throws (same shape as v9).
+    database.transaction(() => {
+      const tableExists = database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='applications'")
+        .get();
+      if (tableExists) {
+        const cols = database.pragma('table_info(applications)') as { name: string }[];
+        if (!cols.some((c) => c.name === 'departed_notified_at')) {
+          database.exec('ALTER TABLE applications ADD COLUMN departed_notified_at TEXT');
+        }
+      }
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(12);
+    })();
+  }
 }
 
 export function closeDatabase(): void {
