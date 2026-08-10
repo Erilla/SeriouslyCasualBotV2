@@ -11,6 +11,7 @@ import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythi
 import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
 import { rescheduleAllAlerts } from '../functions/trial-review/scheduleTrialAlerts.js';
 import { resumeSessions } from '../functions/applications/resumeSessions.js';
+import { sweepDepartedApplicants } from '../functions/applications/sweepDepartedApplicants.js';
 import { dailyBackup } from '../functions/backups/dailyBackup.js';
 import { runDailyMaintenance } from '../functions/maintenance/runDailyMaintenance.js';
 import { recordTaskRun } from '../services/statusTracker.js';
@@ -155,6 +156,14 @@ export default {
     // prune expired fingerprint cache entries once per boot.
     recoverInterruptedJobs();
 
+    // A departure that happened while this process was down never reached the
+    // gateway handler, and every deploy restarts the bot — so catch those up
+    // before announcing startup.
+    // Deliberately after the channel bootstrap, so the audit mirror has a channel.
+    const departures = guild
+      ? await sweepDepartedApplicants(guild)
+      : { checked: 0, notified: 0, unresolved: 0 };
+
     // One summary line instead of five — logged after setDiscordChannel, so
     // it reaches #bot-logs and carries the build number (cached lookup).
     const { build, sha } = await getBuildInfo();
@@ -167,7 +176,9 @@ export default {
     logger.info(
       'bot',
       `Startup complete — ${buildLabel} | scheduler: ${schedulerStats.intervals} intervals, ${schedulerStats.crons} cron | ` +
-        `trials: ${trialAlerts} alerts rescheduled | applications: ${sessionsResumed} sessions resumed`,
+        `trials: ${trialAlerts} alerts rescheduled | applications: ${sessionsResumed} sessions resumed, ` +
+        `departures: ${departures.notified}/${departures.checked} notified` +
+        (departures.unresolved > 0 ? ` (${departures.unresolved} unresolved)` : ''),
     );
   },
 };
