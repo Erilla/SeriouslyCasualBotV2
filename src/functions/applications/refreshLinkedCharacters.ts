@@ -1,16 +1,10 @@
 import type { Guild, TextBasedChannel } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
-import { collectCharacterLinkCandidates, type RaiderIoCharacter } from './characterLinks.js';
+import { applyLinkedCharacters } from './applyLinkedCharacters.js';
+import { collectCharacterLinkCandidates } from './characterLinks.js';
 import { resolveCharacterLinks } from './resolveCharacterLinks.js';
-import {
-  getApplicantCharacters,
-  getJobByApplication,
-  getLinkedCharacters,
-  requestTopUp,
-  setJobPrimary,
-  setLinkedCharacters,
-} from './intel/jobStore.js';
+import { getJobByApplication } from './intel/jobStore.js';
 
 /** Discord's per-request maximum, and how many requests we are willing to make. */
 const MESSAGES_PER_PAGE = 100;
@@ -31,12 +25,6 @@ export interface RefreshResult {
 interface Surface {
   label: string;
   channelId: string | null;
-}
-
-function identityKey(character: RaiderIoCharacter): string {
-  return [character.region, character.realm, character.name]
-    .map((part) => part.trim().normalize('NFC').toLowerCase())
-    .join('/');
 }
 
 /**
@@ -144,34 +132,11 @@ export async function refreshLinkedCharacters(
   }
 
   const { identities } = await resolveCharacterLinks(candidates);
-
-  const seen = new Set(
-    [...getApplicantCharacters(job.id), ...getLinkedCharacters(job.id)].map(identityKey),
-  );
-  const novel = identities.filter((identity) => {
-    const key = identityKey(identity);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const novel = applyLinkedCharacters(job, application.character_name, identities);
   if (novel.length === 0) {
     return { outcome: 'ok', queued: [], unavailableSurfaces, truncated };
   }
 
-  setLinkedCharacters(job.id, novel);
-
-  // An idle job has no primary yet. Prefer the character the application itself
-  // named — the applicant's own answer is better evidence of who they are than
-  // whichever URL happened to appear first — and fall back to link order.
-  if (job.character_name === '') {
-    const declared = application.character_name?.trim().toLocaleLowerCase();
-    const byName = declared
-      ? novel.find((identity) => identity.name.trim().toLocaleLowerCase() === declared)
-      : undefined;
-    setJobPrimary(job.id, byName ?? novel[0]);
-  }
-
-  requestTopUp(job.id);
   logger.info(
     'Applications',
     `Application #${applicationId}: queued ${novel.length} linked character(s) for intel job #${job.id}`,
