@@ -13,9 +13,11 @@ vi.mock('../../src/services/blizzard.js', async (importOriginal) => {
 
 import { getCharacterFingerprint } from '../../src/services/blizzard.js';
 import { HttpError } from '../../src/services/httpClient.js';
+import { WclPointsExhausted } from '../../src/services/warcraftlogs.js';
 import {
   addFinding,
   createJob,
+  dueJobs,
   getAnchorFingerprint,
   getFindings,
   getJob,
@@ -242,6 +244,73 @@ describe('applicant intel linked-character top-ups', () => {
     );
 
     expect(editMessage.mock.calls.map(([, messageId]) => messageId)).toEqual(['ALTS']);
+  });
+
+  it('keeps partial top-up message protection when a paused run resumes', async () => {
+    setStatus(jobId, 'done');
+    requestTopUp(jobId);
+    const editMessage = vi.fn(async () => {});
+    const discover = vi.fn(async () => {
+      throw new HttpError({
+        service: 'blizzard',
+        status: 429,
+        attempts: 1,
+        message: 'rate limited',
+        retryAfterMs: 60_000,
+      });
+    });
+    const runDeps = deps({ editMessage, discover });
+
+    await runJob(jobId, runDeps);
+    expect(editMessage.mock.calls.map(([, messageId]) => messageId)).toEqual(['ALTS']);
+    expect(getJob(jobId)?.status).toBe('paused');
+
+    editMessage.mockClear();
+    await runJob(jobId, runDeps);
+
+    expect(editMessage.mock.calls.map(([, messageId]) => messageId)).toEqual(['ALTS']);
+    expect(getJob(jobId)?.status).toBe('paused');
+  });
+
+  it.each([
+    [
+      'HTTP rate limit',
+      () =>
+        new HttpError({
+          service: 'blizzard',
+          status: 429,
+          attempts: 1,
+          message: 'rate limited',
+          retryAfterMs: 60_000,
+        }),
+    ],
+    ['WarcraftLogs points exhaustion', () => new WclPointsExhausted(9_500, 10_000)],
+  ])('requeues and processes an append during exhausted %s abandonment', async (_label, error) => {
+    getDatabase().prepare('UPDATE applicant_intel_jobs SET attempts = 19 WHERE id = ?').run(jobId);
+    const discover = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        setLinkedCharacters(jobId, [linked]);
+        expect(requestTopUp(jobId)).toBe('queued');
+        throw error();
+      })
+      .mockImplementationOnce(async (_jobId, _applicants, linkedSeeds) => {
+        expect(linkedSeeds).toEqual([linked]);
+        return { truncated: false };
+      });
+    const runDeps = deps({ discover });
+
+    await runJob(jobId, runDeps);
+
+    expect(getJob(jobId)?.status).toBe('pending');
+    expect(topUpRequested(jobId)).toBe(true);
+    expect(dueJobs(fixedNow.toISOString()).map((job) => job.id)).toContain(jobId);
+
+    await runJob(jobId, runDeps);
+
+    expect(discover).toHaveBeenCalledTimes(2);
+    expect(getJob(jobId)?.status).toBe('done');
+    expect(topUpRequested(jobId)).toBe(false);
   });
 
   it('recomputes truncation instead of retaining the previous run result', async () => {

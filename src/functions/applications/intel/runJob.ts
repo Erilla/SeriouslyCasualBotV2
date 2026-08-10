@@ -181,7 +181,12 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
 
   // Clear the request that caused this run before any await. A link appended
   // while the run is active then remains requested and schedules a replay.
-  const topUpRun = consumeTopUpRequest(jobId);
+  const consumedTopUp = consumeTopUpRequest(jobId);
+  const topUpState = getTopUpState(jobId);
+  // The request bit is a wakeup, not the lifetime marker. It is cleared at the
+  // first attempt so mid-run appends remain visible, while the durable state row
+  // keeps every rate-limit resume in top-up rendering mode.
+  const topUpRun = consumedTopUp || topUpState !== null;
   const now = deps.now ?? (() => new Date());
   const primary: RaiderIoCharacter = {
     region: job.character_region,
@@ -194,7 +199,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   const applicants = stored.length > 0 ? stored : [primary];
   const applicant = applicants[0];
   const linked = getLinkedCharacters(jobId);
-  const reopenedAt = getTopUpState(jobId)?.reopenedAt;
+  const reopenedAt = topUpState?.reopenedAt;
   const ageEpochMs = Math.max(
     parseUtcTimestamp(job.created_at).getTime(),
     reopenedAt ? parseUtcTimestamp(reopenedAt).getTime() : Number.NEGATIVE_INFINITY,
@@ -255,6 +260,12 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         logger.warn('Intel', `Job #${jobId}: failed to edit the logs message: ${error}`);
       }
     }
+  };
+
+  const requeueRequestedTopUp = (): boolean => {
+    if (!topUpRequested(jobId)) return false;
+    setStatus(jobId, 'pending');
+    return true;
   };
 
   let lastTiers: Awaited<ReturnType<typeof gatherMythicLogs>> = [];
@@ -580,6 +591,11 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       const service = 'warcraftlogs';
 
       if (exhausted) {
+        if (requeueRequestedTopUp()) {
+          await publish();
+          logger.info('Intel', `Job #${jobId} requeued for linked-character top-up`);
+          return;
+        }
         setStatus(jobId, 'failed');
         await publish(
           {
@@ -621,6 +637,11 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
 
     const service = decision.service ?? 'unknown';
     if (exhausted) {
+      if (requeueRequestedTopUp()) {
+        await publish();
+        logger.info('Intel', `Job #${jobId} requeued for linked-character top-up`);
+        return;
+      }
       setStatus(jobId, 'failed');
       await publish(
         {
