@@ -1,4 +1,4 @@
-import type { IntelFinding } from './jobStore.js';
+import { isSelfDeclared, type IntelFinding } from './jobStore.js';
 import type { BossEvidence } from '../mythic-logs/selectMythicReports.js';
 import type { WclZone } from '../mythic-logs/zoneCatalogue.js';
 
@@ -87,11 +87,16 @@ function findingLine(f: IntelFinding, region: string, applicantName: string): st
   // way to a `declared main` — so it says who names whom rather than showing the
   // flat 100% that a reviewer would read as just a very good fingerprint match.
   const evidence =
-    f.source === 'declared alt'
-      ? `names ${applicantName} as their main`
-      : `${Math.round(f.confidence ?? 100)}% confidence`;
-  const provenance =
-    f.source === 'application' ? 'from the application' : `undeclared (${evidence}${discord})`;
+    f.source === 'linked'
+      ? `linked in the conversation${
+          f.confidence === null ? '' : ` · ${Math.round(f.confidence)}% fingerprint confidence`
+        }`
+      : f.source === 'declared alt'
+        ? `names ${applicantName} as their main`
+        : `${Math.round(f.confidence ?? 100)}% confidence`;
+  const provenance = isSelfDeclared(f.source)
+    ? 'from the application'
+    : `undeclared (${evidence}${discord})`;
   return `${link} · ${f.className ?? 'Unknown'} · ${guild} — ${provenance}`;
 }
 
@@ -113,8 +118,8 @@ export function renderFoundCharacters(
   }
 
   const sorted = [...findings].sort((a, b) => {
-    if (a.source === 'application' && b.source !== 'application') return -1;
-    if (b.source === 'application' && a.source !== 'application') return 1;
+    if (isSelfDeclared(a.source) && !isSelfDeclared(b.source)) return -1;
+    if (isSelfDeclared(b.source) && !isSelfDeclared(a.source)) return 1;
     return (b.confidence ?? 0) - (a.confidence ?? 0);
   });
 

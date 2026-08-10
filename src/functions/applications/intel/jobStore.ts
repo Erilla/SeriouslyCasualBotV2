@@ -13,6 +13,7 @@ export type JobPhase = 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'do
 export type JobStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed';
 export type FindingSource =
   | 'application'
+  | 'linked'
   | 'raider.io'
   | 'declared main'
   | 'declared alt'
@@ -41,12 +42,23 @@ export interface IntelFinding {
  *  ALT ("my main is <applicant>") rather than on the applicant — and is the same
  *  self-assertion by the same account owner, so it ranks with it. */
 const SOURCE_RANK: Record<FindingSource, number> = {
-  application: 3,
-  'raider.io': 2,
-  'declared main': 2,
-  'declared alt': 2,
-  fingerprint: 1,
+  application: 40,
+  linked: 30,
+  'raider.io': 20,
+  'declared main': 20,
+  'declared alt': 20,
+  fingerprint: 10,
 };
+
+/** Only characters explicitly entered in the application form are self-declared. */
+export function isSelfDeclared(source: FindingSource): boolean {
+  return source === 'application';
+}
+
+/** Every inferred or conversation-linked character should receive the confirmation pass. */
+export function needsDiscordConfirmation(source: FindingSource): boolean {
+  return !isSelfDeclared(source);
+}
 
 function touch(id: number): void {
   getDatabase()
@@ -245,7 +257,7 @@ export function getAnchorFingerprint(jobId: number): ApplicantIntelAnchorFingerp
   return { ...stored, entries: decodeFingerprint(stored.entries) };
 }
 
-function getTopUpState(jobId: number): ApplicantIntelTopUpState | null {
+export function getTopUpState(jobId: number): ApplicantIntelTopUpState | null {
   const row = getDatabase()
     .prepare(
       "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'topup' AND key = 'state'",
@@ -454,7 +466,7 @@ export function addFinding(jobId: number, f: IntelFinding): void {
        guild_name = excluded.guild_name,
        guild_realm = excluded.guild_realm,
        source = excluded.source,
-       confidence = excluded.confidence,
+       confidence = COALESCE(excluded.confidence, applicant_intel_findings.confidence),
        -- A later, weaker source must never erase a Discord verdict already recorded.
        discord_status = COALESCE(excluded.discord_status, applicant_intel_findings.discord_status),
        discord_profile = COALESCE(excluded.discord_profile, applicant_intel_findings.discord_profile)`,

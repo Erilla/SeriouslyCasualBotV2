@@ -720,7 +720,7 @@ describe('runJob — the log-sweep candidate list is enumerated once', () => {
   it('fetches a character’s kill history once for all three consumers', async () => {
     const getMythicKillDates = vi.fn(async () => [] as MythicKillDate[]);
     // Both stand-ins ask for the same character the guild-history loop will.
-    const discover = vi.fn(async (_id, applicants, discoverDeps) => {
+    const discover = vi.fn(async (_id, applicants, _linked, discoverDeps) => {
       await discoverDeps.getMythicKillDates(applicants[0], [35]);
       return { truncated: false };
     });

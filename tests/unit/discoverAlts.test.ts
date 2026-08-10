@@ -35,6 +35,7 @@ function deps(over: Partial<DiscoverDeps> = {}): DiscoverDeps {
     getCharacterSummary: vi.fn(async () => ({ className: 'Priest', guild: null })),
     getCharacterGuild: vi.fn(async () => null),
     getGuildRoster: vi.fn(async () => []),
+    getAnchorFingerprint: vi.fn(async (c) => fingerprints[c.name.toLowerCase()] ?? null),
     getCharacterFingerprint: vi.fn(async (c) => fingerprints[c.name.toLowerCase()] ?? null),
     getMythicKillDates: vi.fn(async () => []),
     tierOrdinals: [35],
@@ -52,16 +53,41 @@ describe('discoverAlts', () => {
   afterEach(() => closeDatabase());
 
   it('records the application character itself', async () => {
-    await discoverAlts(jobId, [applicant], deps());
+    await discoverAlts(jobId, [applicant], [], deps());
     const found = getFindings(jobId);
     expect(found).toHaveLength(1);
     expect(found[0].source).toBe('application');
+  });
+
+  it('records linked seeds as linked and expands their guilds', async () => {
+    const linked = { region: 'eu', realm: 'silvermoon', name: 'Linkedmage' };
+    const getGuildRoster = vi.fn(async () => []);
+
+    await discoverAlts(
+      jobId,
+      [applicant],
+      [linked],
+      deps({
+        getCharacterSummary: vi.fn(async (character) => ({
+          className: character.name === linked.name ? 'Mage' : 'Priest',
+          guild:
+            character.name === linked.name ? { name: 'Linked Guild', realm: 'Silvermoon' } : null,
+        })),
+        getGuildRoster,
+      }),
+    );
+
+    expect(getFindings(jobId)).toContainEqual(
+      expect.objectContaining({ name: linked.name, realm: linked.realm, source: 'linked' }),
+    );
+    expect(getGuildRoster).toHaveBeenCalledWith({ name: 'Linked Guild', realm: 'Silvermoon' });
   });
 
   it('records claimed characters from the owner lookup at full confidence', async () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterOwner: vi.fn(async () => ({
           user: 'Brentoan',
@@ -82,6 +108,7 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterOwner: vi.fn(async () => ({
           user: null,
@@ -97,6 +124,7 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [
@@ -115,6 +143,7 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => null),
         getGuildRoster,
@@ -153,6 +182,7 @@ describe('discoverAlts', () => {
       await discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterOwner: owner,
           getClaimedCharacters: vi.fn(async () => claimedList(names)),
@@ -181,6 +211,7 @@ describe('discoverAlts', () => {
       await discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterOwner: owner,
           getClaimedCharacters: vi.fn(async () => claimedList(['Altone', 'Altone', 'Alttwo'])),
@@ -213,6 +244,7 @@ describe('discoverAlts', () => {
         discoverAlts(
           jobId,
           [applicant],
+          [],
           deps({
             getCharacterOwner: owner,
             getClaimedCharacters: vi.fn(async () =>
@@ -242,6 +274,7 @@ describe('discoverAlts', () => {
       await discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterOwner: owner,
           getClaimedCharacters: vi.fn(async () => claimedList(names)),
@@ -287,6 +320,7 @@ describe('discoverAlts', () => {
       await discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterOwner: vi.fn(async () => ({
             user: 'brent',
@@ -326,6 +360,7 @@ describe('discoverAlts', () => {
       await discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterOwner: vi.fn(async () => ({
             user: 'brent',
@@ -352,6 +387,7 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [{ region: 'eu', realm: 'argent-dawn', name: 'Driptinus' }],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster,
@@ -369,6 +405,7 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [
@@ -387,6 +424,7 @@ describe('discoverAlts', () => {
     const result = await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => roster),
@@ -401,6 +439,7 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
@@ -417,6 +456,7 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterOwner: vi.fn(async () => ({
           user: 'Brentoan',
@@ -441,8 +481,9 @@ describe('discoverAlts', () => {
     const result = await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
-        getCharacterFingerprint: vi.fn(async () => null),
+        getAnchorFingerprint: vi.fn(async () => null),
       }),
     );
     expect(result.truncated).toBe(true);
@@ -452,10 +493,11 @@ describe('discoverAlts', () => {
     await discoverAlts(
       jobId,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
-        getCharacterFingerprint: vi.fn(async () => null),
+        getAnchorFingerprint: vi.fn(async () => null),
       }),
     );
     // Only the applicant's own character (recorded via source 0) is scanned;
@@ -479,6 +521,7 @@ describe('discoverAlts', () => {
       discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
           getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
@@ -502,6 +545,7 @@ describe('discoverAlts', () => {
       discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
           getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
@@ -539,6 +583,7 @@ describe('discoverAlts', () => {
       discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterSummary,
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
@@ -571,9 +616,9 @@ describe('discoverAlts', () => {
         retryAfterMs: 60_000,
       });
     });
-    await expect(discoverAlts(jobId, [applicant], deps({ getCharacterSummary }))).rejects.toThrow(
-      HttpError,
-    );
+    await expect(
+      discoverAlts(jobId, [applicant], [], deps({ getCharacterSummary })),
+    ).rejects.toThrow(HttpError);
     expect(getFindings(jobId).map((f) => f.name)).toEqual(['Brentpriest']);
   });
 });
@@ -612,6 +657,7 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
       discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
           getGuildRoster: vi.fn(async () => [
@@ -638,6 +684,7 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
       await discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           timings,
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
@@ -668,6 +715,7 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
       await discoverAlts(
         jobId,
         [applicant],
+        [],
         deps({
           timings,
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
@@ -691,7 +739,7 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
     });
 
     it('works without a timings object at all', async () => {
-      await expect(discoverAlts(jobId, [applicant], deps())).resolves.toEqual({
+      await expect(discoverAlts(jobId, [applicant], [], deps())).resolves.toEqual({
         truncated: false,
       });
     });

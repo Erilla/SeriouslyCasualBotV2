@@ -55,6 +55,8 @@ export interface DiscoverDeps {
   getCharacterSummary: (c: RaiderIoCharacter) => Promise<CharacterSummary | null>;
   getCharacterGuild: (c: RaiderIoCharacter) => Promise<CharacterGuild | null>;
   getGuildRoster: (guild: CharacterGuild) => Promise<RosterMember[]>;
+  /** Durable primary baseline; roster members use getCharacterFingerprint below. */
+  getAnchorFingerprint: (c: RaiderIoCharacter) => Promise<Fingerprint | null>;
   getCharacterFingerprint: (c: RaiderIoCharacter) => Promise<Fingerprint | null>;
   /**
    * Kill history, used here only for the guilds it names.
@@ -107,6 +109,7 @@ const sleep = (ms: number): Promise<void> =>
 export async function discoverAlts(
   jobId: number,
   applicants: RaiderIoCharacter[],
+  linked: RaiderIoCharacter[],
   deps: DiscoverDeps,
 ): Promise<{ truncated: boolean }> {
   const maxGuilds = deps.maxGuilds ?? ALT_CAPS.guilds;
@@ -205,6 +208,15 @@ export async function discoverAlts(
 
   // Source 0: every character the applicant named themselves.
   for (const c of applicants) await record(c, 'application', null);
+
+  // Conversation links are useful seeds but not self-declarations: anyone can
+  // paste a character URL. They therefore retain distinct provenance, enter the
+  // same guild frontier as the application characters, and receive the later
+  // Discord confirmation pass.
+  for (const c of linked) {
+    if (known.has(key(c.name, c.realm))) continue;
+    await record(c, 'linked', null);
+  }
   mark('named');
 
   // Sources 1 and 2: declared main, then the owner's claimed-character list.
@@ -322,7 +334,7 @@ export async function discoverAlts(
   // an unmet cap read as "nothing to find here".
   mark('formerGuilds');
 
-  const applicantFingerprint = await deps.getCharacterFingerprint(primary);
+  const applicantFingerprint = await deps.getAnchorFingerprint(primary);
   if (!applicantFingerprint) {
     logger.warn(
       'Alts',
