@@ -8,6 +8,17 @@ import {
   setLinkedCharacters,
 } from './intel/jobStore.js';
 
+/**
+ * Most linked characters one application can accumulate.
+ *
+ * Anyone who can post in the application channel can paste character URLs, and
+ * every accepted one costs a paced Raider.IO lookup plus guild-frontier expansion
+ * on the next sweep — out of a queue and a WarcraftLogs point budget that every
+ * other applicant's sweep shares. Well above any honest conversation; low enough
+ * that a wall of URLs cannot monopolise the queue.
+ */
+export const MAX_LINKED_CHARACTERS = 24;
+
 function identityKey(character: RaiderIoCharacter): string {
   return [character.region, character.realm, character.name]
     .map((part) => part.trim().normalize('NFC').toLowerCase())
@@ -31,15 +42,17 @@ export function applyLinkedCharacters(
   declaredCharacterName: string | null,
   identities: RaiderIoCharacter[],
 ): RaiderIoCharacter[] {
-  const seen = new Set(
-    [...getApplicantCharacters(job.id), ...getLinkedCharacters(job.id)].map(identityKey),
-  );
-  const novel = identities.filter((identity) => {
-    const key = identityKey(identity);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const alreadyLinked = getLinkedCharacters(job.id);
+  const seen = new Set([...getApplicantCharacters(job.id), ...alreadyLinked].map(identityKey));
+  const remaining = Math.max(0, MAX_LINKED_CHARACTERS - alreadyLinked.length);
+  const novel = identities
+    .filter((identity) => {
+      const key = identityKey(identity);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, remaining);
   if (novel.length === 0) return [];
 
   setLinkedCharacters(job.id, novel);

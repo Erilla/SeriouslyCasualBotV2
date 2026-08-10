@@ -25,6 +25,11 @@ function decodeSegment(raw: string): string | null {
   }
 }
 
+/** Only the first letter: the rest may legitimately be mixed case. */
+function capitaliseName(name: string): string {
+  return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+}
+
 function characterCandidate(
   source: CharacterSource,
   index: number,
@@ -42,7 +47,11 @@ function characterCandidate(
     character: {
       region: region.toLowerCase(),
       realm: decodedRealm.toLowerCase(),
-      name: decodedName,
+      // Profile URLs carry lowercase slugs, but this name is displayed to
+      // reviewers and stored on the job row, so it is presented the way WoW
+      // presents it. Without this a pasted `.../draenor/brentpriest` renders as
+      // "brentpriest-Draenor" in the found-characters embed.
+      name: capitaliseName(decodedName),
     },
   };
 }

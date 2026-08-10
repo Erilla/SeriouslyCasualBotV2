@@ -800,3 +800,46 @@ describe('a sweep rooted on a character nobody declared', () => {
     expect(getFindings(jobId)).toEqual([]);
   });
 });
+
+describe('linked seeds are interrogated for further sources', () => {
+  let jobId: number;
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+    jobId = createJob({ applicationId: 1, targetChannelId: '1', character: applicant });
+  });
+  afterEach(() => closeDatabase());
+
+  /**
+   * Provenance decides how a finding is LABELLED, not whether it deserves an
+   * owner lookup. A rescued job has no declared characters at all, so restricting
+   * these loops to `applicants` skipped the claimed-character list and declared
+   * main — the two highest-confidence sources — for exactly the applications this
+   * feature exists to rescue.
+   */
+  it('runs the owner lookup on a linked character when nothing was declared', async () => {
+    const getCharacterOwner = vi.fn(async () => ({
+      user: 'Brentoan',
+      discordProfile: 'brent',
+      declaredMain: null,
+    }));
+    const getCharacterGuild = vi.fn(async () => null);
+
+    await discoverAlts(
+      jobId,
+      applicant,
+      [],
+      [applicant],
+      deps({
+        getCharacterOwner,
+        getCharacterGuild,
+        getClaimedCharacters: vi.fn(async () => [
+          { name: 'Brenthunter', realm: 'Draenor', className: 'Hunter', level: 90 },
+        ]),
+      }),
+    );
+
+    expect(getCharacterOwner).toHaveBeenCalledWith(applicant);
+    expect(getCharacterGuild).toHaveBeenCalledWith(applicant);
+    expect(getFindings(jobId).find((f) => f.name === 'Brenthunter')?.source).toBe('raider.io');
+  });
+});

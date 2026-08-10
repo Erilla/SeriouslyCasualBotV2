@@ -264,8 +264,14 @@ async function intelRefresh(interaction: ButtonInteraction, params: string[]): P
     return;
   }
   if (result.outcome === 'no_surfaces') {
+    // An application with both channel_id and thread_id NULL reaches here with
+    // nothing to name, so the permissions advice would read "I could not read
+    // the ." — wrong problem and wrong fix.
     await interaction.editReply({
-      content: `I could not read the ${result.unavailableSurfaces.join(' or ')}. Check my permissions and try again.`,
+      content:
+        result.unavailableSurfaces.length > 0
+          ? `I could not read the ${result.unavailableSurfaces.join(' or ')}. Check my permissions and try again.`
+          : `Application #${applicationId} has no channel or thread left to scan.`,
     });
     return;
   }

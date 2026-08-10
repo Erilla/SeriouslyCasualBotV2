@@ -21,6 +21,7 @@ vi.mock('../../src/services/raiderio.js', () => ({
 
 import {
   resolveCharacterLinks,
+  MAX_LINK_CANDIDATES,
   type CharacterLinkResolutionStatus,
 } from '../../src/functions/applications/resolveCharacterLinks.js';
 import type {
@@ -96,11 +97,6 @@ describe('resolveCharacterLinks', () => {
       { region: 'eu', realm: 'aggra-português', name: 'THRALL' },
       5,
     );
-    mockedResolveRealmSlug.mockImplementation(async (_region: string, realm: string) => {
-      if (realm === 'aggra-português') return 'aggra-português';
-      return realm;
-    });
-
     const result = await resolveCharacterLinks([later, earlier], { verify: true });
 
     expect(result.identities).toEqual([{ region: 'eu', realm: 'aggra-português', name: 'THRALL' }]);
@@ -116,8 +112,9 @@ describe('resolveCharacterLinks', () => {
         status: 'verified',
       },
     ]);
-    expect(mockedResolveRealmSlug).toHaveBeenNthCalledWith(1, 'eu', 'aggra-português');
-    expect(mockedResolveRealmSlug).toHaveBeenNthCalledWith(2, 'eu', 'aggra-português');
+    // Identities stay in the Raider.IO vocabulary: no Blizzard realm-index call
+    // belongs on this path, because every consumer of these is Raider.IO-shaped.
+    expect(mockedResolveRealmSlug).not.toHaveBeenCalled();
     expect(mockedGetCharacterSummary).toHaveBeenCalledTimes(1);
   });
 
@@ -136,10 +133,6 @@ describe('resolveCharacterLinks', () => {
     mockedResolveWclCharacterIds.mockResolvedValue(
       new Map([[10, { region: 'eu', realm: 'Draenor', name: 'Valid' }]]),
     );
-    mockedResolveRealmSlug.mockImplementation(async (_region: string, realm: string) =>
-      realm.toLocaleLowerCase().replaceAll(' ', '-'),
-    );
-
     const result = await resolveCharacterLinks([named, wcl], { verify: true });
 
     expect(mockedResolveWclCharacterIds).toHaveBeenCalledWith([10]);
@@ -178,5 +171,46 @@ describe('resolveCharacterLinks without verification', () => {
       statuses: [],
     });
     expect(mockedGetCharacterSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('linked identities stay in the Raider.IO vocabulary', () => {
+  beforeEach(() => {
+    mockedGetCharacterSummary.mockReset();
+    mockedResolveRealmSlug.mockReset();
+    mockedResolveWclCharacterIds.mockReset();
+    mockedResolveWclCharacterIds.mockResolvedValue(new Map());
+  });
+
+  /**
+   * Blizzard deletes a hyphen it reads as part of the realm NAME
+   * (`Azjol-Nerub` -> `azjolnerub`); Raider.IO keeps it. Rewriting a linked
+   * identity to the Blizzard form made a pasted raider.io URL fail to match the
+   * identical URL in the application — duplicating the finding, requesting a
+   * pointless top-up, and rooting a rescued sweep on a realm Raider.IO 400s on.
+   */
+  it('preserves a hyphen Blizzard would delete', async () => {
+    const candidate: CharacterLinkCandidate = {
+      source: 'raiderio',
+      index: 0,
+      character: { region: 'eu', realm: 'azjol-nerub', name: 'Bob' },
+    };
+
+    const { identities } = await resolveCharacterLinks([candidate]);
+
+    expect(identities).toEqual([{ region: 'eu', realm: 'azjol-nerub', name: 'Bob' }]);
+    expect(mockedResolveRealmSlug).not.toHaveBeenCalled();
+  });
+
+  it('caps how many candidates one call will resolve', async () => {
+    const many: CharacterLinkCandidate[] = Array.from({ length: 200 }, (_, i) => ({
+      source: 'raiderio' as const,
+      index: i,
+      character: { region: 'eu', realm: 'draenor', name: `Alt${i}` },
+    }));
+
+    const { identities } = await resolveCharacterLinks(many);
+
+    expect(identities).toHaveLength(MAX_LINK_CANDIDATES);
   });
 });

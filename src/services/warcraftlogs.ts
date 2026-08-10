@@ -301,6 +301,12 @@ async function resolveWclCharacterBatch(
   return new Map(ids.map((id, index) => [id, data.characterData[`c${index}`] ?? null]));
 }
 
+/**
+ * `hidden` is requested but deliberately not filtered on. Hiding a WarcraftLogs
+ * profile hides its RANKINGS; it does not retract the character's existence, and
+ * the identity is what this resolution needs. Selected so the flag is visible in
+ * the response when debugging why a link resolved the way it did.
+ */
 function wclCharacterIdentity(character: WclCharacterById | null): RaiderIoCharacter | null {
   const name = character?.name?.trim();
   const realm = character?.server?.slug?.trim();

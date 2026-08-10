@@ -46,3 +46,23 @@ describe('collectCharacterLinkCandidates', () => {
     );
   });
 });
+
+/**
+ * Profile URLs carry lowercase slugs, but this name is shown to reviewers and
+ * stored on the job row. A pasted `.../draenor/brentpriest` rendered as
+ * "brentpriest-Draenor" until the capitalisation the old parser applied was
+ * restored here.
+ */
+it('presents a lowercase URL name capitalised', () => {
+  const [candidate] = collectCharacterLinkCandidates(
+    'https://raider.io/characters/eu/draenor/brentpriest',
+  );
+  expect(candidate).toMatchObject({ character: { name: 'Brentpriest' } });
+});
+
+it('leaves later letters alone so mixed-case names survive', () => {
+  const [candidate] = collectCharacterLinkCandidates(
+    'https://raider.io/characters/eu/draenor/McSmite',
+  );
+  expect(candidate).toMatchObject({ character: { name: 'McSmite' } });
+});

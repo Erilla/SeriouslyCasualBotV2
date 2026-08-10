@@ -228,8 +228,20 @@ export async function discoverAlts(
   }
   mark('named');
 
+  /**
+   * The characters worth interrogating for further sources.
+   *
+   * Both the declared and the linked ones: provenance decides how a finding is
+   * LABELLED, not whether it is worth an owner lookup. A rescued job has no
+   * declared characters at all, so restricting these loops to `applicants` would
+   * skip the owner's claimed-character list and declared main entirely — the two
+   * highest-confidence sources there are — for exactly the applications this
+   * feature exists to rescue.
+   */
+  const seeds = [...applicants, ...linked];
+
   // Sources 1 and 2: declared main, then the owner's claimed-character list.
-  for (const c of applicants) {
+  for (const c of seeds) {
     const owner = await deps.getCharacterOwner(c);
     await sleep(pace);
     if (!owner) continue;
@@ -286,8 +298,8 @@ export async function discoverAlts(
 
   mark('owner');
 
-  // Seed any guild we have not already queued from the applicants themselves.
-  for (const c of applicants) {
+  // Seed any guild we have not already queued from the seed characters themselves.
+  for (const c of seeds) {
     const guild = await deps.getCharacterGuild(c);
     if (!guild) continue;
     const gk = key(guild.name, guild.realm);
