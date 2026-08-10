@@ -52,12 +52,25 @@ const displayRealm = (realm: string): string =>
     .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
     .join(' ');
 
+/**
+ * Percent-encode a path segment, which several EU realms genuinely need.
+ *
+ * Raider.IO rejects a raw non-ASCII path: `.../eu/aggra-português/Xplendor`
+ * answers 400 where `.../eu/aggra-portugu%C3%AAs/Xplendor` answers 200. Realm
+ * slugs keep accents on purpose (that is Blizzard's own spelling and what
+ * Raider.IO indexes), so the encoding has to happen here or every character on
+ * Aggra (Português), Suramar and the other accented realms gets a dead link.
+ *
+ * encodeURIComponent leaves `-` alone, so hyphenated slugs are unaffected.
+ */
+const encodeSegment = (value: string): string => encodeURIComponent(value);
+
 export function raiderIoProfileUrl(region: string, realm: string, name: string): string {
-  return `https://raider.io/characters/${region.toLowerCase()}/${realmSlug(realm)}/${name}`;
+  return `https://raider.io/characters/${region.toLowerCase()}/${encodeSegment(realmSlug(realm))}/${encodeSegment(name)}`;
 }
 
 export function raiderIoGuildUrl(region: string, realm: string, name: string): string {
-  return `https://raider.io/guilds/${region.toLowerCase()}/${realmSlug(realm)}/${encodeURIComponent(name)}`;
+  return `https://raider.io/guilds/${region.toLowerCase()}/${encodeSegment(realmSlug(realm))}/${encodeSegment(name)}`;
 }
 
 /**

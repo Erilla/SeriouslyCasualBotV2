@@ -454,3 +454,36 @@ describe('renderFoundCharacters link gating', () => {
     expect(page).toContain('[Ghosty-Draenor](https://raider.io/characters/eu/draenor/Ghosty)');
   });
 });
+
+describe('accented realms produce a URL Raider.IO accepts', () => {
+  /**
+   * Verified live: `.../eu/aggra-português/Xplendor` answers 400 and
+   * `.../eu/aggra-portugu%C3%AAs/Xplendor` answers 200. Realm slugs keep their
+   * accents deliberately — that is Blizzard's spelling and what Raider.IO indexes
+   * — so without encoding here every character on an accented realm gets a link
+   * that fails. Several EU realms are affected, not just this one.
+   */
+  it('percent-encodes a non-ASCII realm in the character URL', () => {
+    expect(raiderIoProfileUrl('eu', 'aggra-português', 'Xplendor')).toBe(
+      'https://raider.io/characters/eu/aggra-portugu%C3%AAs/Xplendor',
+    );
+  });
+
+  it('percent-encodes a non-ASCII realm in the guild URL', () => {
+    expect(raiderIoGuildUrl('eu', 'aggra-português', 'Some Guild')).toBe(
+      'https://raider.io/guilds/eu/aggra-portugu%C3%AAs/Some%20Guild',
+    );
+  });
+
+  it('leaves hyphenated ASCII slugs untouched', () => {
+    expect(raiderIoProfileUrl('eu', 'Tarren Mill', 'Boptinus')).toBe(
+      'https://raider.io/characters/eu/tarren-mill/Boptinus',
+    );
+  });
+
+  it('encodes a non-ASCII character name too', () => {
+    expect(raiderIoProfileUrl('eu', 'draenor', 'Éowyn')).toBe(
+      'https://raider.io/characters/eu/draenor/%C3%89owyn',
+    );
+  });
+});
