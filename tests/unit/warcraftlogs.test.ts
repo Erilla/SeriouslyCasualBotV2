@@ -171,6 +171,43 @@ describe('resolveWclCharacterIds', () => {
     expect(secondBody.variables).toEqual({ id0: 20, id1: 30 });
   });
 
+  // WCL returns a character's OWN id as canonicalID whenever it has not been
+  // renamed or transferred, which is the overwhelming majority. Re-querying that
+  // id would double the point spend on every link resolution, against a budget
+  // this service already pre-empts a 429 at 90% of.
+  it('does not re-query ids the first batch already resolved', async () => {
+    mockedHttpRequest.mockResolvedValueOnce(token as never).mockResolvedValueOnce({
+      data: {
+        characterData: {
+          c0: {
+            name: 'Selfsame',
+            hidden: false,
+            canonicalID: 10,
+            server: { slug: 'draenor', region: { slug: 'eu' } },
+          },
+          c1: {
+            name: 'Merged',
+            hidden: false,
+            canonicalID: 10,
+            server: { slug: 'old-realm', region: { slug: 'eu' } },
+          },
+        },
+      },
+    } as never);
+
+    await expect(resolveWclCharacterIds([10, 11])).resolves.toEqual(
+      new Map([
+        [10, { region: 'eu', realm: 'draenor', name: 'Selfsame' }],
+        [11, { region: 'eu', realm: 'draenor', name: 'Selfsame' }],
+      ]),
+    );
+
+    const graphCalls = mockedHttpRequest.mock.calls.filter(
+      ([, url]) => url === 'https://www.warcraftlogs.com/api/v2/client',
+    );
+    expect(graphCalls).toHaveLength(1);
+  });
+
   it('treats a null canonical lookup as unresolved', async () => {
     mockedHttpRequest
       .mockResolvedValueOnce(token as never)

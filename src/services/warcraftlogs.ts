@@ -324,21 +324,27 @@ export async function resolveWclCharacterIds(
   if (positiveIds.length === 0) return resolved;
 
   const initial = await resolveWclCharacterBatch(positiveIds);
+  // An unrenamed character reports its OWN id as canonicalID, so following every
+  // canonicalID blindly would re-request the whole batch verbatim and double the
+  // point spend. Only ids the first batch did not already answer are worth a
+  // second round trip.
   const canonicalIds = [
     ...new Set(
       positiveIds
         .map((id) => initial.get(id)?.canonicalID)
-        .filter((id): id is number => id !== undefined && id !== null && isPositiveInteger(id)),
+        .filter((id): id is number => id != null && isPositiveInteger(id))
+        .filter((id) => !initial.has(id)),
     ),
   ];
-  const canonical = await resolveWclCharacterBatch(canonicalIds);
+  const canonical =
+    canonicalIds.length > 0 ? await resolveWclCharacterBatch(canonicalIds) : new Map();
 
   for (const id of positiveIds) {
     const direct = initial.get(id) ?? null;
     const canonicalId = direct?.canonicalID;
     const character =
-      canonicalId !== undefined && canonicalId !== null && isPositiveInteger(canonicalId)
-        ? (canonical.get(canonicalId) ?? null)
+      canonicalId != null && isPositiveInteger(canonicalId)
+        ? (initial.get(canonicalId) ?? canonical.get(canonicalId) ?? null)
         : direct;
     resolved.set(id, wclCharacterIdentity(character));
   }
