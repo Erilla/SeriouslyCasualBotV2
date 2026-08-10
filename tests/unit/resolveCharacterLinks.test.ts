@@ -121,6 +121,15 @@ describe('resolveCharacterLinks', () => {
     expect(mockedGetCharacterSummary).toHaveBeenCalledTimes(1);
   });
 
+  it('does not apply the WoWProgress EU Aggra alias to other sources', async () => {
+    const candidate = namedCandidate('armory', { region: 'eu', realm: 'aggra', name: 'Thrall' }, 0);
+
+    await expect(resolveCharacterLinks([candidate])).resolves.toMatchObject({
+      identities: [{ region: 'eu', realm: 'aggra', name: 'Thrall' }],
+      statuses: [{ candidate, status: 'verified' }],
+    });
+  });
+
   it('batches WCL IDs and verifies every distinct canonical identity', async () => {
     const named = namedCandidate('armory', { region: 'us', realm: 'Area 52', name: 'Jaina' }, 30);
     const wcl = wclCandidate(10, 10);

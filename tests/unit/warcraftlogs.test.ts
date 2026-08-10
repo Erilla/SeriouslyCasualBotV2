@@ -170,4 +170,26 @@ describe('resolveWclCharacterIds', () => {
     };
     expect(secondBody.variables).toEqual({ id0: 20, id1: 30 });
   });
+
+  it('treats a null canonical lookup as unresolved', async () => {
+    mockedHttpRequest
+      .mockResolvedValueOnce(token as never)
+      .mockResolvedValueOnce({
+        data: {
+          characterData: {
+            c0: {
+              name: 'Stale',
+              hidden: false,
+              canonicalID: 20,
+              server: { slug: 'old-realm', region: { slug: 'eu' } },
+            },
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { characterData: { c0: null } },
+      } as never);
+
+    await expect(resolveWclCharacterIds([10])).resolves.toEqual(new Map([[10, null]]));
+  });
 });

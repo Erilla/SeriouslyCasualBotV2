@@ -338,7 +338,7 @@ export async function resolveWclCharacterIds(
     const canonicalId = direct?.canonicalID;
     const character =
       canonicalId !== undefined && canonicalId !== null && isPositiveInteger(canonicalId)
-        ? (canonical.get(canonicalId) ?? direct)
+        ? (canonical.get(canonicalId) ?? null)
         : direct;
     resolved.set(id, wclCharacterIdentity(character));
   }
