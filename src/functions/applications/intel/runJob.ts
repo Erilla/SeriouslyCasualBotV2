@@ -1,17 +1,26 @@
 import { logger } from '../../../services/logger.js';
 import { backoffMs, classifyError } from './rateLimit.js';
 import {
+  consumeTopUpRequest,
+  getAnchorFingerprint,
   getApplicantCharacters,
   getFindings,
   getJob,
+  getLinkedCharacters,
+  getTopUpState,
+  getUnverifiedLinkedKeys,
+  isSelfDeclared,
+  needsDiscordConfirmation,
   pauseJob,
   scannedCount,
+  setAnchorFingerprint,
   setGuildHistory,
   setSweepCandidates,
   getSweepCandidates,
   setPhase,
   setSweepTruncated,
   setStatus,
+  topUpRequested,
   type IntelFinding,
 } from './jobStore.js';
 import {
@@ -35,7 +44,7 @@ import { PhaseTimings } from './phaseTimings.js';
 import type { WclZone } from '../mythic-logs/zoneCatalogue.js';
 import { WclPointsExhausted, type RaidReportRef } from '../../../services/warcraftlogs.js';
 import type { MythicKillDate } from '../../../services/raiderioInternal.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 
 export const MAX_JOB_ATTEMPTS = 20;
 export const MAX_JOB_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -114,6 +123,12 @@ export function parseUtcTimestamp(value: string): Date {
   return new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
 }
 
+function identityKey(character: RaiderIoCharacter): string {
+  return [character.region, character.realm, character.name]
+    .map((part) => part.trim().normalize('NFC').toLowerCase())
+    .join('/');
+}
+
 // Placeholders matching what the message-creation step writes, so a phase
 // that never ran shows the same honest "still working" copy it started
 // with rather than a data-driven renderer's "nothing found" — which would
@@ -165,6 +180,14 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   const job = getJob(jobId);
   if (!job || !job.target_channel_id) return;
 
+  // Clear the request that caused this run before any await. A link appended
+  // while the run is active then remains requested and schedules a replay.
+  const consumedTopUp = consumeTopUpRequest(jobId);
+  const topUpState = getTopUpState(jobId);
+  // The request bit is a wakeup, not the lifetime marker. It is cleared at the
+  // first attempt so mid-run appends remain visible, while the durable state row
+  // keeps every rate-limit resume in top-up rendering mode.
+  const topUpRun = consumedTopUp || topUpState !== null;
   const now = deps.now ?? (() => new Date());
   const primary: RaiderIoCharacter = {
     region: job.character_region,
@@ -173,9 +196,28 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   };
   // An application — or /test — can name several characters; the row holds only
   // the primary, so the full set comes from the queue.
-  const stored = getApplicantCharacters(jobId);
-  const applicants = stored.length > 0 ? stored : [primary];
-  const applicant = applicants[0];
+  // Deliberately NOT defaulted to [primary]. A job rescued by a conversation
+  // link has a primary nobody declared, and passing it as an applicant would
+  // record a pasted URL as source 'application' — rendering it "from the
+  // application" at 100% and excluding it from the Discord confirmation pass.
+  // The primary reaches discoverAlts as its own argument instead.
+  const applicants = getApplicantCharacters(jobId);
+  const applicant = applicants[0] ?? primary;
+  const linked = getLinkedCharacters(jobId);
+  /**
+   * Who the log phases cover, as opposed to who declared themselves.
+   *
+   * A rescued job has no declared characters at all, so the phases that need a
+   * concrete roster fall back to the primary — which for such a job is one of the
+   * linked characters. Kept separate from `applicants` because that list carries
+   * provenance, and widening it would relabel a pasted link as self-declared.
+   */
+  const roster = applicants.length > 0 ? applicants : [primary];
+  const reopenedAt = topUpState?.reopenedAt;
+  const ageEpochMs = Math.max(
+    parseUtcTimestamp(job.created_at).getTime(),
+    reopenedAt ? parseUtcTimestamp(reopenedAt).getTime() : Number.NEGATIVE_INFINITY,
+  );
 
   setStatus(jobId, 'running');
   const timings = new PhaseTimings();
@@ -187,10 +229,23 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   const publish = async (footer?: PauseFooter, terminal = false): Promise<void> => {
     const findings = getFindings(jobId);
     const channelId = job.target_channel_id!;
+    // Invoke this separately at each phase boundary: a linked character can be
+    // appended while any preceding message edit is awaited, so the durable
+    // request must not be cached for the lifetime of this publish.
+    const shouldPublishPhase = (computed: boolean): boolean =>
+      computed || (!topUpRun && !topUpRequested(jobId));
 
     if (job.alts_message_id) {
       try {
-        const pages = renderFoundCharacters(findings, applicant.name, applicant.region, footer);
+        const pages = renderFoundCharacters(
+          findings,
+          applicant.name,
+          applicant.region,
+          footer,
+          // Re-read per publish rather than hoisted: a link appended mid-run adds
+          // to this set, and the next phase boundary should reflect it.
+          getUnverifiedLinkedKeys(jobId),
+        );
         const body = sweepTruncated ? `${pages[0]}\n\n${TRUNCATED_NOTE}` : pages[0];
         await deps.editMessage(channelId, job.alts_message_id, body, {
           prefix: 'intelpage',
@@ -206,7 +261,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         logger.warn('Intel', `Job #${jobId}: failed to edit the alts message: ${error}`);
       }
     }
-    if (job.guilds_message_id) {
+    if (job.guilds_message_id && shouldPublishPhase(guildsComputed)) {
       try {
         const pages = guildsComputed
           ? renderGuildHistory(guilds, applicant.region, footer)
@@ -221,7 +276,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         logger.warn('Intel', `Job #${jobId}: failed to edit the guilds message: ${error}`);
       }
     }
-    if (job.logs_message_id) {
+    if (job.logs_message_id && shouldPublishPhase(logsComputed)) {
       try {
         // Never paged: bounded at MAX_TIERS=5 x MAX_LINES_PER_TIER=3.
         const body = logsComputed
@@ -232,6 +287,12 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         logger.warn('Intel', `Job #${jobId}: failed to edit the logs message: ${error}`);
       }
     }
+  };
+
+  const requeueRequestedTopUp = (): boolean => {
+    if (!topUpRequested(jobId)) return false;
+    setStatus(jobId, 'pending');
+    return true;
   };
 
   let lastTiers: Awaited<ReturnType<typeof gatherMythicLogs>> = [];
@@ -299,7 +360,46 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // Phase: alt sources + fingerprint sweep.
     setPhase(jobId, 'alt_sources');
     currentPhase = 'alt_sources';
-    const { truncated } = await deps.discover(jobId, applicants, {
+    const blizzard = await import('../../../services/blizzard.js');
+    const storedAnchor = getAnchorFingerprint(jobId);
+    const primaryIdentity = identityKey(applicant);
+    /**
+     * Identity must match AND the baseline must still be fresh.
+     *
+     * A top-up can reopen a job days later, and `requestTopUp` resets `attempts`
+     * so it can outlive the usual retry window. Comparing newly-swept candidates
+     * against a baseline captured before the applicant earned more achievements
+     * biases `compareFingerprints` downward — the applicant looks less like their
+     * own alts the longer their application stays open. The API cache already
+     * treats a fingerprint as stale after FINGERPRINT_TTL_MS; this durable copy
+     * follows the same rule rather than inventing a second one.
+     */
+    const anchorAge = storedAnchor
+      ? now().getTime() - parseUtcTimestamp(storedAnchor.fetchedAt).getTime()
+      : Infinity;
+    const reusableAnchor =
+      storedAnchor &&
+      identityKey(storedAnchor) === primaryIdentity &&
+      anchorAge < blizzard.FINGERPRINT_TTL_MS
+        ? storedAnchor
+        : null;
+    let anchor = reusableAnchor ? new Map(reusableAnchor.entries) : null;
+    const getAnchorFingerprintForRun = async (character: RaiderIoCharacter) => {
+      if (anchor) return anchor;
+
+      const fetched = await blizzard.getCharacterFingerprint(character);
+      if (fetched) {
+        anchor = fetched;
+        setAnchorFingerprint(jobId, {
+          ...applicant,
+          entries: [...fetched.entries()],
+          fetchedAt: now().toISOString(),
+        });
+      }
+      return fetched;
+    };
+
+    const { truncated } = await deps.discover(jobId, primary, applicants, linked, {
       getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
       getClaimedCharacters: (await import('../../../services/raiderioInternal.js'))
         .getClaimedCharacters,
@@ -317,8 +417,8 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         const { getBlizzardGuildRoster } = await import('../../../services/blizzard.js');
         return getBlizzardGuildRoster(applicant.region, guild.realm, guild.name);
       },
-      getCharacterFingerprint: (await import('../../../services/blizzard.js'))
-        .getCharacterFingerprint,
+      getAnchorFingerprint: getAnchorFingerprintForRun,
+      getCharacterFingerprint: blizzard.getCharacterFingerprint,
       // The shared memo, not the raw module function: the sweep's former-guild
       // walk asks for every KNOWN character, which the guild-history and log
       // phases then ask for again. It paces itself, so the sweep no longer
@@ -349,7 +449,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // Candidates the pass will actually try: it skips 'application' findings
     // (nothing to confirm). No longer gated on a declared handle — the pass also
     // reads each character's declared main, which needs no Discord handle.
-    const confirmable = getFindings(jobId).filter((f) => f.source !== 'application').length;
+    const confirmable = getFindings(jobId).filter((f) => needsDiscordConfirmation(f.source)).length;
     const discord = await deps.confirm(jobId, applicant.region, job.applicant_discord, {
       getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
       paceMs: (await import('../../../services/raiderioInternal.js')).RAIDERIO_INTERNAL_PACE_MS,
@@ -420,7 +520,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // and serially this was ~50s on 24 findings. mapLimit preserves input order,
     // so the persisted list is deterministic regardless of completion order.
     const toEnumerate = findings.filter(
-      (f) => f.source !== 'application' && !byCandidate.has(characterKey(f.name, f.realm)),
+      (f) => !isSelfDeclared(f.source) && !byCandidate.has(characterKey(f.name, f.realm)),
     );
     const freshCandidates = await mapLimit(toEnumerate, CANDIDATE_CONCURRENCY, async (f) => {
       const c = findingToCharacter(f, applicant.region);
@@ -441,7 +541,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     timings.mark('candidates');
 
     const applicantKeys = findings
-      .filter((f) => f.source === 'application')
+      .filter((f) => isSelfDeclared(f.source))
       .map((f) => characterKey(f.name, f.realm));
     const chosen = new Set(selectSweepTargets(applicantKeys, candidates, ALT_SWEEP_SLOTS));
     const swept = findings
@@ -464,7 +564,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // account. For a solo applicant with one swept character that is a single
     // failed fetch away, so it must be tracked, not assumed away.
     let killDatesFailed = false;
-    for (const c of swept.length > 0 ? swept : applicants) {
+    for (const c of swept.length > 0 ? swept : roster) {
       // The memo paces itself, so there is no sleep here any more.
       const entries = await getMythicKillDatesOnce(c, deps.tierOrdinals);
       if (entries) killHistory.push({ character: c.name, entries });
@@ -497,7 +597,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
 
     setPhase(jobId, 'logs');
     currentPhase = 'logs';
-    lastTiers = await deps.gather(applicants, swept.length > 0 ? swept : applicants, zones, {
+    lastTiers = await deps.gather(roster, swept.length > 0 ? swept : roster, zones, {
       getZoneKills: (await import('../../../services/warcraftlogs.js')).getZoneKills,
       getEncounterKills: (await import('../../../services/warcraftlogs.js')).getEncounterKills,
       getRaidReports: getRaidReportsOnce,
@@ -516,12 +616,13 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     logger.debug('Intel', `Job #${jobId} timings: ${timings.summary()}`);
     setPhase(jobId, 'done');
     currentPhase = 'done';
-    setStatus(jobId, 'done');
+    const replayRequested = topUpRequested(jobId);
+    setStatus(jobId, replayRequested ? 'pending' : 'done');
     // Terminal: nothing retries a done job. Normally every phase computed, so
     // the flag is inert — but the guild-history phase can legitimately end
     // unmeasured (all kill-date fetches failed), and that message must then say
     // "Incomplete" rather than sit on "searching…" forever.
-    await publish(undefined, true);
+    await publish(undefined, !replayRequested);
   } catch (error) {
     // WarcraftLogs bills by points, so a WclPointsExhausted is thrown to
     // PRE-EMPT a 429 at 90% of the hourly budget. classifyError only pauses
@@ -530,11 +631,16 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // defeating the whole point of pre-empting. An hour is the natural
     // backoff ceiling here because the WCL points budget resets hourly.
     if (error instanceof WclPointsExhausted) {
-      const age = now().getTime() - parseUtcTimestamp(job.created_at).getTime();
+      const age = now().getTime() - ageEpochMs;
       const exhausted = job.attempts + 1 >= MAX_JOB_ATTEMPTS || age >= MAX_JOB_AGE_MS;
       const service = 'warcraftlogs';
 
       if (exhausted) {
+        if (requeueRequestedTopUp()) {
+          await publish();
+          logger.info('Intel', `Job #${jobId} requeued for linked-character top-up`);
+          return;
+        }
         setStatus(jobId, 'failed');
         await publish(
           {
@@ -563,18 +669,24 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
 
     logger.debug('Intel', `Job #${jobId} timings (incomplete): ${timings.summary()}`);
     const decision = classifyError(error, job.attempts + 1);
-    const age = now().getTime() - parseUtcTimestamp(job.created_at).getTime();
+    const age = now().getTime() - ageEpochMs;
     const exhausted = job.attempts + 1 >= MAX_JOB_ATTEMPTS || age >= MAX_JOB_AGE_MS;
 
     if (!decision.pause) {
       logger.warn('Intel', `Job #${jobId} failed in phase ${currentPhase}: ${error}`);
-      setStatus(jobId, 'done');
-      await publish(undefined, true);
+      const replayRequested = topUpRequested(jobId);
+      setStatus(jobId, replayRequested ? 'pending' : 'done');
+      await publish(undefined, !replayRequested);
       return;
     }
 
     const service = decision.service ?? 'unknown';
     if (exhausted) {
+      if (requeueRequestedTopUp()) {
+        await publish();
+        logger.info('Intel', `Job #${jobId} requeued for linked-character top-up`);
+        return;
+      }
       setStatus(jobId, 'failed');
       await publish(
         {

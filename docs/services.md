@@ -38,19 +38,21 @@ Base URL: `https://www.warcraftlogs.com/api/v2` (GraphQL)
 | Query | Function | Description | Status |
 |---|---|---|---|
 | `guildData.guild.attendance` | `getTrialLogs(characterName)` | Fetches guild attendance and filters to reports where a specific character was present; returns report codes in reverse chronological order | Implemented |
+| `characterData.character(id:)` | `resolveWclCharacterIds(ids)` | Turns numeric `/character/id/{n}` profile links into `{ region, realm, name }` identities. One aliased batch per call, then a second batch only for canonical IDs the first did not answer — an unrenamed character reports its own ID as `canonicalID`, so following every one blindly would double the point spend | Implemented |
 | `reportData.report.rankings` | -- | Boss kill rankings | Placeholder |
 
 Authentication: OAuth2 client credentials via `WARCRAFTLOGS_CLIENT_ID` / `WARCRAFTLOGS_CLIENT_SECRET`. Guild identified by `WARCRAFTLOGS_GUILD_ID`. Tokens are cached with expiry tracking and refreshed automatically.
 
 ## Blizzard / Battle.net
 
-Used to retrieve the equipped items that weekly readiness checks inspect for applied enchants and empty sockets.
+Used to retrieve the equipped items that weekly readiness checks inspect for applied enchants and empty sockets, and the achievement fingerprints the applicant-intelligence sweep matches alts on.
 
 Base URL: `https://{region}.api.blizzard.com`
 
 | Endpoint | Function | Description | Status |
 |---|---|---|---|
 | `GET /profile/wow/character/{realm}/{name}/equipment?namespace=profile-{region}&locale=en_GB` | `getCharacterEquipment(region, realm, name)` | Fetches a character's equipped-item profile | Implemented |
+| `GET /data/wow/realm/index?namespace=dynamic-{region}` | `resolveRealmSlug(region, realm)` | Resolves a realm display name **or** an existing slug to Blizzard's canonical slug, cached 7 days per region. Needed because callers supply both forms and Blizzard's own rule deletes hyphens (`Azjol-Nerub` → `azjolnerub`) while keeping them as separators (`Tarren Mill` → `tarren-mill`), which no regex can tell apart. Falls back to the space-to-hyphen rule with a warning when the index is unavailable | Implemented |
 
 Authentication: OAuth2 application credentials via `BLIZZARD_CLIENT_ID` / `BLIZZARD_CLIENT_SECRET`, exchanged at `https://oauth.battle.net/token`. Tokens are cached with expiry tracking and refreshed automatically. The equipment profile is still fetched per raider, but the weekly readiness report no longer emits the `Gear progression` or `Needs verification` sections — the required-enchant slot list was not expansion-accurate (`BACK` takes no enchant this expansion), so both were dropped until the slot rules are corrected. `WEEKLY_GEAR_STALE_HOURS` is consequently unused for now.
 

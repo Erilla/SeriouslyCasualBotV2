@@ -7,10 +7,17 @@ vi.mock('../../src/services/logger.js', () => ({
 }));
 
 import {
+  idlePlaceholderEmbed,
+  intelRefreshRow,
   placeholderEmbed,
   startIntelJob,
 } from '../../src/functions/applications/intel/placeholders.js';
-import { getApplicantCharacters, getJob } from '../../src/functions/applications/intel/jobStore.js';
+import {
+  dueJobs,
+  getApplicantCharacters,
+  getControlMessageId,
+  getJob,
+} from '../../src/functions/applications/intel/jobStore.js';
 
 const character = { region: 'eu', realm: 'draenor', name: 'Brentpriest' };
 
@@ -62,54 +69,53 @@ describe('startIntelJob', () => {
   });
 });
 
-describe('placeholders are only reserved when there is something to sweep', () => {
+describe('idle reservations', () => {
   /**
-   * Reserving the three positions and queueing the sweep used to be separate
-   * decisions in separate functions. Anything that did the first without the second
-   * left three embeds reading "searching…" forever — which hit the testdata seeder
-   * (it calls createForumPost directly) and every real application whose answers
-   * contain no parseable Raider.IO URL. Verified live: a seeded application sat on
-   * "searching…" with no job row in the database at all.
+   * Reserving the three positions and queueing the sweep used to be one decision,
+   * because anything that reserved without queueing left three embeds reading
+   * "searching…" forever — the testdata seeder (it calls createForumPost directly)
+   * and every application whose answers contain no parseable Raider.IO URL.
+   *
+   * They are separate again, because a character can arrive later as a conversation
+   * link and Discord cannot insert a message above the voting controls after the
+   * fact — so skipping the reservation denied those applications intel permanently.
+   * What makes that safe is that the reservation is no longer a lie: idle copy plus
+   * an 'idle' job that owns the message ids until a link reopens it.
    */
-  const sends: unknown[] = [];
-  const thread = {
-    id: 'THREAD',
-    send: vi.fn(async (payload: unknown) => {
-      sends.push(payload);
-      return { id: `MSG${sends.length}` };
-    }),
-  };
-
   beforeEach(() => {
-    sends.length = 0;
-    thread.send.mockClear();
+    createTables(getDatabase(':memory:'));
+  });
+  afterEach(() => closeDatabase());
+
+  it('does not claim to be searching when nothing is queued', () => {
+    expect(idlePlaceholderEmbed('alts').toJSON().description).not.toContain('searching');
+    expect(idlePlaceholderEmbed('alts').toJSON().description).toContain('Refresh');
+    expect(placeholderEmbed('alts').toJSON().description).toContain('searching');
   });
 
-  /** The decision under test, mirroring createForumPost's guard. */
-  const reservePlaceholders = async (
-    characters: { region: string; realm: string; name: string }[],
-  ): Promise<string[]> => {
-    const ids: string[] = [];
-    if (characters.length > 0) {
-      for (const kind of ['alts', 'guilds', 'logs'] as const) {
-        const m = await thread.send({ embeds: [placeholderEmbed(kind)] });
-        ids.push(m.id);
-      }
-    }
-    return ids;
-  };
-
-  it('reserves all three when a character was named', async () => {
-    const ids = await reservePlaceholders([
-      { region: 'eu', realm: 'draenor', name: 'Brentpriest' },
-    ]);
-    expect(ids).toHaveLength(3);
-    expect(thread.send).toHaveBeenCalledTimes(3);
+  it('reserves an idle job that the scheduler will not pick up', () => {
+    const id = startIntelJob({
+      applicationId: 5,
+      targetChannelId: 'chan',
+      characters: [],
+      altsMessageId: 'A',
+      refreshMessageId: 'R',
+    });
+    expect(getJob(id)?.status).toBe('idle');
+    expect(getJob(id)?.alts_message_id).toBe('A');
+    expect(getControlMessageId(id)).toBe('R');
+    expect(dueJobs(new Date().toISOString())).toEqual([]);
   });
 
-  it('reserves none when no character was named', async () => {
-    const ids = await reservePlaceholders([]);
-    expect(ids).toEqual([]);
-    expect(thread.send).not.toHaveBeenCalled();
+  it('disables the refresh control only while a sweep is in flight', () => {
+    const disabled = (status: Parameters<typeof intelRefreshRow>[1]): boolean =>
+      intelRefreshRow(5, status).toJSON().components[0].disabled === true;
+
+    expect(disabled('pending')).toBe(true);
+    expect(disabled('running')).toBe(true);
+    expect(disabled('idle')).toBe(false);
+    expect(disabled('done')).toBe(false);
+    expect(disabled('failed')).toBe(false);
+    expect(disabled('paused')).toBe(false);
   });
 });

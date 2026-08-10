@@ -69,7 +69,7 @@ export async function seedApplicationDiscord(
   const named = collectRaiderIoCharacters(answers);
 
   try {
-    const { forumPost, threadId, altsMessageId, guildsMessageId, logsMessageId } =
+    const { forumPost, threadId, altsMessageId, guildsMessageId, logsMessageId, refreshMessageId } =
       await createForumPost(
         guild,
         characterName,
@@ -89,7 +89,12 @@ export async function seedApplicationDiscord(
     // the three placeholders and nothing ever edited them, which is precisely how
     // a seeded application ended up stuck on "searching…" indefinitely. Failure
     // here must not fail the seed, so it is logged and swallowed.
-    if (named.length > 0) {
+    //
+    // Unconditional, matching submitApplication: createForumPost now always
+    // reserves the positions and the Refresh control, so a seeded application that
+    // named nobody still needs the 'idle' job that owns those message ids. Gating
+    // this on `named` would leave a live Refresh button whose handler finds no job.
+    {
       try {
         const jobId = startIntelJob({
           applicationId: seedResult.applicationId,
@@ -99,10 +104,13 @@ export async function seedApplicationDiscord(
           altsMessageId,
           guildsMessageId,
           logsMessageId,
+          refreshMessageId,
         });
         logger.info(
           'TestData',
-          `Queued intel job #${jobId} for seeded application #${seedResult.applicationId}`,
+          named.length > 0
+            ? `Queued intel job #${jobId} for seeded application #${seedResult.applicationId}`
+            : `Reserved idle intel job #${jobId} for seeded application #${seedResult.applicationId}`,
         );
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));

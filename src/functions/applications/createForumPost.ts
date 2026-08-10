@@ -14,8 +14,8 @@ import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { splitMessage } from './splitMessage.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { resolveApplicationLogCategory } from './applicationLogCategory.js';
-import { placeholderEmbed } from './intel/placeholders.js';
-import type { RaiderIoCharacter } from './raiderIoName.js';
+import { idlePlaceholderEmbed, intelRefreshRow, placeholderEmbed } from './intel/placeholders.js';
+import type { RaiderIoCharacter } from './characterLinks.js';
 
 export interface CreateForumPostResult {
   forumPost: { id: string };
@@ -23,6 +23,7 @@ export interface CreateForumPostResult {
   altsMessageId?: string;
   guildsMessageId?: string;
   logsMessageId?: string;
+  refreshMessageId?: string;
 }
 
 export async function createForumPost(
@@ -32,15 +33,18 @@ export async function createForumPost(
   qaText: string,
   applicationId: number,
   /**
-   * Characters the applicant named, used ONLY to decide whether to reserve the
-   * three intel placeholders.
+   * Characters the applicant named, used ONLY to pick the copy the three reserved
+   * intel positions start on.
    *
-   * Posting them and queueing the sweep used to be separate decisions in separate
-   * functions, so anything that reserved the positions without queueing a job left
-   * three embeds reading "searching…" forever. That hit the testdata seeder (which
-   * calls this directly and never queued anything) and every real application whose
-   * answers contain no parseable Raider.IO URL. One condition now governs both:
-   * no character, no placeholders.
+   * The positions themselves are now always reserved. Reserving them and queueing
+   * the sweep used to be one decision, because anything that reserved without
+   * queueing left three embeds reading "searching…" forever — the testdata seeder
+   * and every application whose answers contain no parseable Raider.IO URL. But a
+   * character can arrive later as a conversation link, and Discord cannot insert a
+   * message above the voting controls after the fact, so skipping the reservation
+   * permanently denied those applications any intel at all. The honesty problem is
+   * solved by the copy instead: no character means idle copy plus an 'idle' job
+   * that owns these message ids until a link reopens it.
    */
   characters: RaiderIoCharacter[] = [],
 ): Promise<CreateForumPostResult> {
@@ -128,24 +132,28 @@ export async function createForumPost(
   let altsMessageId: string | undefined;
   let guildsMessageId: string | undefined;
   let logsMessageId: string | undefined;
-  // Skipped entirely when there is no character to sweep: no job will be queued,
-  // so reserving positions nothing can ever edit is what left three embeds reading
-  // "searching…" forever. Not an error, so it must not log one.
-  if (characters.length > 0) {
-    try {
-      const altsMessage = await thread.send({ embeds: [placeholderEmbed('alts')] });
-      altsMessageId = altsMessage.id;
-      const guildsMessage = await thread.send({ embeds: [placeholderEmbed('guilds')] });
-      guildsMessageId = guildsMessage.id;
-      const logsMessage = await thread.send({ embeds: [placeholderEmbed('logs')] });
-      logsMessageId = logsMessage.id;
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      logger.warn(
-        'Applications',
-        `Failed to post intel placeholders for application #${applicationId}: ${error.message}`,
-      );
-    }
+  let refreshMessageId: string | undefined;
+  const embedFor = characters.length > 0 ? placeholderEmbed : idlePlaceholderEmbed;
+  try {
+    const altsMessage = await thread.send({ embeds: [embedFor('alts')] });
+    altsMessageId = altsMessage.id;
+    const guildsMessage = await thread.send({ embeds: [embedFor('guilds')] });
+    guildsMessageId = guildsMessage.id;
+    const logsMessage = await thread.send({ embeds: [embedFor('logs')] });
+    logsMessageId = logsMessage.id;
+    // Its own message rather than a row on the alts embed: editIntelMessage sends
+    // `components: []` on every publish to clear a stale paging row, which would
+    // strip this control the first time the sweep rendered.
+    const refreshMessage = await thread.send({
+      components: [intelRefreshRow(applicationId, characters.length > 0 ? 'pending' : 'idle')],
+    });
+    refreshMessageId = refreshMessage.id;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.warn(
+      'Applications',
+      `Failed to post intel placeholders for application #${applicationId}: ${error.message}`,
+    );
   }
 
   try {
@@ -185,5 +193,6 @@ export async function createForumPost(
     altsMessageId,
     guildsMessageId,
     logsMessageId,
+    refreshMessageId,
   };
 }

@@ -1,0 +1,216 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockedGetCharacterSummary, mockedResolveRealmSlug, mockedResolveWclCharacterIds } =
+  vi.hoisted(() => ({
+    mockedGetCharacterSummary: vi.fn(),
+    mockedResolveRealmSlug: vi.fn(),
+    mockedResolveWclCharacterIds: vi.fn(),
+  }));
+
+vi.mock('../../src/services/warcraftlogs.js', () => ({
+  resolveWclCharacterIds: mockedResolveWclCharacterIds,
+}));
+
+vi.mock('../../src/services/blizzard.js', () => ({
+  resolveRealmSlug: mockedResolveRealmSlug,
+}));
+
+vi.mock('../../src/services/raiderio.js', () => ({
+  getCharacterSummary: mockedGetCharacterSummary,
+}));
+
+import {
+  resolveCharacterLinks,
+  MAX_LINK_CANDIDATES,
+  type CharacterLinkResolutionStatus,
+} from '../../src/functions/applications/resolveCharacterLinks.js';
+import type {
+  CharacterLinkCandidate,
+  RaiderIoCharacter,
+} from '../../src/functions/applications/characterLinks.js';
+
+function wclCandidate(wclId: number, index = 0): CharacterLinkCandidate {
+  return { source: 'warcraftlogs-id', index, wclId };
+}
+
+function namedCandidate(
+  source: Exclude<CharacterLinkCandidate['source'], 'warcraftlogs-id'>,
+  character: RaiderIoCharacter,
+  index: number,
+): CharacterLinkCandidate {
+  return { source, character, index };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockedResolveWclCharacterIds.mockResolvedValue(new Map());
+  mockedResolveRealmSlug.mockImplementation(async (_region: string, realm: string) =>
+    realm.toLocaleLowerCase(),
+  );
+  mockedGetCharacterSummary.mockResolvedValue({ className: null, guild: null });
+});
+
+describe('resolveCharacterLinks', () => {
+  it('marks a null WCL ID unresolved without attempting Raider.IO verification', async () => {
+    const candidate = wclCandidate(10);
+    mockedResolveWclCharacterIds.mockResolvedValue(new Map([[10, null]]));
+
+    await expect(resolveCharacterLinks([candidate], { verify: true })).resolves.toEqual({
+      identities: [],
+      statuses: [
+        {
+          candidate,
+          identity: null,
+          status: 'unresolved',
+        } satisfies CharacterLinkResolutionStatus,
+      ],
+    });
+    expect(mockedGetCharacterSummary).not.toHaveBeenCalled();
+  });
+
+  it('keeps a canonical WCL identity when Raider.IO cannot verify it', async () => {
+    const candidate = wclCandidate(10);
+    const character = { region: 'eu', realm: 'Draenor', name: 'Valid' };
+    mockedResolveWclCharacterIds.mockResolvedValue(new Map([[10, character]]));
+    mockedGetCharacterSummary.mockResolvedValue(null);
+
+    await expect(resolveCharacterLinks([candidate], { verify: true })).resolves.toEqual({
+      identities: [{ region: 'eu', realm: 'draenor', name: 'Valid' }],
+      statuses: [
+        {
+          candidate,
+          identity: { region: 'eu', realm: 'draenor', name: 'Valid' },
+          status: 'unavailable',
+        },
+      ],
+    });
+  });
+
+  it('normalizes and deduplicates identities while retaining source-ordered statuses', async () => {
+    const later = namedCandidate(
+      'wowprogress',
+      { region: 'EU', realm: 'aggra', name: 'Thrall' },
+      20,
+    );
+    const earlier = namedCandidate(
+      'raiderio',
+      { region: 'eu', realm: 'aggra-português', name: 'THRALL' },
+      5,
+    );
+    const result = await resolveCharacterLinks([later, earlier], { verify: true });
+
+    expect(result.identities).toEqual([{ region: 'eu', realm: 'aggra-português', name: 'THRALL' }]);
+    expect(result.statuses).toEqual([
+      {
+        candidate: earlier,
+        identity: { region: 'eu', realm: 'aggra-português', name: 'THRALL' },
+        status: 'verified',
+      },
+      {
+        candidate: later,
+        identity: { region: 'eu', realm: 'aggra-português', name: 'Thrall' },
+        status: 'verified',
+      },
+    ]);
+    // Identities stay in the Raider.IO vocabulary: no Blizzard realm-index call
+    // belongs on this path, because every consumer of these is Raider.IO-shaped.
+    expect(mockedResolveRealmSlug).not.toHaveBeenCalled();
+    expect(mockedGetCharacterSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not apply the WoWProgress EU Aggra alias to other sources', async () => {
+    const candidate = namedCandidate('armory', { region: 'eu', realm: 'aggra', name: 'Thrall' }, 0);
+
+    await expect(resolveCharacterLinks([candidate], { verify: true })).resolves.toMatchObject({
+      identities: [{ region: 'eu', realm: 'aggra', name: 'Thrall' }],
+      statuses: [{ candidate, status: 'verified' }],
+    });
+  });
+
+  it('batches WCL IDs and verifies every distinct canonical identity', async () => {
+    const named = namedCandidate('armory', { region: 'us', realm: 'Area 52', name: 'Jaina' }, 30);
+    const wcl = wclCandidate(10, 10);
+    mockedResolveWclCharacterIds.mockResolvedValue(
+      new Map([[10, { region: 'eu', realm: 'Draenor', name: 'Valid' }]]),
+    );
+    const result = await resolveCharacterLinks([named, wcl], { verify: true });
+
+    expect(mockedResolveWclCharacterIds).toHaveBeenCalledWith([10]);
+    expect(result.identities).toEqual([
+      { region: 'eu', realm: 'draenor', name: 'Valid' },
+      { region: 'us', realm: 'area-52', name: 'Jaina' },
+    ]);
+    expect(result.statuses.map(({ status }) => status)).toEqual(['verified', 'verified']);
+    expect(mockedGetCharacterSummary).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('resolveCharacterLinks without verification', () => {
+  beforeEach(() => {
+    mockedGetCharacterSummary.mockReset();
+    mockedResolveRealmSlug.mockReset();
+    mockedResolveWclCharacterIds.mockReset();
+    mockedResolveRealmSlug.mockImplementation(async (_region: string, realm: string) => realm);
+    mockedResolveWclCharacterIds.mockResolvedValue(new Map());
+  });
+
+  /**
+   * The message-harvest path resolves a link on every paste and reads only the
+   * identities. Verifying each one would be a Raider.IO round trip per link spent
+   * on a classification the caller throws away.
+   */
+  it('resolves identities without a single Raider.IO lookup', async () => {
+    const candidate: CharacterLinkCandidate = {
+      source: 'raiderio',
+      index: 0,
+      character: { region: 'eu', realm: 'draenor', name: 'Brentpriest' },
+    };
+
+    await expect(resolveCharacterLinks([candidate])).resolves.toEqual({
+      identities: [{ region: 'eu', realm: 'draenor', name: 'Brentpriest' }],
+      statuses: [],
+    });
+    expect(mockedGetCharacterSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('linked identities stay in the Raider.IO vocabulary', () => {
+  beforeEach(() => {
+    mockedGetCharacterSummary.mockReset();
+    mockedResolveRealmSlug.mockReset();
+    mockedResolveWclCharacterIds.mockReset();
+    mockedResolveWclCharacterIds.mockResolvedValue(new Map());
+  });
+
+  /**
+   * Blizzard deletes a hyphen it reads as part of the realm NAME
+   * (`Azjol-Nerub` -> `azjolnerub`); Raider.IO keeps it. Rewriting a linked
+   * identity to the Blizzard form made a pasted raider.io URL fail to match the
+   * identical URL in the application — duplicating the finding, requesting a
+   * pointless top-up, and rooting a rescued sweep on a realm Raider.IO 400s on.
+   */
+  it('preserves a hyphen Blizzard would delete', async () => {
+    const candidate: CharacterLinkCandidate = {
+      source: 'raiderio',
+      index: 0,
+      character: { region: 'eu', realm: 'azjol-nerub', name: 'Bob' },
+    };
+
+    const { identities } = await resolveCharacterLinks([candidate]);
+
+    expect(identities).toEqual([{ region: 'eu', realm: 'azjol-nerub', name: 'Bob' }]);
+    expect(mockedResolveRealmSlug).not.toHaveBeenCalled();
+  });
+
+  it('caps how many candidates one call will resolve', async () => {
+    const many: CharacterLinkCandidate[] = Array.from({ length: 200 }, (_, i) => ({
+      source: 'raiderio' as const,
+      index: i,
+      character: { region: 'eu', realm: 'draenor', name: `Alt${i}` },
+    }));
+
+    const { identities } = await resolveCharacterLinks(many);
+
+    expect(identities).toHaveLength(MAX_LINK_CANDIDATES);
+  });
+});

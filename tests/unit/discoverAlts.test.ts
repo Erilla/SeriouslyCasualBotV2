@@ -35,6 +35,7 @@ function deps(over: Partial<DiscoverDeps> = {}): DiscoverDeps {
     getCharacterSummary: vi.fn(async () => ({ className: 'Priest', guild: null })),
     getCharacterGuild: vi.fn(async () => null),
     getGuildRoster: vi.fn(async () => []),
+    getAnchorFingerprint: vi.fn(async (c) => fingerprints[c.name.toLowerCase()] ?? null),
     getCharacterFingerprint: vi.fn(async (c) => fingerprints[c.name.toLowerCase()] ?? null),
     getMythicKillDates: vi.fn(async () => []),
     tierOrdinals: [35],
@@ -52,16 +53,43 @@ describe('discoverAlts', () => {
   afterEach(() => closeDatabase());
 
   it('records the application character itself', async () => {
-    await discoverAlts(jobId, [applicant], deps());
+    await discoverAlts(jobId, applicant, [applicant], [], deps());
     const found = getFindings(jobId);
     expect(found).toHaveLength(1);
     expect(found[0].source).toBe('application');
   });
 
+  it('records linked seeds as linked and expands their guilds', async () => {
+    const linked = { region: 'eu', realm: 'silvermoon', name: 'Linkedmage' };
+    const getGuildRoster = vi.fn(async () => []);
+
+    await discoverAlts(
+      jobId,
+      applicant,
+      [applicant],
+      [linked],
+      deps({
+        getCharacterSummary: vi.fn(async (character) => ({
+          className: character.name === linked.name ? 'Mage' : 'Priest',
+          guild:
+            character.name === linked.name ? { name: 'Linked Guild', realm: 'Silvermoon' } : null,
+        })),
+        getGuildRoster,
+      }),
+    );
+
+    expect(getFindings(jobId)).toContainEqual(
+      expect.objectContaining({ name: linked.name, realm: linked.realm, source: 'linked' }),
+    );
+    expect(getGuildRoster).toHaveBeenCalledWith({ name: 'Linked Guild', realm: 'Silvermoon' });
+  });
+
   it('records claimed characters from the owner lookup at full confidence', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterOwner: vi.fn(async () => ({
           user: 'Brentoan',
@@ -81,7 +109,9 @@ describe('discoverAlts', () => {
   it('records a declared main', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterOwner: vi.fn(async () => ({
           user: null,
@@ -96,7 +126,9 @@ describe('discoverAlts', () => {
   it('fingerprints a guild roster and records only matches', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [
@@ -114,7 +146,9 @@ describe('discoverAlts', () => {
     const getGuildRoster = vi.fn(async () => []);
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => null),
         getGuildRoster,
@@ -152,7 +186,9 @@ describe('discoverAlts', () => {
       let peak = 0;
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterOwner: owner,
           getClaimedCharacters: vi.fn(async () => claimedList(names)),
@@ -180,7 +216,9 @@ describe('discoverAlts', () => {
       const getCharacterSummary = vi.fn(async () => ({ className: 'Mage', guild: null }));
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterOwner: owner,
           getClaimedCharacters: vi.fn(async () => claimedList(['Altone', 'Altone', 'Alttwo'])),
@@ -212,7 +250,9 @@ describe('discoverAlts', () => {
       await expect(
         discoverAlts(
           jobId,
+          applicant,
           [applicant],
+          [],
           deps({
             getCharacterOwner: owner,
             getClaimedCharacters: vi.fn(async () =>
@@ -241,7 +281,9 @@ describe('discoverAlts', () => {
       const names = ['Zeta', 'Alpha', 'Mu', 'Beta'];
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterOwner: owner,
           getClaimedCharacters: vi.fn(async () => claimedList(names)),
@@ -286,7 +328,9 @@ describe('discoverAlts', () => {
       const getGuildRoster = vi.fn(async () => []);
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterOwner: vi.fn(async () => ({
             user: 'brent',
@@ -325,7 +369,9 @@ describe('discoverAlts', () => {
       let peak = 0;
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterOwner: vi.fn(async () => ({
             user: 'brent',
@@ -351,7 +397,9 @@ describe('discoverAlts', () => {
     const getGuildRoster = vi.fn(async () => []);
     await discoverAlts(
       jobId,
+      { region: 'eu', realm: 'argent-dawn', name: 'Driptinus' },
       [{ region: 'eu', realm: 'argent-dawn', name: 'Driptinus' }],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster,
@@ -368,7 +416,9 @@ describe('discoverAlts', () => {
     );
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [
@@ -386,7 +436,9 @@ describe('discoverAlts', () => {
     const roster = Array.from({ length: 20 }, (_, i) => ({ name: `Filler${i}`, realm: 'Draenor' }));
     const result = await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => roster),
@@ -400,7 +452,9 @@ describe('discoverAlts', () => {
   it('treats an unavailable fingerprint as unknown, not as a non-match', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
@@ -416,7 +470,9 @@ describe('discoverAlts', () => {
     // normalisation these land as two separate primary-key rows.
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterOwner: vi.fn(async () => ({
           user: 'Brentoan',
@@ -440,9 +496,11 @@ describe('discoverAlts', () => {
     // truncation could be reported is the missing applicant baseline itself.
     const result = await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
-        getCharacterFingerprint: vi.fn(async () => null),
+        getAnchorFingerprint: vi.fn(async () => null),
       }),
     );
     expect(result.truncated).toBe(true);
@@ -451,11 +509,13 @@ describe('discoverAlts', () => {
   it('marks nothing scanned for roster members when the applicant fingerprint is unavailable', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
+      [],
       deps({
         getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
         getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
-        getCharacterFingerprint: vi.fn(async () => null),
+        getAnchorFingerprint: vi.fn(async () => null),
       }),
     );
     // Only the applicant's own character (recorded via source 0) is scanned;
@@ -478,7 +538,9 @@ describe('discoverAlts', () => {
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
           getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
@@ -501,7 +563,9 @@ describe('discoverAlts', () => {
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
           getGuildRoster: vi.fn(async () => [{ name: 'Brenthunter', realm: 'Draenor' }]),
@@ -538,7 +602,9 @@ describe('discoverAlts', () => {
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterSummary,
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
@@ -571,9 +637,9 @@ describe('discoverAlts', () => {
         retryAfterMs: 60_000,
       });
     });
-    await expect(discoverAlts(jobId, [applicant], deps({ getCharacterSummary }))).rejects.toThrow(
-      HttpError,
-    );
+    await expect(
+      discoverAlts(jobId, applicant, [applicant], [], deps({ getCharacterSummary })),
+    ).rejects.toThrow(HttpError);
     expect(getFindings(jobId).map((f) => f.name)).toEqual(['Brentpriest']);
   });
 });
@@ -611,7 +677,9 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
           getGuildRoster: vi.fn(async () => [
@@ -637,7 +705,9 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
       const timings = new PhaseTimings();
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           timings,
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
@@ -667,7 +737,9 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
       const timings = new PhaseTimings();
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
+        [],
         deps({
           timings,
           getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Draenor' })),
@@ -691,9 +763,83 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
     });
 
     it('works without a timings object at all', async () => {
-      await expect(discoverAlts(jobId, [applicant], deps())).resolves.toEqual({
+      await expect(discoverAlts(jobId, applicant, [applicant], [], deps())).resolves.toEqual({
         truncated: false,
       });
     });
+  });
+});
+
+describe('a sweep rooted on a character nobody declared', () => {
+  let jobId: number;
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+    jobId = createJob({ applicationId: 1, targetChannelId: '1', character: applicant });
+  });
+  afterEach(() => closeDatabase());
+
+  /**
+   * An application that named nobody is rescued by a pasted link, which becomes
+   * the job's primary. The primary is only the identity the fingerprint anchors
+   * on — it is NOT a self-declaration. Conflating the two would render a URL
+   * someone pasted as "from the application" at 100% confidence and skip the
+   * Discord confirmation pass that exists to check exactly that kind of guess.
+   */
+  it('attributes a rescued primary to the link, not the application', async () => {
+    await discoverAlts(jobId, applicant, [], [applicant], deps());
+
+    const found = getFindings(jobId);
+    expect(found).toHaveLength(1);
+    expect(found[0].source).toBe('linked');
+  });
+
+  it('does nothing when neither source names anyone', async () => {
+    await expect(discoverAlts(jobId, applicant, [], [], deps())).resolves.toEqual({
+      truncated: false,
+    });
+    expect(getFindings(jobId)).toEqual([]);
+  });
+});
+
+describe('linked seeds are interrogated for further sources', () => {
+  let jobId: number;
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+    jobId = createJob({ applicationId: 1, targetChannelId: '1', character: applicant });
+  });
+  afterEach(() => closeDatabase());
+
+  /**
+   * Provenance decides how a finding is LABELLED, not whether it deserves an
+   * owner lookup. A rescued job has no declared characters at all, so restricting
+   * these loops to `applicants` skipped the claimed-character list and declared
+   * main — the two highest-confidence sources — for exactly the applications this
+   * feature exists to rescue.
+   */
+  it('runs the owner lookup on a linked character when nothing was declared', async () => {
+    const getCharacterOwner = vi.fn(async () => ({
+      user: 'Brentoan',
+      discordProfile: 'brent',
+      declaredMain: null,
+    }));
+    const getCharacterGuild = vi.fn(async () => null);
+
+    await discoverAlts(
+      jobId,
+      applicant,
+      [],
+      [applicant],
+      deps({
+        getCharacterOwner,
+        getCharacterGuild,
+        getClaimedCharacters: vi.fn(async () => [
+          { name: 'Brenthunter', realm: 'Draenor', className: 'Hunter', level: 90 },
+        ]),
+      }),
+    );
+
+    expect(getCharacterOwner).toHaveBeenCalledWith(applicant);
+    expect(getCharacterGuild).toHaveBeenCalledWith(applicant);
+    expect(getFindings(jobId).find((f) => f.name === 'Brenthunter')?.source).toBe('raider.io');
   });
 });

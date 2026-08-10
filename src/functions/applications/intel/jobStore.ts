@@ -1,12 +1,26 @@
 import { getDatabase } from '../../../database/db.js';
-import type { IntelJobRow } from '../../../types/index.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import { decodeFingerprint, encodeFingerprint } from '../../../services/blizzard.js';
+import type {
+  ApplicantIntelAnchorFingerprint,
+  ApplicantIntelTopUpResult,
+  ApplicantIntelTopUpState,
+  IntelJobRow,
+  LinkedCharacter,
+} from '../../../types/index.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 import type { GuildHistoryEntry } from './render.js';
 
 export type JobPhase = 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'done';
-export type JobStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed';
+/**
+ * 'idle' is a job that exists only to own its three reserved message ids. An
+ * application whose answers name no character still reserves those positions, so
+ * something must hold them until a conversation link gives the sweep work to do.
+ * `dueJobs` never selects it, so it costs nothing until `requestTopUp` reopens it.
+ */
+export type JobStatus = 'idle' | 'pending' | 'running' | 'paused' | 'done' | 'failed';
 export type FindingSource =
   | 'application'
+  | 'linked'
   | 'raider.io'
   | 'declared main'
   | 'declared alt'
@@ -35,12 +49,23 @@ export interface IntelFinding {
  *  ALT ("my main is <applicant>") rather than on the applicant — and is the same
  *  self-assertion by the same account owner, so it ranks with it. */
 const SOURCE_RANK: Record<FindingSource, number> = {
-  application: 3,
-  'raider.io': 2,
-  'declared main': 2,
-  'declared alt': 2,
-  fingerprint: 1,
+  application: 40,
+  linked: 30,
+  'raider.io': 20,
+  'declared main': 20,
+  'declared alt': 20,
+  fingerprint: 10,
 };
+
+/** Only characters explicitly entered in the application form are self-declared. */
+export function isSelfDeclared(source: FindingSource): boolean {
+  return source === 'application';
+}
+
+/** Every inferred or conversation-linked character should receive the confirmation pass. */
+export function needsDiscordConfirmation(source: FindingSource): boolean {
+  return !isSelfDeclared(source);
+}
 
 function touch(id: number): void {
   getDatabase()
@@ -54,13 +79,15 @@ export function createJob(input: {
   character: RaiderIoCharacter;
   /** Discord username of the applicant, for the confirmation pass. */
   applicantDiscord?: string | null;
+  /** Defaults to 'pending', i.e. immediately due. Pass 'idle' to reserve only. */
+  status?: JobStatus;
 }): number {
   const result = getDatabase()
     .prepare(
       `INSERT INTO applicant_intel_jobs
          (application_id, target_channel_id, character_name, character_realm, character_region,
-          applicant_discord)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+          applicant_discord, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.applicationId,
@@ -69,6 +96,7 @@ export function createJob(input: {
       input.character.realm,
       input.character.region,
       input.applicantDiscord ?? null,
+      input.status ?? 'pending',
     );
   return result.lastInsertRowid as number;
 }
@@ -77,6 +105,32 @@ export function getJob(id: number): IntelJobRow | undefined {
   return getDatabase().prepare('SELECT * FROM applicant_intel_jobs WHERE id = ?').get(id) as
     | IntelJobRow
     | undefined;
+}
+
+/** One application owns one intel job; the oldest wins if history left duplicates. */
+export function getJobByApplication(applicationId: number): IntelJobRow | undefined {
+  return getDatabase()
+    .prepare('SELECT * FROM applicant_intel_jobs WHERE application_id = ? ORDER BY id LIMIT 1')
+    .get(applicationId) as IntelJobRow | undefined;
+}
+
+/**
+ * Name the primary of a job reserved without one, returning whether it was set.
+ *
+ * Refusing to revise an existing primary is the point: findings are attributed to
+ * whoever the primary was when the fingerprint anchor was taken, so a link that
+ * arrives later must not silently re-root the whole sweep.
+ */
+export function setJobPrimary(id: number, character: RaiderIoCharacter): boolean {
+  const changes = getDatabase()
+    .prepare(
+      `UPDATE applicant_intel_jobs
+         SET character_name = ?, character_realm = ?, character_region = ?
+       WHERE id = ? AND character_name = ''`,
+    )
+    .run(character.name, character.realm, character.region, id).changes;
+  if (changes > 0) touch(id);
+  return changes > 0;
 }
 
 export function setPhase(id: number, phase: JobPhase): void {
@@ -172,6 +226,43 @@ export function getApplicantCharacters(jobId: number): RaiderIoCharacter[] {
     .map((r) => JSON.parse((r as { payload: string }).payload) as RaiderIoCharacter);
 }
 
+function characterIdentityKey(character: RaiderIoCharacter): string {
+  const normalize = (value: string): string => value.trim().normalize('NFC').toLowerCase();
+  return [character.region, character.realm, character.name].map(normalize).join('/');
+}
+
+/** Canonical characters harvested from links, kept separate from self-declared applicants. */
+export function setLinkedCharacters(jobId: number, characters: LinkedCharacter[]): void {
+  for (const character of characters) {
+    enqueue(jobId, 'linked', characterIdentityKey(character), character);
+  }
+}
+
+export function getLinkedCharacters(jobId: number): LinkedCharacter[] {
+  return getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'linked' ORDER BY rowid",
+    )
+    .all(jobId)
+    .map((row) => JSON.parse((row as { payload: string }).payload) as LinkedCharacter);
+}
+
+/**
+ * Keys of linked characters Raider.IO could not resolve, so the renderer can name
+ * them without a profile link that would 404.
+ *
+ * Absent `raiderIoVerified` counts as verified: rows written before verification
+ * existed came from Raider.IO URLs, and silently stripping their links on the next
+ * run would look like a regression to the reviewer reading the thread.
+ */
+export function getUnverifiedLinkedKeys(jobId: number): Set<string> {
+  return new Set(
+    getLinkedCharacters(jobId)
+      .filter((character) => character.raiderIoVerified === false)
+      .map((character) => `${character.name}|${character.realm}`.toLowerCase()),
+  );
+}
+
 export function enqueue(jobId: number, kind: string, key: string, payload?: unknown): void {
   getDatabase()
     .prepare(
@@ -180,6 +271,126 @@ export function enqueue(jobId: number, kind: string, key: string, payload?: unkn
        ON CONFLICT(job_id, kind, key) DO NOTHING`,
     )
     .run(jobId, kind, key, payload === undefined ? null : JSON.stringify(payload));
+}
+
+interface StoredAnchorFingerprint extends Omit<ApplicantIntelAnchorFingerprint, 'entries'> {
+  entries: string;
+}
+
+/** Persist the successful primary fingerprint; null is deliberately not negative-cached. */
+export function setAnchorFingerprint(
+  jobId: number,
+  anchor: ApplicantIntelAnchorFingerprint | null,
+): void {
+  if (!anchor) return;
+
+  const stored: StoredAnchorFingerprint = {
+    ...anchor,
+    entries: encodeFingerprint(anchor.entries),
+  };
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'fingerprint', 'anchor', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(stored));
+}
+
+export function getAnchorFingerprint(jobId: number): ApplicantIntelAnchorFingerprint | null {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'fingerprint' AND key = 'anchor'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  if (!row?.payload) return null;
+
+  const stored = JSON.parse(row.payload) as StoredAnchorFingerprint;
+  return { ...stored, entries: decodeFingerprint(stored.entries) };
+}
+
+/**
+ * The message carrying the officer Refresh control, kept in the queue rather than
+ * on the job row because this feature must not change the schema version.
+ */
+export function setControlMessageId(jobId: number, messageId: string): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'controls', 'refresh', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload`,
+    )
+    .run(jobId, JSON.stringify(messageId));
+}
+
+export function getControlMessageId(jobId: number): string | null {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'controls' AND key = 'refresh'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  return row?.payload ? (JSON.parse(row.payload) as string) : null;
+}
+
+export function getTopUpState(jobId: number): ApplicantIntelTopUpState | null {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'topup' AND key = 'state'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  return row?.payload ? (JSON.parse(row.payload) as ApplicantIntelTopUpState) : null;
+}
+
+function setTopUpState(jobId: number, state: ApplicantIntelTopUpState): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'topup', 'state', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(state));
+}
+
+/** Request another pass without disturbing an active run or rate-limit pause. */
+export function requestTopUp(jobId: number): ApplicantIntelTopUpResult {
+  const db = getDatabase();
+  return db.transaction(() => {
+    const job = db.prepare('SELECT status FROM applicant_intel_jobs WHERE id = ?').get(jobId) as
+      | { status: JobStatus }
+      | undefined;
+    if (!job) throw new Error(`Applicant intel job ${jobId} does not exist`);
+
+    const reopened = job.status === 'done' || job.status === 'failed' || job.status === 'idle';
+    const previous = getTopUpState(jobId);
+    setTopUpState(jobId, {
+      requested: true,
+      reopenedAt: reopened ? new Date().toISOString() : (previous?.reopenedAt ?? null),
+    });
+
+    if (reopened) {
+      db.prepare(
+        `UPDATE applicant_intel_jobs
+           SET status = 'pending', attempts = 0, resume_after = NULL, paused_service = NULL,
+               updated_at = datetime('now')
+         WHERE id = ?`,
+      ).run(jobId);
+      return 'reopened';
+    }
+
+    return 'queued';
+  })();
+}
+
+export function topUpRequested(jobId: number): boolean {
+  return getTopUpState(jobId)?.requested ?? false;
+}
+
+/** Clear at run start so a later request remains visible as a fresh wakeup. */
+export function consumeTopUpRequest(jobId: number): boolean {
+  const state = getTopUpState(jobId);
+  if (!state?.requested) return false;
+  setTopUpState(jobId, { ...state, requested: false });
+  return true;
 }
 
 /**
@@ -330,7 +541,7 @@ export function addFinding(jobId: number, f: IntelFinding): void {
        guild_name = excluded.guild_name,
        guild_realm = excluded.guild_realm,
        source = excluded.source,
-       confidence = excluded.confidence,
+       confidence = COALESCE(excluded.confidence, applicant_intel_findings.confidence),
        -- A later, weaker source must never erase a Discord verdict already recorded.
        discord_status = COALESCE(excluded.discord_status, applicant_intel_findings.discord_status),
        discord_profile = COALESCE(excluded.discord_profile, applicant_intel_findings.discord_profile)`,

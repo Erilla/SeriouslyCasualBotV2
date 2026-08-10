@@ -5,7 +5,7 @@ import { normalizeRealmSlug } from '../../../services/blizzard.js';
 import { compareFingerprints, type Fingerprint } from './compareFingerprints.js';
 import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/jobStore.js';
 import type { PhaseTimings } from '../intel/phaseTimings.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 import {
   RAIDERIO_CHARACTER_CONCURRENCY,
   type CharacterGuild,
@@ -55,6 +55,8 @@ export interface DiscoverDeps {
   getCharacterSummary: (c: RaiderIoCharacter) => Promise<CharacterSummary | null>;
   getCharacterGuild: (c: RaiderIoCharacter) => Promise<CharacterGuild | null>;
   getGuildRoster: (guild: CharacterGuild) => Promise<RosterMember[]>;
+  /** Durable primary baseline; roster members use getCharacterFingerprint below. */
+  getAnchorFingerprint: (c: RaiderIoCharacter) => Promise<Fingerprint | null>;
   getCharacterFingerprint: (c: RaiderIoCharacter) => Promise<Fingerprint | null>;
   /**
    * Kill history, used here only for the guilds it names.
@@ -106,7 +108,18 @@ const sleep = (ms: number): Promise<void> =>
  */
 export async function discoverAlts(
   jobId: number,
+  /**
+   * The identity this sweep is rooted on: the fingerprint anchor, and the region
+   * findings are rendered against.
+   *
+   * Separate from `applicants` on purpose. A job rescued by a pasted link has a
+   * primary that nobody declared, and recording it as `'application'` would
+   * render it "from the application" at 100% confidence and skip the Discord
+   * confirmation pass that exists to check precisely that kind of inference.
+   */
+  primary: RaiderIoCharacter,
   applicants: RaiderIoCharacter[],
+  linked: RaiderIoCharacter[],
   deps: DiscoverDeps,
 ): Promise<{ truncated: boolean }> {
   const maxGuilds = deps.maxGuilds ?? ALT_CAPS.guilds;
@@ -114,11 +127,10 @@ export async function discoverAlts(
   const maxDepth = deps.maxDepth ?? ALT_CAPS.depth;
   const pace = deps.paceMs ?? 0;
 
-  // Nothing may fail an application: an empty applicant list has no primary to
-  // fingerprint against and no work to do.
-  if (applicants.length === 0) return { truncated: false };
+  // Nothing may fail an application: with neither a declared nor a linked
+  // character there is nothing to seed the sweep from and no work to do.
+  if (applicants.length === 0 && linked.length === 0) return { truncated: false };
 
-  const primary = applicants[0];
   const known = new Map<string, RaiderIoCharacter>();
   const guildFrontier: { guild: CharacterGuild; depth: number }[] = [];
   const visitedGuilds = new Set<string>();
@@ -205,10 +217,31 @@ export async function discoverAlts(
 
   // Source 0: every character the applicant named themselves.
   for (const c of applicants) await record(c, 'application', null);
+
+  // Conversation links are useful seeds but not self-declarations: anyone can
+  // paste a character URL. They therefore retain distinct provenance, enter the
+  // same guild frontier as the application characters, and receive the later
+  // Discord confirmation pass.
+  for (const c of linked) {
+    if (known.has(key(c.name, c.realm))) continue;
+    await record(c, 'linked', null);
+  }
   mark('named');
 
+  /**
+   * The characters worth interrogating for further sources.
+   *
+   * Both the declared and the linked ones: provenance decides how a finding is
+   * LABELLED, not whether it is worth an owner lookup. A rescued job has no
+   * declared characters at all, so restricting these loops to `applicants` would
+   * skip the owner's claimed-character list and declared main entirely — the two
+   * highest-confidence sources there are — for exactly the applications this
+   * feature exists to rescue.
+   */
+  const seeds = [...applicants, ...linked];
+
   // Sources 1 and 2: declared main, then the owner's claimed-character list.
-  for (const c of applicants) {
+  for (const c of seeds) {
     const owner = await deps.getCharacterOwner(c);
     await sleep(pace);
     if (!owner) continue;
@@ -265,8 +298,8 @@ export async function discoverAlts(
 
   mark('owner');
 
-  // Seed any guild we have not already queued from the applicants themselves.
-  for (const c of applicants) {
+  // Seed any guild we have not already queued from the seed characters themselves.
+  for (const c of seeds) {
     const guild = await deps.getCharacterGuild(c);
     if (!guild) continue;
     const gk = key(guild.name, guild.realm);
@@ -322,7 +355,7 @@ export async function discoverAlts(
   // an unmet cap read as "nothing to find here".
   mark('formerGuilds');
 
-  const applicantFingerprint = await deps.getCharacterFingerprint(primary);
+  const applicantFingerprint = await deps.getAnchorFingerprint(primary);
   if (!applicantFingerprint) {
     logger.warn(
       'Alts',

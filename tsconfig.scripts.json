@@ -1,0 +1,12 @@
+{
+  // Developer scripts under scripts/ are deliberately outside the build (they are
+  // never shipped, and rootDir is src/), but they import production modules — so
+  // without a typecheck of their own they break silently whenever a signature
+  // they use changes. That is how the e2e suite rotted; CI checks these instead.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*"]
+}

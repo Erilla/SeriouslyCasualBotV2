@@ -1,4 +1,4 @@
-import type { IntelFinding } from './jobStore.js';
+import { isSelfDeclared, type IntelFinding } from './jobStore.js';
 import type { BossEvidence } from '../mythic-logs/selectMythicReports.js';
 import type { WclZone } from '../mythic-logs/zoneCatalogue.js';
 
@@ -52,12 +52,25 @@ const displayRealm = (realm: string): string =>
     .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
     .join(' ');
 
+/**
+ * Percent-encode a path segment, which several EU realms genuinely need.
+ *
+ * Raider.IO rejects a raw non-ASCII path: `.../eu/aggra-português/Xplendor`
+ * answers 400 where `.../eu/aggra-portugu%C3%AAs/Xplendor` answers 200. Realm
+ * slugs keep accents on purpose (that is Blizzard's own spelling and what
+ * Raider.IO indexes), so the encoding has to happen here or every character on
+ * Aggra (Português), Suramar and the other accented realms gets a dead link.
+ *
+ * encodeURIComponent leaves `-` alone, so hyphenated slugs are unaffected.
+ */
+const encodeSegment = (value: string): string => encodeURIComponent(value);
+
 export function raiderIoProfileUrl(region: string, realm: string, name: string): string {
-  return `https://raider.io/characters/${region.toLowerCase()}/${realmSlug(realm)}/${name}`;
+  return `https://raider.io/characters/${region.toLowerCase()}/${encodeSegment(realmSlug(realm))}/${encodeSegment(name)}`;
 }
 
 export function raiderIoGuildUrl(region: string, realm: string, name: string): string {
-  return `https://raider.io/guilds/${region.toLowerCase()}/${realmSlug(realm)}/${encodeURIComponent(name)}`;
+  return `https://raider.io/guilds/${region.toLowerCase()}/${encodeSegment(realmSlug(realm))}/${encodeSegment(name)}`;
 }
 
 /**
@@ -72,8 +85,21 @@ export function discordDate(iso: string): string {
   return `<t:${Math.floor(ms / 1000)}:D>`;
 }
 
-function findingLine(f: IntelFinding, region: string, applicantName: string): string {
-  const link = `[${f.name}-${displayRealm(f.realm)}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
+function findingLine(
+  f: IntelFinding,
+  region: string,
+  applicantName: string,
+  unlinkable: ReadonlySet<string>,
+): string {
+  // A character Raider.IO cannot resolve gets its name in plain text. It reached
+  // the sweep through a WarcraftLogs or Armory link and is swept perfectly well
+  // against Blizzard, but a raider.io profile URL for it would 404 — and a
+  // reviewer who clicks a dead link reads it as the bot being wrong about the
+  // character rather than about the link.
+  const label = `${f.name}-${displayRealm(f.realm)}`;
+  const link = unlinkable.has(`${f.name}|${f.realm}`.toLowerCase())
+    ? label
+    : `[${label}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
   const guild = f.guildName
     ? `${f.guildName} (${f.guildRealm ? displayRealm(f.guildRealm) : '?'})`
     : 'No guild';
@@ -87,11 +113,16 @@ function findingLine(f: IntelFinding, region: string, applicantName: string): st
   // way to a `declared main` — so it says who names whom rather than showing the
   // flat 100% that a reviewer would read as just a very good fingerprint match.
   const evidence =
-    f.source === 'declared alt'
-      ? `names ${applicantName} as their main`
-      : `${Math.round(f.confidence ?? 100)}% confidence`;
-  const provenance =
-    f.source === 'application' ? 'from the application' : `undeclared (${evidence}${discord})`;
+    f.source === 'linked'
+      ? `linked in the conversation${
+          f.confidence === null ? '' : ` · ${Math.round(f.confidence)}% fingerprint confidence`
+        }`
+      : f.source === 'declared alt'
+        ? `names ${applicantName} as their main`
+        : `${Math.round(f.confidence ?? 100)}% confidence`;
+  const provenance = isSelfDeclared(f.source)
+    ? 'from the application'
+    : `undeclared (${evidence}${discord})`;
   return `${link} · ${f.className ?? 'Unknown'} · ${guild} — ${provenance}`;
 }
 
@@ -105,6 +136,8 @@ export function renderFoundCharacters(
   applicantName: string,
   region: string,
   footer?: PauseFooter,
+  /** Keys of characters Raider.IO could not resolve; see findingLine. */
+  unlinkable: ReadonlySet<string> = new Set(),
 ): string[] {
   const heading = `**Found characters** — ${findings.length}`;
   if (findings.length === 0) {
@@ -113,15 +146,15 @@ export function renderFoundCharacters(
   }
 
   const sorted = [...findings].sort((a, b) => {
-    if (a.source === 'application' && b.source !== 'application') return -1;
-    if (b.source === 'application' && a.source !== 'application') return 1;
+    if (isSelfDeclared(a.source) && !isSelfDeclared(b.source)) return -1;
+    if (isSelfDeclared(b.source) && !isSelfDeclared(a.source)) return 1;
     return (b.confidence ?? 0) - (a.confidence ?? 0);
   });
 
   const pages: string[] = [];
   let current = `${heading}\n\n`;
   for (const f of sorted) {
-    const line = `${findingLine(f, region, applicantName)}\n`;
+    const line = `${findingLine(f, region, applicantName, unlinkable)}\n`;
     if (current.length + line.length > PAGE_BUDGET) {
       pages.push(current.trimEnd());
       current = '';

@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
+    "preview:intel": "tsx scripts/preview-linked-intel.mts",
     "start": "node dist/index.js",
     "deploy-commands": "tsx src/deploy-commands.ts",
     "test": "vitest run --project default",
@@ -14,10 +15,10 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "vitest run --project e2e",
     "test:e2e:watch": "vitest --project e2e",
-    "lint": "eslint src tests eslint.config.js vitest.config.ts",
-    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{ts,js}\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"*.{ts,js}\"",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint src tests scripts eslint.config.js vitest.config.ts",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mts\" \"*.{ts,js}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mts\" \"*.{ts,js}\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json"
   },
   "engines": {
     "node": ">=22.0.0"

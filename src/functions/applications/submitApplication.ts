@@ -81,6 +81,12 @@ export async function submitApplication(
     throw new Error(`Application #${applicationId} has no answers`);
   }
 
+  // Parse every linked character before claiming or otherwise changing the
+  // application row. The resulting list drives both placeholder reservation
+  // and the later intel sweep.
+  const named = collectRaiderIoCharacters(answers);
+  const parsedCharacterName = deriveCharacterNameFromAnswers(answers);
+
   const guild = client.guilds.cache.get(config.guildId);
   if (!guild) {
     throw new Error('Guild not found');
@@ -119,7 +125,6 @@ export async function submitApplication(
 
   // Prefer the character name parsed from the applicant's Raider.IO URL; fall
   // back to the name seeded at creation (their Discord display name).
-  const parsedCharacterName = deriveCharacterNameFromAnswers(answers);
   const characterName = parsedCharacterName || application.character_name || user.displayName;
   const channelName = `app-${characterName
     .toLowerCase()
@@ -177,11 +182,7 @@ export async function submitApplication(
   let altsMessageId: string | undefined;
   let guildsMessageId: string | undefined;
   let logsMessageId: string | undefined;
-  // Parsed BEFORE the forum post, because the same list decides two things: whether
-  // to reserve the three intel placeholders, and whether to queue the sweep. When
-  // those were separate decisions an application with no parseable Raider.IO URL
-  // got placeholders that nothing would ever edit.
-  const named = collectRaiderIoCharacters(answers);
+  let refreshMessageId: string | undefined;
   const existingThread = await findExistingThread(guild, application.thread_id);
 
   if (existingThread) {
@@ -208,6 +209,7 @@ export async function submitApplication(
       altsMessageId = result.altsMessageId;
       guildsMessageId = result.guildsMessageId;
       logsMessageId = result.logsMessageId;
+      refreshMessageId = result.refreshMessageId;
       db.prepare('UPDATE applications SET forum_post_id = ?, thread_id = ? WHERE id = ?').run(
         forumPost?.id ?? null,
         threadId,
@@ -280,23 +282,31 @@ export async function submitApplication(
   // the scheduler runs it later — so submission stays fast and a problem
   // here can never fail the application. The job row is written before any
   // API call, so a crash mid-queue loses nothing; the scheduler picks it up.
+  // A job is created even when the answers named nobody: it starts 'idle', which
+  // the scheduler ignores, and exists to own the reserved message ids until a
+  // character linked in the conversation reopens it. Without it those three
+  // positions have no owner and the application can never gain intel at all.
   if (threadId) {
     try {
-      if (named.length > 0) {
-        const jobId = startIntelJob({
-          applicationId,
-          targetChannelId: threadId,
-          // Every character the applicant named, not just the first — all of
-          // them are always swept and labelled "from the application".
-          characters: named,
-          // Drives the Discord confirmation pass on discovered characters.
-          applicantDiscord: user.username,
-          altsMessageId,
-          guildsMessageId,
-          logsMessageId,
-        });
-        logger.info('Applications', `Queued intel job #${jobId} for application #${applicationId}`);
-      }
+      const jobId = startIntelJob({
+        applicationId,
+        targetChannelId: threadId,
+        // Every character the applicant named, not just the first — all of
+        // them are always swept and labelled "from the application".
+        characters: named,
+        // Drives the Discord confirmation pass on discovered characters.
+        applicantDiscord: user.username,
+        altsMessageId,
+        guildsMessageId,
+        logsMessageId,
+        refreshMessageId,
+      });
+      logger.info(
+        'Applications',
+        named.length > 0
+          ? `Queued intel job #${jobId} for application #${applicationId}`
+          : `Reserved idle intel job #${jobId} for application #${applicationId}`,
+      );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn(

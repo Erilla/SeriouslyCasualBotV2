@@ -2,7 +2,7 @@ import { logger } from '../../../services/logger.js';
 import { mapLimit } from '../../../utils/concurrency.js';
 import { normalizeRealmSlug } from '../../../services/blizzard.js';
 import { addFinding, getFindings, setDiscordStatus } from '../intel/jobStore.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 import {
   RAIDERIO_INTERNAL_CHARACTER_CONCURRENCY,
   type CharacterOwner,

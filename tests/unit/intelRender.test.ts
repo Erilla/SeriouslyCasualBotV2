@@ -421,3 +421,69 @@ describe('realm slugs render as readable names', () => {
     expect(out[0]).toContain('https://raider.io/guilds/eu/twisting-nether/Rewritten');
   });
 });
+
+describe('renderFoundCharacters link gating', () => {
+  /**
+   * The plan's rule: only a Raider.IO-verified identity renders a Raider.IO link.
+   * A character reached through a WarcraftLogs or Armory link that Raider.IO has
+   * never indexed is still swept — the fingerprint and guild work run against
+   * Blizzard — but a raider.io URL for it 404s, and a reviewer who clicks a dead
+   * link reads it as the bot being wrong about the character.
+   */
+  it('names an unverified character without a profile link', () => {
+    const [page] = renderFoundCharacters(
+      [finding({ name: 'Ghosty', realm: 'draenor', source: 'linked', confidence: null })],
+      'Monkni',
+      'eu',
+      undefined,
+      new Set(['ghosty|draenor']),
+    );
+
+    expect(page).toContain('Ghosty-Draenor');
+    expect(page).not.toContain('raider.io/characters/eu/draenor/Ghosty');
+    expect(page).not.toContain('[Ghosty-Draenor]');
+  });
+
+  it('still links every character absent from the unverified set', () => {
+    const [page] = renderFoundCharacters(
+      [finding({ name: 'Ghosty', realm: 'draenor', source: 'linked', confidence: null })],
+      'Monkni',
+      'eu',
+    );
+
+    expect(page).toContain('[Ghosty-Draenor](https://raider.io/characters/eu/draenor/Ghosty)');
+  });
+});
+
+describe('accented realms produce a URL Raider.IO accepts', () => {
+  /**
+   * Verified live: `.../eu/aggra-português/Xplendor` answers 400 and
+   * `.../eu/aggra-portugu%C3%AAs/Xplendor` answers 200. Realm slugs keep their
+   * accents deliberately — that is Blizzard's spelling and what Raider.IO indexes
+   * — so without encoding here every character on an accented realm gets a link
+   * that fails. Several EU realms are affected, not just this one.
+   */
+  it('percent-encodes a non-ASCII realm in the character URL', () => {
+    expect(raiderIoProfileUrl('eu', 'aggra-português', 'Xplendor')).toBe(
+      'https://raider.io/characters/eu/aggra-portugu%C3%AAs/Xplendor',
+    );
+  });
+
+  it('percent-encodes a non-ASCII realm in the guild URL', () => {
+    expect(raiderIoGuildUrl('eu', 'aggra-português', 'Some Guild')).toBe(
+      'https://raider.io/guilds/eu/aggra-portugu%C3%AAs/Some%20Guild',
+    );
+  });
+
+  it('leaves hyphenated ASCII slugs untouched', () => {
+    expect(raiderIoProfileUrl('eu', 'Tarren Mill', 'Boptinus')).toBe(
+      'https://raider.io/characters/eu/tarren-mill/Boptinus',
+    );
+  });
+
+  it('encodes a non-ASCII character name too', () => {
+    expect(raiderIoProfileUrl('eu', 'draenor', 'Éowyn')).toBe(
+      'https://raider.io/characters/eu/draenor/%C3%89owyn',
+    );
+  });
+});

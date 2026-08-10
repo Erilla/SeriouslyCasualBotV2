@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { httpRequest, CircuitOpenError, HttpError } from './httpClient.js';
-import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
+import type { RaiderIoCharacter } from '../functions/applications/characterLinks.js';
 
 const BASE_URL = 'https://raider.io/api/v1';
 

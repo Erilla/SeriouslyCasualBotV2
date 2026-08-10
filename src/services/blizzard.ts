@@ -2,8 +2,12 @@ import { gunzipSync, gzipSync } from 'zlib';
 import { config } from '../config.js';
 import { httpRequest, CircuitOpenError, HttpError } from './httpClient.js';
 import { getCachedOrFetch, ttl } from './apiCache.js';
-import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
+import { logger } from './logger.js';
+import type { RaiderIoCharacter } from '../functions/applications/characterLinks.js';
 import type { Fingerprint } from '../functions/applications/alts/compareFingerprints.js';
+import type { FingerprintEntries } from '../types/index.js';
+
+export type { FingerprintEntries } from '../types/index.js';
 
 export interface BlizzardSocket {
   socket_type?: string;
@@ -36,31 +40,93 @@ let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 let inFlightToken: Promise<string> | null = null;
 
+function ruleRealmFallback(realm: string): string {
+  return realm.trim().toLowerCase().replace(/\s+/g, '-');
+}
+
 /**
- * KNOWN INCOMPLETE — do not "fix" this with the obvious one-liner. See
- * .scratch/applicant-intel-linked-characters/issues/09-realm-slug-normalisation.md.
+ * Compatibility normalizer for the synchronous alt-discovery key paths. New API
+ * callers must use resolveRealmSlug so display names and existing slugs are
+ * disambiguated by Blizzard's realm index.
  *
- * Blizzard's actual rule (verified against /data/wow/realm/index, 797 realms) is:
- * strip everything that is not a Unicode letter, digit or space, lowercase, then
- * collapse whitespace to hyphens. Accents are preserved rather than folded, and
- * apostrophes AND pre-existing hyphens are deleted — `Zul'jin` -> `zuljin`,
- * `Azjol-Nerub` -> `azjolnerub`. This function does space-to-hyphen only, so it is
- * wrong on 71 player-facing realms: `getCharacterGuild` returns realm *display
- * names* which discoverAlts feeds in here, and the resulting `zul'jin` 404s on the
- * Blizzard API and 400s on Raider.IO, silently costing that applicant their
- * fingerprint.
- *
- * The reason the real rule cannot simply be dropped in: callers pass BOTH display
- * names AND already-hyphenated raider.io slugs (see the comment at
- * discoverAlts.ts:86). The real rule deletes hyphens, so it would turn a working
- * `argent-dawn` into `argentdawn` — trading a bug on 71 realms for a bug on every
- * multi-word realm. Disambiguating `tarren-mill` (separator, keep) from
- * `azjol-nerub` (deleted character, drop) needs a realm alias table, not a regex.
- *
- * Also used for guild-name slugs (see getGuildRoster), which follow the same rule.
+ * @deprecated Pass canonical resolved realm slugs through the async lifecycle.
  */
 export function normalizeRealmSlug(realm: string): string {
-  return realm.trim().toLowerCase().replace(/\s+/g, '-');
+  return ruleRealmFallback(realm);
+}
+
+/** Blizzard's guild-name slug rule: punctuation is removed, spaces become hyphens. */
+export function guildNameSlug(name: string): string {
+  return name
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, '-');
+}
+
+interface RealmIndex {
+  realms?: { name?: string; slug?: string }[];
+}
+
+const REALM_INDEX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function foldRealm(value: string): string {
+  return value
+    .normalize('NFD')
+    .toLocaleLowerCase()
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function realmIndexLocale(region: string): string {
+  if (region === 'kr') return 'ko_KR';
+  if (region === 'tw') return 'zh_TW';
+  if (region === 'us') return 'en_US';
+  return 'en_GB';
+}
+
+async function fetchRealmIndex(region: string): Promise<RealmIndex> {
+  const token = await getAccessToken();
+  const url =
+    `https://${region}.api.blizzard.com/data/wow/realm/index` +
+    `?namespace=dynamic-${region}&locale=${realmIndexLocale(region)}`;
+  return httpRequest<RealmIndex>('blizzard', url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+/** Resolve either a realm display name or an API slug to Blizzard's canonical slug. */
+export async function resolveRealmSlug(region: string, realm: string): Promise<string> {
+  const normalizedRegion = region.trim().toLocaleLowerCase();
+  const fallback = ruleRealmFallback(realm);
+  let index: RealmIndex;
+  try {
+    index = await getCachedOrFetch<RealmIndex>(
+      `realm-index:${normalizedRegion}`,
+      ttl(REALM_INDEX_TTL_MS),
+      () => fetchRealmIndex(normalizedRegion),
+    );
+  } catch (error) {
+    logger.warn(
+      'Blizzard',
+      `Could not fetch ${normalizedRegion} realm index; using fallback for ${realm}: ${error}`,
+    );
+    return fallback;
+  }
+
+  const folded = foldRealm(realm);
+  const match = index.realms?.find(
+    (candidate) =>
+      Boolean(candidate.slug) &&
+      (foldRealm(candidate.name ?? '') === folded || foldRealm(candidate.slug ?? '') === folded),
+  );
+  if (match?.slug) return match.slug;
+
+  logger.warn(
+    'Blizzard',
+    `Realm ${realm} was not found in the ${normalizedRegion} realm index; using ${fallback}`,
+  );
+  return fallback;
 }
 
 function getAccessToken(): Promise<string> {
@@ -100,7 +166,7 @@ export async function getCharacterEquipment(
   name: string,
 ): Promise<BlizzardEquipmentProfile> {
   const token = await getAccessToken();
-  const realmSlug = encodeURIComponent(normalizeRealmSlug(realm));
+  const realmSlug = encodeURIComponent(await resolveRealmSlug(region, realm));
   const url =
     `https://${region}.api.blizzard.com/profile/wow/character/` +
     `${realmSlug}/${encodeURIComponent(name.toLowerCase())}/equipment` +
@@ -114,9 +180,6 @@ export async function getCharacterEquipment(
 interface AchievementsProfile {
   achievements?: { id: number; completed_timestamp?: number }[];
 }
-
-/** Cache wire format. A Map JSON.stringifies to `{}`, so entries are stored. */
-type FingerprintEntries = [number, number][];
 
 /**
  * Achievement timestamps are immutable once earned, so the only staleness is a
@@ -156,7 +219,7 @@ export const GUILD_ROSTER_TTL_MS = 24 * 60 * 60 * 1000;
  * payloads; base64 gives a third of that back to keep it a JSON-safe string in
  * the shared `api_cache` TEXT column, for a net ~2.4x.
  */
-function encodeFingerprint(entries: FingerprintEntries): string {
+export function encodeFingerprint(entries: FingerprintEntries): string {
   return gzipSync(Buffer.from(JSON.stringify(entries), 'utf8')).toString('base64');
 }
 
@@ -164,7 +227,7 @@ function encodeFingerprint(entries: FingerprintEntries): string {
  * Entries cached before compression landed are a plain array, so they stay
  * readable until their TTL expires rather than needing a cache flush on deploy.
  */
-function decodeFingerprint(cached: string | FingerprintEntries): FingerprintEntries {
+export function decodeFingerprint(cached: string | FingerprintEntries): FingerprintEntries {
   if (Array.isArray(cached)) return cached;
   return JSON.parse(
     gunzipSync(Buffer.from(cached, 'base64')).toString('utf8'),
@@ -174,7 +237,7 @@ function decodeFingerprint(cached: string | FingerprintEntries): FingerprintEntr
 /** Throws on any failure so nothing is cached; the caller decides what is fatal. */
 async function fetchFingerprintEntries(c: RaiderIoCharacter): Promise<FingerprintEntries> {
   const token = await getAccessToken();
-  const realmSlug = encodeURIComponent(normalizeRealmSlug(c.realm));
+  const realmSlug = encodeURIComponent(c.realm);
   const url =
     `https://${c.region}.api.blizzard.com/profile/wow/character/` +
     `${realmSlug}/${encodeURIComponent(c.name.toLowerCase())}/achievements` +
@@ -207,8 +270,8 @@ async function fetchGuildRosterMembers(
   guildName: string,
 ): Promise<BlizzardRosterMember[]> {
   const token = await getAccessToken();
-  const realmSlug = encodeURIComponent(normalizeRealmSlug(guildRealm));
-  const nameSlug = encodeURIComponent(normalizeRealmSlug(guildName));
+  const realmSlug = encodeURIComponent(guildRealm);
+  const nameSlug = encodeURIComponent(guildNameSlug(guildName));
   const url =
     `https://${region}.api.blizzard.com/data/wow/guild/${realmSlug}/${nameSlug}/roster` +
     `?namespace=profile-${region}&locale=en_GB`;
@@ -242,11 +305,13 @@ export async function getBlizzardGuildRoster(
   guildRealm: string,
   guildName: string,
 ): Promise<BlizzardRosterMember[]> {
-  const key = `guild-roster:${region}:${normalizeRealmSlug(guildRealm)}:${normalizeRealmSlug(guildName)}`;
+  const realmSlug = await resolveRealmSlug(region, guildRealm);
+  const nameSlug = guildNameSlug(guildName);
+  const key = `guild-roster:${region}:${realmSlug}:${nameSlug}`;
 
   try {
     return await getCachedOrFetch<BlizzardRosterMember[]>(key, ttl(GUILD_ROSTER_TTL_MS), () =>
-      fetchGuildRosterMembers(region, guildRealm, guildName),
+      fetchGuildRosterMembers(region, realmSlug, guildName),
     );
   } catch (error) {
     // status alone is insufficient: httpRequest's retry-exhaustion path
@@ -276,14 +341,20 @@ export async function getBlizzardGuildRoster(
  * achievements" is a real answer, and the TTL bounds how long it lasts.
  */
 export async function getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fingerprint | null> {
-  const key = `fingerprint:${c.region}:${normalizeRealmSlug(c.realm)}:${c.name.toLowerCase()}`;
+  // Both halves of the key are normalized, not just the realm: resolveRealmSlug
+  // lowercases the region internally, so keying on the raw value would let "EU"
+  // and "eu" hold separate 85 KB entries for one character and fetch it twice.
+  const region = c.region.trim().toLocaleLowerCase();
+  const realmSlug = await resolveRealmSlug(region, c.realm);
+  const normalized = { ...c, region, realm: realmSlug };
+  const key = `fingerprint:${region}:${realmSlug}:${c.name.toLowerCase()}`;
 
   let entries: FingerprintEntries;
   try {
     const cached = await getCachedOrFetch<string | FingerprintEntries>(
       key,
       ttl(FINGERPRINT_TTL_MS),
-      async () => encodeFingerprint(await fetchFingerprintEntries(c)),
+      async () => encodeFingerprint(await fetchFingerprintEntries(normalized)),
     );
     entries = decodeFingerprint(cached);
   } catch (error) {

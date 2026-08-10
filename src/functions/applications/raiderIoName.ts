@@ -9,15 +9,12 @@
  * just look for the unambiguous `raider.io/characters/...` shape in any answer.
  */
 
-const RAIDER_IO_CHARACTER_URL = /raider\.io\/characters\/[^/\s]+\/[^/\s]+\/([^/?#\s]+)/i;
+import { collectCharacterLinkCandidates, type RaiderIoCharacter } from './characterLinks.js';
 
-const RAIDER_IO_CHARACTER_URL_G = /raider\.io\/characters\/([^/\s]+)\/([^/\s]+)\/([^/?#\s]+)/gi;
+export type { RaiderIoCharacter } from './characterLinks.js';
 
-export interface RaiderIoCharacter {
-  region: string;
-  realm: string;
-  name: string;
-}
+const RAIDER_IO_CHARACTER_COMPAT_URL =
+  /(?<![a-z0-9.-])(?:https?:\/\/)?(?:www\.)?raider\.io\/characters\/([^/\s]+)\/([^/\s]+)\/([^/?#\s>)*)]+)/i;
 
 /**
  * Extract a character name from a single piece of text containing a Raider.IO
@@ -25,22 +22,8 @@ export interface RaiderIoCharacter {
  * character URL is present.
  */
 export function parseRaiderIoCharacterName(text: string): string | null {
-  const match = text.match(RAIDER_IO_CHARACTER_URL);
-  if (!match) return null;
-
-  let name: string;
-  try {
-    name = decodeURIComponent(match[1]);
-  } catch {
-    // Malformed percent-encoding — fall back to the raw slug.
-    name = match[1];
-  }
-
-  name = name.trim();
-  if (!name) return null;
-
-  // Raider.IO slugs are lowercase; present the name with a leading capital.
-  return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+  const character = parseRaiderIoCharacter(text);
+  return character ? capitaliseName(character.name) : null;
 }
 
 /**
@@ -55,34 +38,8 @@ export function deriveCharacterNameFromAnswers(answers: { answer: string }[]): s
   return null;
 }
 
-function decodeName(raw: string): string | null {
-  let name: string;
-  try {
-    name = decodeURIComponent(raw);
-  } catch {
-    name = raw;
-  }
-  name = name.trim();
-  if (!name) return null;
+function capitaliseName(name: string): string {
   return name.charAt(0).toLocaleUpperCase() + name.slice(1);
-}
-
-/**
- * Realm segments are percent-encoded in the URL for accented realms
- * (`aggra-portugu%C3%AAs`). Every downstream consumer runs the realm through
- * `encodeURIComponent`, so handing them a still-encoded realm double-encodes it to
- * `aggra-portugu%25C3%25AAs` and the request 400s — which made every accented realm
- * unresolvable from a pasted URL. Decode here, at the boundary, exactly as the name
- * segment beside it already is.
- */
-function decodeRealm(raw: string): string {
-  try {
-    return decodeURIComponent(raw).toLowerCase();
-  } catch {
-    // Malformed percent-encoding — degrade to the raw slug rather than dropping
-    // the character, matching decodeName's behaviour.
-    return raw.toLowerCase();
-  }
 }
 
 /**
@@ -91,11 +48,25 @@ function decodeRealm(raw: string): string {
  * parseRaiderIoCharacterName this keeps the path segments.
  */
 export function parseRaiderIoCharacter(text: string): RaiderIoCharacter | null {
-  const match = new RegExp(RAIDER_IO_CHARACTER_URL_G.source, 'i').exec(text);
+  const candidate = collectCharacterLinkCandidates(text).find(
+    ({ source }) => source === 'raiderio',
+  );
+  if (candidate?.source === 'raiderio') return candidate.character;
+
+  const match = text.match(RAIDER_IO_CHARACTER_COMPAT_URL);
   if (!match) return null;
-  const name = decodeName(match[3]);
-  if (!name) return null;
-  return { region: match[1].toLowerCase(), realm: decodeRealm(match[2]), name };
+  const realm = decodeCompatSegment(match[2]);
+  const name = decodeCompatSegment(match[3]);
+  if (!realm || !name) return null;
+  return { region: match[1].toLowerCase(), realm: realm.toLowerCase(), name };
+}
+
+function decodeCompatSegment(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw).trim() || null;
+  } catch {
+    return raw.trim() || null;
+  }
 }
 
 /**
@@ -108,14 +79,13 @@ export function collectRaiderIoCharacters(answers: { answer: string }[]): Raider
   const seen = new Set<string>();
   const out: RaiderIoCharacter[] = [];
   for (const a of answers) {
-    for (const m of a.answer.matchAll(RAIDER_IO_CHARACTER_URL_G)) {
-      const name = decodeName(m[3]);
-      if (!name) continue;
-      const realm = decodeRealm(m[2]);
-      const key = `${realm}/${name.toLowerCase()}`;
+    for (const candidate of collectCharacterLinkCandidates(a.answer)) {
+      if (candidate.source !== 'raiderio') continue;
+      const { character } = candidate;
+      const key = `${character.realm}/${character.name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ region: m[1].toLowerCase(), realm, name });
+      out.push(character);
     }
   }
   return out;

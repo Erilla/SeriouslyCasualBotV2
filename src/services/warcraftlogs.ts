@@ -8,7 +8,7 @@ import {
   type WclZone,
 } from '../functions/applications/mythic-logs/zoneCatalogue.js';
 import { shouldPreemptWclPoints } from '../functions/applications/intel/rateLimit.js';
-import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
+import type { RaiderIoCharacter } from '../functions/applications/characterLinks.js';
 
 // ─── Token Cache ─────────────────────────────────────────────
 
@@ -252,6 +252,110 @@ async function query<T extends RateLimitEnvelope>(
     throw new WclPointsExhausted(rl.pointsSpentThisHour, rl.limitPerHour);
   }
   return result.data;
+}
+
+interface WclCharacterById {
+  name?: string | null;
+  hidden?: boolean | null;
+  canonicalID?: number | null;
+  server?: {
+    slug?: string | null;
+    region?: { slug?: string | null } | null;
+  } | null;
+}
+
+interface WclCharacterBatch extends RateLimitEnvelope {
+  characterData: Record<string, WclCharacterById | null>;
+}
+
+function isPositiveInteger(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
+}
+
+async function resolveWclCharacterBatch(
+  ids: number[],
+): Promise<Map<number, WclCharacterById | null>> {
+  if (ids.length === 0) return new Map();
+
+  const variables = Object.fromEntries(ids.map((id, index) => [`id${index}`, id]));
+  const definitions = ids.map((_, index) => `$id${index}: Int!`).join(', ');
+  const fields = ids
+    .map(
+      (_, index) => `
+        c${index}: character(id: $id${index}) {
+          name
+          hidden
+          canonicalID
+          server { slug region { slug } }
+        }`,
+    )
+    .join('');
+  const gql = `
+    query resolveWclCharacters(${definitions}) {
+      characterData {${fields}
+      }
+      rateLimitData { limitPerHour pointsSpentThisHour }
+    }
+  `;
+  const data = await query<WclCharacterBatch>(gql, variables);
+  return new Map(ids.map((id, index) => [id, data.characterData[`c${index}`] ?? null]));
+}
+
+/**
+ * `hidden` is requested but deliberately not filtered on. Hiding a WarcraftLogs
+ * profile hides its RANKINGS; it does not retract the character's existence, and
+ * the identity is what this resolution needs. Selected so the flag is visible in
+ * the response when debugging why a link resolved the way it did.
+ */
+function wclCharacterIdentity(character: WclCharacterById | null): RaiderIoCharacter | null {
+  const name = character?.name?.trim();
+  const realm = character?.server?.slug?.trim();
+  const region = character?.server?.region?.slug?.trim();
+  if (!name || !realm || !region) return null;
+  return {
+    region: region.toLocaleLowerCase(),
+    realm: realm.toLocaleLowerCase(),
+    name,
+  };
+}
+
+/** Resolve numeric WCL profile IDs, following each canonical redirect at most once. */
+export async function resolveWclCharacterIds(
+  ids: number[],
+): Promise<Map<number, RaiderIoCharacter | null>> {
+  const resolved = new Map<number, RaiderIoCharacter | null>();
+  for (const id of ids) resolved.set(id, null);
+
+  const positiveIds = [...new Set(ids.filter(isPositiveInteger))];
+  if (positiveIds.length === 0) return resolved;
+
+  const initial = await resolveWclCharacterBatch(positiveIds);
+  // An unrenamed character reports its OWN id as canonicalID, so following every
+  // canonicalID blindly would re-request the whole batch verbatim and double the
+  // point spend. Only ids the first batch did not already answer are worth a
+  // second round trip.
+  const canonicalIds = [
+    ...new Set(
+      positiveIds
+        .map((id) => initial.get(id)?.canonicalID)
+        .filter((id): id is number => id != null && isPositiveInteger(id))
+        .filter((id) => !initial.has(id)),
+    ),
+  ];
+  const canonical =
+    canonicalIds.length > 0 ? await resolveWclCharacterBatch(canonicalIds) : new Map();
+
+  for (const id of positiveIds) {
+    const direct = initial.get(id) ?? null;
+    const canonicalId = direct?.canonicalID;
+    const character =
+      canonicalId != null && isPositiveInteger(canonicalId)
+        ? (initial.get(canonicalId) ?? canonical.get(canonicalId) ?? null)
+        : direct;
+    resolved.set(id, wclCharacterIdentity(character));
+  }
+
+  return resolved;
 }
 
 export interface ZoneKill {
