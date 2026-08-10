@@ -5,6 +5,7 @@ import type {
   ApplicantIntelTopUpResult,
   ApplicantIntelTopUpState,
   IntelJobRow,
+  LinkedCharacter,
 } from '../../../types/index.js';
 import type { RaiderIoCharacter } from '../characterLinks.js';
 import type { GuildHistoryEntry } from './render.js';
@@ -231,19 +232,35 @@ function characterIdentityKey(character: RaiderIoCharacter): string {
 }
 
 /** Canonical characters harvested from links, kept separate from self-declared applicants. */
-export function setLinkedCharacters(jobId: number, characters: RaiderIoCharacter[]): void {
+export function setLinkedCharacters(jobId: number, characters: LinkedCharacter[]): void {
   for (const character of characters) {
     enqueue(jobId, 'linked', characterIdentityKey(character), character);
   }
 }
 
-export function getLinkedCharacters(jobId: number): RaiderIoCharacter[] {
+export function getLinkedCharacters(jobId: number): LinkedCharacter[] {
   return getDatabase()
     .prepare(
       "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'linked' ORDER BY rowid",
     )
     .all(jobId)
-    .map((row) => JSON.parse((row as { payload: string }).payload) as RaiderIoCharacter);
+    .map((row) => JSON.parse((row as { payload: string }).payload) as LinkedCharacter);
+}
+
+/**
+ * Keys of linked characters Raider.IO could not resolve, so the renderer can name
+ * them without a profile link that would 404.
+ *
+ * Absent `raiderIoVerified` counts as verified: rows written before verification
+ * existed came from Raider.IO URLs, and silently stripping their links on the next
+ * run would look like a regression to the reviewer reading the thread.
+ */
+export function getUnverifiedLinkedKeys(jobId: number): Set<string> {
+  return new Set(
+    getLinkedCharacters(jobId)
+      .filter((character) => character.raiderIoVerified === false)
+      .map((character) => `${character.name}|${character.realm}`.toLowerCase()),
+  );
 }
 
 export function enqueue(jobId: number, kind: string, key: string, payload?: unknown): void {

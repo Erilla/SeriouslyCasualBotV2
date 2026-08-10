@@ -237,6 +237,22 @@ export interface ApplicantIntelTopUpState {
 
 export type ApplicantIntelTopUpResult = 'queued' | 'reopened';
 
+/**
+ * A character harvested from a conversation link.
+ *
+ * `raiderIoVerified` records whether Raider.IO could resolve the identity. It
+ * gates only whether a Raider.IO profile link is RENDERED — an unverified
+ * identity (a WarcraftLogs or Armory link for a character Raider.IO has never
+ * indexed) is still swept, because the fingerprint and guild work run against
+ * Blizzard. Optional so rows written before verification existed stay readable.
+ */
+export interface LinkedCharacter {
+  region: string;
+  realm: string;
+  name: string;
+  raiderIoVerified?: boolean;
+}
+
 // ─── Scheduler Types ─────────────────────────────────────────
 
 export interface ScheduledTask {

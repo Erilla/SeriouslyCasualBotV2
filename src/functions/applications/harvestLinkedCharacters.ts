@@ -41,8 +41,8 @@ export async function harvestLinkedCharacters(message: Message): Promise<void> {
   if (!job) return;
 
   try {
-    const { identities } = await resolveCharacterLinks(candidates);
-    const novel = applyLinkedCharacters(job, application.character_name, identities);
+    const resolution = await resolveCharacterLinks(candidates, { verify: true });
+    const novel = applyLinkedCharacters(job, application.character_name, resolution);
     if (novel.length === 0) return;
 
     logger.info(

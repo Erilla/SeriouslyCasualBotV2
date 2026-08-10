@@ -131,8 +131,8 @@ export async function refreshLinkedCharacters(
     return { outcome: 'ok', queued: [], unavailableSurfaces, truncated };
   }
 
-  const { identities } = await resolveCharacterLinks(candidates);
-  const novel = applyLinkedCharacters(job, application.character_name, identities);
+  const resolution = await resolveCharacterLinks(candidates, { verify: true });
+  const novel = applyLinkedCharacters(job, application.character_name, resolution);
   if (novel.length === 0) {
     return { outcome: 'ok', queued: [], unavailableSurfaces, truncated };
   }

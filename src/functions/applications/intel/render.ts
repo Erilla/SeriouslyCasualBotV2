@@ -72,8 +72,21 @@ export function discordDate(iso: string): string {
   return `<t:${Math.floor(ms / 1000)}:D>`;
 }
 
-function findingLine(f: IntelFinding, region: string, applicantName: string): string {
-  const link = `[${f.name}-${displayRealm(f.realm)}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
+function findingLine(
+  f: IntelFinding,
+  region: string,
+  applicantName: string,
+  unlinkable: ReadonlySet<string>,
+): string {
+  // A character Raider.IO cannot resolve gets its name in plain text. It reached
+  // the sweep through a WarcraftLogs or Armory link and is swept perfectly well
+  // against Blizzard, but a raider.io profile URL for it would 404 — and a
+  // reviewer who clicks a dead link reads it as the bot being wrong about the
+  // character rather than about the link.
+  const label = `${f.name}-${displayRealm(f.realm)}`;
+  const link = unlinkable.has(`${f.name}|${f.realm}`.toLowerCase())
+    ? label
+    : `[${label}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
   const guild = f.guildName
     ? `${f.guildName} (${f.guildRealm ? displayRealm(f.guildRealm) : '?'})`
     : 'No guild';
@@ -110,6 +123,8 @@ export function renderFoundCharacters(
   applicantName: string,
   region: string,
   footer?: PauseFooter,
+  /** Keys of characters Raider.IO could not resolve; see findingLine. */
+  unlinkable: ReadonlySet<string> = new Set(),
 ): string[] {
   const heading = `**Found characters** — ${findings.length}`;
   if (findings.length === 0) {
@@ -126,7 +141,7 @@ export function renderFoundCharacters(
   const pages: string[] = [];
   let current = `${heading}\n\n`;
   for (const f of sorted) {
-    const line = `${findingLine(f, region, applicantName)}\n`;
+    const line = `${findingLine(f, region, applicantName, unlinkable)}\n`;
     if (current.length + line.length > PAGE_BUDGET) {
       pages.push(current.trimEnd());
       current = '';

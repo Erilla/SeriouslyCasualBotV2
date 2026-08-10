@@ -8,6 +8,7 @@ import {
   getJob,
   getLinkedCharacters,
   getTopUpState,
+  getUnverifiedLinkedKeys,
   isSelfDeclared,
   needsDiscordConfirmation,
   pauseJob,
@@ -236,7 +237,15 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
 
     if (job.alts_message_id) {
       try {
-        const pages = renderFoundCharacters(findings, applicant.name, applicant.region, footer);
+        const pages = renderFoundCharacters(
+          findings,
+          applicant.name,
+          applicant.region,
+          footer,
+          // Re-read per publish rather than hoisted: a link appended mid-run adds
+          // to this set, and the next phase boundary should reflect it.
+          getUnverifiedLinkedKeys(jobId),
+        );
         const body = sweepTruncated ? `${pages[0]}\n\n${TRUNCATED_NOTE}` : pages[0];
         await deps.editMessage(channelId, job.alts_message_id, body, {
           prefix: 'intelpage',
@@ -354,8 +363,26 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     const blizzard = await import('../../../services/blizzard.js');
     const storedAnchor = getAnchorFingerprint(jobId);
     const primaryIdentity = identityKey(applicant);
+    /**
+     * Identity must match AND the baseline must still be fresh.
+     *
+     * A top-up can reopen a job days later, and `requestTopUp` resets `attempts`
+     * so it can outlive the usual retry window. Comparing newly-swept candidates
+     * against a baseline captured before the applicant earned more achievements
+     * biases `compareFingerprints` downward — the applicant looks less like their
+     * own alts the longer their application stays open. The API cache already
+     * treats a fingerprint as stale after FINGERPRINT_TTL_MS; this durable copy
+     * follows the same rule rather than inventing a second one.
+     */
+    const anchorAge = storedAnchor
+      ? now().getTime() - parseUtcTimestamp(storedAnchor.fetchedAt).getTime()
+      : Infinity;
     const reusableAnchor =
-      storedAnchor && identityKey(storedAnchor) === primaryIdentity ? storedAnchor : null;
+      storedAnchor &&
+      identityKey(storedAnchor) === primaryIdentity &&
+      anchorAge < blizzard.FINGERPRINT_TTL_MS
+        ? storedAnchor
+        : null;
     let anchor = reusableAnchor ? new Map(reusableAnchor.entries) : null;
     const getAnchorFingerprintForRun = async (character: RaiderIoCharacter) => {
       if (anchor) return anchor;

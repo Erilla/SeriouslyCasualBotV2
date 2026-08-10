@@ -11,7 +11,7 @@ vi.mock('../../src/services/blizzard.js', async (importOriginal) => {
   return { ...actual, getCharacterFingerprint: vi.fn() };
 });
 
-import { getCharacterFingerprint } from '../../src/services/blizzard.js';
+import { getCharacterFingerprint, FINGERPRINT_TTL_MS } from '../../src/services/blizzard.js';
 import { HttpError } from '../../src/services/httpClient.js';
 import { WclPointsExhausted } from '../../src/services/warcraftlogs.js';
 import {
@@ -125,6 +125,45 @@ describe('applicant intel linked-character top-ups', () => {
     });
 
     await runJob(jobId, deps({ discover }));
+
+    expect(getCharacterFingerprint).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A top-up can reopen a job days later and requestTopUp resets `attempts`, so
+   * the durable anchor can outlive the freshness the API cache would enforce.
+   * Comparing candidates against a baseline from before the applicant earned more
+   * achievements makes them look less like their own alts the longer the
+   * application stays open.
+   */
+  it('re-fetches an anchor older than the fingerprint TTL', async () => {
+    const fresh = new Map<number, number>([[9, 99]]);
+    vi.mocked(getCharacterFingerprint).mockResolvedValue(fresh);
+    setAnchorFingerprint(jobId, {
+      ...primary,
+      entries: [[7, 77]],
+      fetchedAt: new Date(fixedNow.getTime() - FINGERPRINT_TTL_MS - 1).toISOString(),
+    });
+
+    const discover = vi.fn(async (_jobId, primaryArg, _applicants, _linkedSeeds, discoverDeps) => {
+      expect(await discoverDeps.getAnchorFingerprint(primaryArg)).toEqual(fresh);
+      return { truncated: false };
+    });
+
+    await runJob(jobId, deps({ discover }));
+
+    expect(getCharacterFingerprint).toHaveBeenCalled();
+    expect(getAnchorFingerprint(jobId)?.entries).toEqual([[9, 99]]);
+  });
+
+  it('keeps an anchor that is still within the fingerprint TTL', async () => {
+    setAnchorFingerprint(jobId, {
+      ...primary,
+      entries: [[7, 77]],
+      fetchedAt: new Date(fixedNow.getTime() - FINGERPRINT_TTL_MS + 60_000).toISOString(),
+    });
+
+    await runJob(jobId, deps({ discover: vi.fn(async () => ({ truncated: false })) }));
 
     expect(getCharacterFingerprint).not.toHaveBeenCalled();
   });

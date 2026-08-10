@@ -1,5 +1,6 @@
 import type { RaiderIoCharacter } from './characterLinks.js';
-import type { IntelJobRow } from '../../types/index.js';
+import type { CharacterLinkResolution } from './resolveCharacterLinks.js';
+import type { IntelJobRow, LinkedCharacter } from '../../types/index.js';
 import {
   getApplicantCharacters,
   getLinkedCharacters,
@@ -40,19 +41,29 @@ function identityKey(character: RaiderIoCharacter): string {
 export function applyLinkedCharacters(
   job: IntelJobRow,
   declaredCharacterName: string | null,
-  identities: RaiderIoCharacter[],
-): RaiderIoCharacter[] {
+  resolution: CharacterLinkResolution,
+): LinkedCharacter[] {
   const alreadyLinked = getLinkedCharacters(job.id);
   const seen = new Set([...getApplicantCharacters(job.id), ...alreadyLinked].map(identityKey));
   const remaining = Math.max(0, MAX_LINKED_CHARACTERS - alreadyLinked.length);
-  const novel = identities
+
+  // Verification decides only whether a profile link is rendered, so an identity
+  // Raider.IO cannot resolve is still queued for the Blizzard-side work.
+  const verified = new Set(
+    resolution.statuses
+      .filter((status) => status.status === 'verified' && status.identity)
+      .map((status) => identityKey(status.identity!)),
+  );
+
+  const novel = resolution.identities
     .filter((identity) => {
       const key = identityKey(identity);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     })
-    .slice(0, remaining);
+    .slice(0, remaining)
+    .map((identity) => ({ ...identity, raiderIoVerified: verified.has(identityKey(identity)) }));
   if (novel.length === 0) return [];
 
   setLinkedCharacters(job.id, novel);

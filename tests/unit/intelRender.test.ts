@@ -421,3 +421,36 @@ describe('realm slugs render as readable names', () => {
     expect(out[0]).toContain('https://raider.io/guilds/eu/twisting-nether/Rewritten');
   });
 });
+
+describe('renderFoundCharacters link gating', () => {
+  /**
+   * The plan's rule: only a Raider.IO-verified identity renders a Raider.IO link.
+   * A character reached through a WarcraftLogs or Armory link that Raider.IO has
+   * never indexed is still swept — the fingerprint and guild work run against
+   * Blizzard — but a raider.io URL for it 404s, and a reviewer who clicks a dead
+   * link reads it as the bot being wrong about the character.
+   */
+  it('names an unverified character without a profile link', () => {
+    const [page] = renderFoundCharacters(
+      [finding({ name: 'Ghosty', realm: 'draenor', source: 'linked', confidence: null })],
+      'Monkni',
+      'eu',
+      undefined,
+      new Set(['ghosty|draenor']),
+    );
+
+    expect(page).toContain('Ghosty-Draenor');
+    expect(page).not.toContain('raider.io/characters/eu/draenor/Ghosty');
+    expect(page).not.toContain('[Ghosty-Draenor]');
+  });
+
+  it('still links every character absent from the unverified set', () => {
+    const [page] = renderFoundCharacters(
+      [finding({ name: 'Ghosty', realm: 'draenor', source: 'linked', confidence: null })],
+      'Monkni',
+      'eu',
+    );
+
+    expect(page).toContain('[Ghosty-Draenor](https://raider.io/characters/eu/draenor/Ghosty)');
+  });
+});

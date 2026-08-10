@@ -9,6 +9,7 @@ import {
   getJob,
   getJobByApplication,
   getLinkedCharacters,
+  getUnverifiedLinkedKeys,
   pauseJob,
   requestTopUp,
   setAnchorFingerprint,
@@ -241,5 +242,33 @@ describe('idle intel jobs', () => {
       character_realm: 'draenor',
       character_region: 'eu',
     });
+  });
+});
+
+describe('linked character verification', () => {
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+  });
+  afterEach(() => closeDatabase());
+
+  it('reports only the characters Raider.IO could not resolve', () => {
+    const jobId = createIntelJob();
+    setLinkedCharacters(jobId, [
+      { region: 'eu', realm: 'draenor', name: 'Verified', raiderIoVerified: true },
+      { region: 'eu', realm: 'draenor', name: 'Unknown', raiderIoVerified: false },
+    ]);
+
+    expect(getUnverifiedLinkedKeys(jobId)).toEqual(new Set(['unknown|draenor']));
+  });
+
+  /**
+   * Rows written before verification existed came from raider.io URLs. Stripping
+   * their links on the next run would read as a regression in the thread.
+   */
+  it('treats a missing flag as verified', () => {
+    const jobId = createIntelJob();
+    setLinkedCharacters(jobId, [{ region: 'eu', realm: 'draenor', name: 'Legacy' }]);
+
+    expect(getUnverifiedLinkedKeys(jobId)).toEqual(new Set());
   });
 });
