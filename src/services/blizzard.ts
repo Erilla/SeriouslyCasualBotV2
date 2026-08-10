@@ -5,6 +5,9 @@ import { getCachedOrFetch, ttl } from './apiCache.js';
 import { logger } from './logger.js';
 import type { RaiderIoCharacter } from '../functions/applications/characterLinks.js';
 import type { Fingerprint } from '../functions/applications/alts/compareFingerprints.js';
+import type { FingerprintEntries } from '../types/index.js';
+
+export type { FingerprintEntries } from '../types/index.js';
 
 export interface BlizzardSocket {
   socket_type?: string;
@@ -178,9 +181,6 @@ interface AchievementsProfile {
   achievements?: { id: number; completed_timestamp?: number }[];
 }
 
-/** Cache wire format. A Map JSON.stringifies to `{}`, so entries are stored. */
-type FingerprintEntries = [number, number][];
-
 /**
  * Achievement timestamps are immutable once earned, so the only staleness is a
  * character earning more — correctness alone would tolerate a much longer TTL.
@@ -219,7 +219,7 @@ export const GUILD_ROSTER_TTL_MS = 24 * 60 * 60 * 1000;
  * payloads; base64 gives a third of that back to keep it a JSON-safe string in
  * the shared `api_cache` TEXT column, for a net ~2.4x.
  */
-function encodeFingerprint(entries: FingerprintEntries): string {
+export function encodeFingerprint(entries: FingerprintEntries): string {
   return gzipSync(Buffer.from(JSON.stringify(entries), 'utf8')).toString('base64');
 }
 
@@ -227,7 +227,7 @@ function encodeFingerprint(entries: FingerprintEntries): string {
  * Entries cached before compression landed are a plain array, so they stay
  * readable until their TTL expires rather than needing a cache flush on deploy.
  */
-function decodeFingerprint(cached: string | FingerprintEntries): FingerprintEntries {
+export function decodeFingerprint(cached: string | FingerprintEntries): FingerprintEntries {
   if (Array.isArray(cached)) return cached;
   return JSON.parse(
     gunzipSync(Buffer.from(cached, 'base64')).toString('utf8'),

@@ -1,5 +1,11 @@
 import { getDatabase } from '../../../database/db.js';
-import type { IntelJobRow } from '../../../types/index.js';
+import { decodeFingerprint, encodeFingerprint } from '../../../services/blizzard.js';
+import type {
+  ApplicantIntelAnchorFingerprint,
+  ApplicantIntelTopUpResult,
+  ApplicantIntelTopUpState,
+  IntelJobRow,
+} from '../../../types/index.js';
 import type { RaiderIoCharacter } from '../characterLinks.js';
 import type { GuildHistoryEntry } from './render.js';
 
@@ -172,6 +178,27 @@ export function getApplicantCharacters(jobId: number): RaiderIoCharacter[] {
     .map((r) => JSON.parse((r as { payload: string }).payload) as RaiderIoCharacter);
 }
 
+function characterIdentityKey(character: RaiderIoCharacter): string {
+  const normalize = (value: string): string => value.trim().normalize('NFC').toLowerCase();
+  return [character.region, character.realm, character.name].map(normalize).join('/');
+}
+
+/** Canonical characters harvested from links, kept separate from self-declared applicants. */
+export function setLinkedCharacters(jobId: number, characters: RaiderIoCharacter[]): void {
+  for (const character of characters) {
+    enqueue(jobId, 'linked', characterIdentityKey(character), character);
+  }
+}
+
+export function getLinkedCharacters(jobId: number): RaiderIoCharacter[] {
+  return getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'linked' ORDER BY rowid",
+    )
+    .all(jobId)
+    .map((row) => JSON.parse((row as { payload: string }).payload) as RaiderIoCharacter);
+}
+
 export function enqueue(jobId: number, kind: string, key: string, payload?: unknown): void {
   getDatabase()
     .prepare(
@@ -180,6 +207,103 @@ export function enqueue(jobId: number, kind: string, key: string, payload?: unkn
        ON CONFLICT(job_id, kind, key) DO NOTHING`,
     )
     .run(jobId, kind, key, payload === undefined ? null : JSON.stringify(payload));
+}
+
+interface StoredAnchorFingerprint extends Omit<ApplicantIntelAnchorFingerprint, 'entries'> {
+  entries: string;
+}
+
+/** Persist the successful primary fingerprint; null is deliberately not negative-cached. */
+export function setAnchorFingerprint(
+  jobId: number,
+  anchor: ApplicantIntelAnchorFingerprint | null,
+): void {
+  if (!anchor) return;
+
+  const stored: StoredAnchorFingerprint = {
+    ...anchor,
+    entries: encodeFingerprint(anchor.entries),
+  };
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'fingerprint', 'anchor', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(stored));
+}
+
+export function getAnchorFingerprint(jobId: number): ApplicantIntelAnchorFingerprint | null {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'fingerprint' AND key = 'anchor'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  if (!row?.payload) return null;
+
+  const stored = JSON.parse(row.payload) as StoredAnchorFingerprint;
+  return { ...stored, entries: decodeFingerprint(stored.entries) };
+}
+
+function getTopUpState(jobId: number): ApplicantIntelTopUpState | null {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'topup' AND key = 'state'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  return row?.payload ? (JSON.parse(row.payload) as ApplicantIntelTopUpState) : null;
+}
+
+function setTopUpState(jobId: number, state: ApplicantIntelTopUpState): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'topup', 'state', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(state));
+}
+
+/** Request another pass without disturbing an active run or rate-limit pause. */
+export function requestTopUp(jobId: number): ApplicantIntelTopUpResult {
+  const db = getDatabase();
+  return db.transaction(() => {
+    const job = db.prepare('SELECT status FROM applicant_intel_jobs WHERE id = ?').get(jobId) as
+      | { status: JobStatus }
+      | undefined;
+    if (!job) throw new Error(`Applicant intel job ${jobId} does not exist`);
+
+    const reopened = job.status === 'done' || job.status === 'failed';
+    const previous = getTopUpState(jobId);
+    setTopUpState(jobId, {
+      requested: true,
+      reopenedAt: reopened ? new Date().toISOString() : (previous?.reopenedAt ?? null),
+    });
+
+    if (reopened) {
+      db.prepare(
+        `UPDATE applicant_intel_jobs
+           SET status = 'pending', attempts = 0, resume_after = NULL, paused_service = NULL,
+               updated_at = datetime('now')
+         WHERE id = ?`,
+      ).run(jobId);
+      return 'reopened';
+    }
+
+    return 'queued';
+  })();
+}
+
+export function topUpRequested(jobId: number): boolean {
+  return getTopUpState(jobId)?.requested ?? false;
+}
+
+/** Clear at run start so a later request remains visible as a fresh wakeup. */
+export function consumeTopUpRequest(jobId: number): boolean {
+  const state = getTopUpState(jobId);
+  if (!state?.requested) return false;
+  setTopUpState(jobId, { ...state, requested: false });
+  return true;
 }
 
 /**

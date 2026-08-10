@@ -220,6 +220,23 @@ export interface IntelJobRow {
   updated_at: string;
 }
 
+export type FingerprintEntries = [number, number][];
+
+export interface ApplicantIntelAnchorFingerprint {
+  name: string;
+  realm: string;
+  region: string;
+  entries: FingerprintEntries;
+  fetchedAt: string;
+}
+
+export interface ApplicantIntelTopUpState {
+  requested: boolean;
+  reopenedAt: string | null;
+}
+
+export type ApplicantIntelTopUpResult = 'queued' | 'reopened';
+
 // ─── Scheduler Types ─────────────────────────────────────────
 
 export interface ScheduledTask {
