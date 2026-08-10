@@ -54,7 +54,7 @@ describe('resolveCharacterLinks', () => {
     const candidate = wclCandidate(10);
     mockedResolveWclCharacterIds.mockResolvedValue(new Map([[10, null]]));
 
-    await expect(resolveCharacterLinks([candidate])).resolves.toEqual({
+    await expect(resolveCharacterLinks([candidate], { verify: true })).resolves.toEqual({
       identities: [],
       statuses: [
         {
@@ -73,7 +73,7 @@ describe('resolveCharacterLinks', () => {
     mockedResolveWclCharacterIds.mockResolvedValue(new Map([[10, character]]));
     mockedGetCharacterSummary.mockResolvedValue(null);
 
-    await expect(resolveCharacterLinks([candidate])).resolves.toEqual({
+    await expect(resolveCharacterLinks([candidate], { verify: true })).resolves.toEqual({
       identities: [{ region: 'eu', realm: 'draenor', name: 'Valid' }],
       statuses: [
         {
@@ -101,7 +101,7 @@ describe('resolveCharacterLinks', () => {
       return realm;
     });
 
-    const result = await resolveCharacterLinks([later, earlier]);
+    const result = await resolveCharacterLinks([later, earlier], { verify: true });
 
     expect(result.identities).toEqual([{ region: 'eu', realm: 'aggra-português', name: 'THRALL' }]);
     expect(result.statuses).toEqual([
@@ -124,7 +124,7 @@ describe('resolveCharacterLinks', () => {
   it('does not apply the WoWProgress EU Aggra alias to other sources', async () => {
     const candidate = namedCandidate('armory', { region: 'eu', realm: 'aggra', name: 'Thrall' }, 0);
 
-    await expect(resolveCharacterLinks([candidate])).resolves.toMatchObject({
+    await expect(resolveCharacterLinks([candidate], { verify: true })).resolves.toMatchObject({
       identities: [{ region: 'eu', realm: 'aggra', name: 'Thrall' }],
       statuses: [{ candidate, status: 'verified' }],
     });
@@ -140,7 +140,7 @@ describe('resolveCharacterLinks', () => {
       realm.toLocaleLowerCase().replaceAll(' ', '-'),
     );
 
-    const result = await resolveCharacterLinks([named, wcl]);
+    const result = await resolveCharacterLinks([named, wcl], { verify: true });
 
     expect(mockedResolveWclCharacterIds).toHaveBeenCalledWith([10]);
     expect(result.identities).toEqual([
@@ -149,5 +149,34 @@ describe('resolveCharacterLinks', () => {
     ]);
     expect(result.statuses.map(({ status }) => status)).toEqual(['verified', 'verified']);
     expect(mockedGetCharacterSummary).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('resolveCharacterLinks without verification', () => {
+  beforeEach(() => {
+    mockedGetCharacterSummary.mockReset();
+    mockedResolveRealmSlug.mockReset();
+    mockedResolveWclCharacterIds.mockReset();
+    mockedResolveRealmSlug.mockImplementation(async (_region: string, realm: string) => realm);
+    mockedResolveWclCharacterIds.mockResolvedValue(new Map());
+  });
+
+  /**
+   * The message-harvest path resolves a link on every paste and reads only the
+   * identities. Verifying each one would be a Raider.IO round trip per link spent
+   * on a classification the caller throws away.
+   */
+  it('resolves identities without a single Raider.IO lookup', async () => {
+    const candidate: CharacterLinkCandidate = {
+      source: 'raiderio',
+      index: 0,
+      character: { region: 'eu', realm: 'draenor', name: 'Brentpriest' },
+    };
+
+    await expect(resolveCharacterLinks([candidate])).resolves.toEqual({
+      identities: [{ region: 'eu', realm: 'draenor', name: 'Brentpriest' }],
+      statuses: [],
+    });
+    expect(mockedGetCharacterSummary).not.toHaveBeenCalled();
   });
 });

@@ -108,6 +108,16 @@ const sleep = (ms: number): Promise<void> =>
  */
 export async function discoverAlts(
   jobId: number,
+  /**
+   * The identity this sweep is rooted on: the fingerprint anchor, and the region
+   * findings are rendered against.
+   *
+   * Separate from `applicants` on purpose. A job rescued by a pasted link has a
+   * primary that nobody declared, and recording it as `'application'` would
+   * render it "from the application" at 100% confidence and skip the Discord
+   * confirmation pass that exists to check precisely that kind of inference.
+   */
+  primary: RaiderIoCharacter,
   applicants: RaiderIoCharacter[],
   linked: RaiderIoCharacter[],
   deps: DiscoverDeps,
@@ -117,11 +127,10 @@ export async function discoverAlts(
   const maxDepth = deps.maxDepth ?? ALT_CAPS.depth;
   const pace = deps.paceMs ?? 0;
 
-  // Nothing may fail an application: an empty applicant list has no primary to
-  // fingerprint against and no work to do.
-  if (applicants.length === 0) return { truncated: false };
+  // Nothing may fail an application: with neither a declared nor a linked
+  // character there is nothing to seed the sweep from and no work to do.
+  if (applicants.length === 0 && linked.length === 0) return { truncated: false };
 
-  const primary = applicants[0];
   const known = new Map<string, RaiderIoCharacter>();
   const guildFrontier: { guild: CharacterGuild; depth: number }[] = [];
   const visitedGuilds = new Set<string>();

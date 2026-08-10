@@ -97,9 +97,9 @@ describe('applicant intel linked-character top-ups', () => {
     vi.mocked(getCharacterFingerprint).mockResolvedValue(fingerprint);
     setLinkedCharacters(jobId, [linked]);
 
-    const discover = vi.fn(async (_jobId, applicants, linkedSeeds, discoverDeps) => {
+    const discover = vi.fn(async (_jobId, primaryArg, _applicants, linkedSeeds, discoverDeps) => {
       expect(linkedSeeds).toEqual([linked]);
-      expect(await discoverDeps.getAnchorFingerprint(applicants[0])).toEqual(fingerprint);
+      expect(await discoverDeps.getAnchorFingerprint(primaryArg)).toEqual(fingerprint);
       return { truncated: false };
     });
 
@@ -119,8 +119,8 @@ describe('applicant intel linked-character top-ups', () => {
       fetchedAt: '2026-08-09T00:00:00.000Z',
     });
 
-    const discover = vi.fn(async (_jobId, applicants, _linkedSeeds, discoverDeps) => {
-      expect(await discoverDeps.getAnchorFingerprint(applicants[0])).toEqual(new Map([[7, 77]]));
+    const discover = vi.fn(async (_jobId, primaryArg, _applicants, _linkedSeeds, discoverDeps) => {
+      expect(await discoverDeps.getAnchorFingerprint(primaryArg)).toEqual(new Map([[7, 77]]));
       return { truncated: false };
     });
 
@@ -139,8 +139,8 @@ describe('applicant intel linked-character top-ups', () => {
     });
     vi.mocked(getCharacterFingerprint).mockResolvedValue(new Map([[9, 99]]));
 
-    const discover = vi.fn(async (_jobId, applicants, _linkedSeeds, discoverDeps) => {
-      await discoverDeps.getAnchorFingerprint(applicants[0]);
+    const discover = vi.fn(async (_jobId, primaryArg, _applicants, _linkedSeeds, discoverDeps) => {
+      await discoverDeps.getAnchorFingerprint(primaryArg);
       return { truncated: false };
     });
     await runJob(jobId, deps({ discover }));
@@ -366,7 +366,7 @@ describe('applicant intel linked-character top-ups', () => {
         expect(requestTopUp(jobId)).toBe('queued');
         throw error();
       })
-      .mockImplementationOnce(async (_jobId, _applicants, linkedSeeds) => {
+      .mockImplementationOnce(async (_jobId, _primaryArg, _applicants, linkedSeeds) => {
         expect(linkedSeeds).toEqual([linked]);
         return { truncated: false };
       });

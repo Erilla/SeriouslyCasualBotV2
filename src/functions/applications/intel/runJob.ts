@@ -195,10 +195,23 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   };
   // An application — or /test — can name several characters; the row holds only
   // the primary, so the full set comes from the queue.
-  const stored = getApplicantCharacters(jobId);
-  const applicants = stored.length > 0 ? stored : [primary];
-  const applicant = applicants[0];
+  // Deliberately NOT defaulted to [primary]. A job rescued by a conversation
+  // link has a primary nobody declared, and passing it as an applicant would
+  // record a pasted URL as source 'application' — rendering it "from the
+  // application" at 100% and excluding it from the Discord confirmation pass.
+  // The primary reaches discoverAlts as its own argument instead.
+  const applicants = getApplicantCharacters(jobId);
+  const applicant = applicants[0] ?? primary;
   const linked = getLinkedCharacters(jobId);
+  /**
+   * Who the log phases cover, as opposed to who declared themselves.
+   *
+   * A rescued job has no declared characters at all, so the phases that need a
+   * concrete roster fall back to the primary — which for such a job is one of the
+   * linked characters. Kept separate from `applicants` because that list carries
+   * provenance, and widening it would relabel a pasted link as self-declared.
+   */
+  const roster = applicants.length > 0 ? applicants : [primary];
   const reopenedAt = topUpState?.reopenedAt;
   const ageEpochMs = Math.max(
     parseUtcTimestamp(job.created_at).getTime(),
@@ -359,7 +372,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       return fetched;
     };
 
-    const { truncated } = await deps.discover(jobId, applicants, linked, {
+    const { truncated } = await deps.discover(jobId, primary, applicants, linked, {
       getCharacterOwner: (await import('../../../services/raiderioInternal.js')).getCharacterOwner,
       getClaimedCharacters: (await import('../../../services/raiderioInternal.js'))
         .getClaimedCharacters,
@@ -524,7 +537,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
     // account. For a solo applicant with one swept character that is a single
     // failed fetch away, so it must be tracked, not assumed away.
     let killDatesFailed = false;
-    for (const c of swept.length > 0 ? swept : applicants) {
+    for (const c of swept.length > 0 ? swept : roster) {
       // The memo paces itself, so there is no sleep here any more.
       const entries = await getMythicKillDatesOnce(c, deps.tierOrdinals);
       if (entries) killHistory.push({ character: c.name, entries });
@@ -557,7 +570,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
 
     setPhase(jobId, 'logs');
     currentPhase = 'logs';
-    lastTiers = await deps.gather(applicants, swept.length > 0 ? swept : applicants, zones, {
+    lastTiers = await deps.gather(roster, swept.length > 0 ? swept : roster, zones, {
       getZoneKills: (await import('../../../services/warcraftlogs.js')).getZoneKills,
       getEncounterKills: (await import('../../../services/warcraftlogs.js')).getEncounterKills,
       getRaidReports: getRaidReportsOnce,

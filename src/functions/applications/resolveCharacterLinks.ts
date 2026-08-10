@@ -13,6 +13,7 @@ export interface CharacterLinkResolutionStatus {
 
 export interface CharacterLinkResolution {
   identities: RaiderIoCharacter[];
+  /** Empty unless the caller asked to verify; see resolveCharacterLinks. */
   statuses: CharacterLinkResolutionStatus[];
 }
 
@@ -46,9 +47,18 @@ async function canonicalizeCandidate(
   };
 }
 
-/** Canonicalize parsed link candidates and independently classify link rendering. */
+/**
+ * Canonicalize parsed link candidates and independently classify link rendering.
+ *
+ * `verify` controls only whether `statuses` can distinguish `verified` from
+ * `unavailable`, which costs one Raider.IO lookup per resolved identity. Callers
+ * that only want the identities — the message-harvest path runs on every pasted
+ * link — must leave it off rather than pay for a classification they discard.
+ * Verification never gates sweep eligibility either way.
+ */
 export async function resolveCharacterLinks(
   candidates: CharacterLinkCandidate[],
+  options: { verify?: boolean } = {},
 ): Promise<CharacterLinkResolution> {
   const orderedCandidates = [...candidates].sort((left, right) => left.index - right.index);
   const wclIds = orderedCandidates
@@ -70,11 +80,18 @@ export async function resolveCharacterLinks(
   }
 
   const verification = new Map<string, boolean>();
-  await Promise.all(
-    identities.map(async (identity) => {
-      verification.set(identityKey(identity), (await getCharacterSummary(identity)) !== null);
-    }),
-  );
+  if (options.verify) {
+    await Promise.all(
+      identities.map(async (identity) => {
+        verification.set(identityKey(identity), (await getCharacterSummary(identity)) !== null);
+      }),
+    );
+  }
+
+  // Empty rather than a list of `unavailable`: without a verification pass the
+  // rendering status is genuinely unknown, and reporting "Raider.IO could not
+  // confirm this" for a lookup nobody performed would be a lie.
+  if (!options.verify) return { identities, statuses: [] };
 
   const statuses = orderedCandidates.map((candidate, index): CharacterLinkResolutionStatus => {
     const identity = canonical[index];

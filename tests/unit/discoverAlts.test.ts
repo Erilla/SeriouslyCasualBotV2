@@ -53,7 +53,7 @@ describe('discoverAlts', () => {
   afterEach(() => closeDatabase());
 
   it('records the application character itself', async () => {
-    await discoverAlts(jobId, [applicant], [], deps());
+    await discoverAlts(jobId, applicant, [applicant], [], deps());
     const found = getFindings(jobId);
     expect(found).toHaveLength(1);
     expect(found[0].source).toBe('application');
@@ -65,6 +65,7 @@ describe('discoverAlts', () => {
 
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [linked],
       deps({
@@ -86,6 +87,7 @@ describe('discoverAlts', () => {
   it('records claimed characters from the owner lookup at full confidence', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -107,6 +109,7 @@ describe('discoverAlts', () => {
   it('records a declared main', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -123,6 +126,7 @@ describe('discoverAlts', () => {
   it('fingerprints a guild roster and records only matches', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -142,6 +146,7 @@ describe('discoverAlts', () => {
     const getGuildRoster = vi.fn(async () => []);
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -181,6 +186,7 @@ describe('discoverAlts', () => {
       let peak = 0;
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -210,6 +216,7 @@ describe('discoverAlts', () => {
       const getCharacterSummary = vi.fn(async () => ({ className: 'Mage', guild: null }));
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -243,6 +250,7 @@ describe('discoverAlts', () => {
       await expect(
         discoverAlts(
           jobId,
+          applicant,
           [applicant],
           [],
           deps({
@@ -273,6 +281,7 @@ describe('discoverAlts', () => {
       const names = ['Zeta', 'Alpha', 'Mu', 'Beta'];
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -319,6 +328,7 @@ describe('discoverAlts', () => {
       const getGuildRoster = vi.fn(async () => []);
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -359,6 +369,7 @@ describe('discoverAlts', () => {
       let peak = 0;
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -386,6 +397,7 @@ describe('discoverAlts', () => {
     const getGuildRoster = vi.fn(async () => []);
     await discoverAlts(
       jobId,
+      { region: 'eu', realm: 'argent-dawn', name: 'Driptinus' },
       [{ region: 'eu', realm: 'argent-dawn', name: 'Driptinus' }],
       [],
       deps({
@@ -404,6 +416,7 @@ describe('discoverAlts', () => {
     );
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -423,6 +436,7 @@ describe('discoverAlts', () => {
     const roster = Array.from({ length: 20 }, (_, i) => ({ name: `Filler${i}`, realm: 'Draenor' }));
     const result = await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -438,6 +452,7 @@ describe('discoverAlts', () => {
   it('treats an unavailable fingerprint as unknown, not as a non-match', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -455,6 +470,7 @@ describe('discoverAlts', () => {
     // normalisation these land as two separate primary-key rows.
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -480,6 +496,7 @@ describe('discoverAlts', () => {
     // truncation could be reported is the missing applicant baseline itself.
     const result = await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -492,6 +509,7 @@ describe('discoverAlts', () => {
   it('marks nothing scanned for roster members when the applicant fingerprint is unavailable', async () => {
     await discoverAlts(
       jobId,
+      applicant,
       [applicant],
       [],
       deps({
@@ -520,6 +538,7 @@ describe('discoverAlts', () => {
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -544,6 +563,7 @@ describe('discoverAlts', () => {
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -582,6 +602,7 @@ describe('discoverAlts', () => {
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -617,7 +638,7 @@ describe('discoverAlts', () => {
       });
     });
     await expect(
-      discoverAlts(jobId, [applicant], [], deps({ getCharacterSummary })),
+      discoverAlts(jobId, applicant, [applicant], [], deps({ getCharacterSummary })),
     ).rejects.toThrow(HttpError);
     expect(getFindings(jobId).map((f) => f.name)).toEqual(['Brentpriest']);
   });
@@ -656,6 +677,7 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
     await expect(
       discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -683,6 +705,7 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
       const timings = new PhaseTimings();
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -714,6 +737,7 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
       const timings = new PhaseTimings();
       await discoverAlts(
         jobId,
+        applicant,
         [applicant],
         [],
         deps({
@@ -739,9 +763,40 @@ describe('discoverAlts — a mid-batch rate limit keeps the matches already foun
     });
 
     it('works without a timings object at all', async () => {
-      await expect(discoverAlts(jobId, [applicant], [], deps())).resolves.toEqual({
+      await expect(discoverAlts(jobId, applicant, [applicant], [], deps())).resolves.toEqual({
         truncated: false,
       });
     });
+  });
+});
+
+describe('a sweep rooted on a character nobody declared', () => {
+  let jobId: number;
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+    jobId = createJob({ applicationId: 1, targetChannelId: '1', character: applicant });
+  });
+  afterEach(() => closeDatabase());
+
+  /**
+   * An application that named nobody is rescued by a pasted link, which becomes
+   * the job's primary. The primary is only the identity the fingerprint anchors
+   * on — it is NOT a self-declaration. Conflating the two would render a URL
+   * someone pasted as "from the application" at 100% confidence and skip the
+   * Discord confirmation pass that exists to check exactly that kind of guess.
+   */
+  it('attributes a rescued primary to the link, not the application', async () => {
+    await discoverAlts(jobId, applicant, [], [applicant], deps());
+
+    const found = getFindings(jobId);
+    expect(found).toHaveLength(1);
+    expect(found[0].source).toBe('linked');
+  });
+
+  it('does nothing when neither source names anyone', async () => {
+    await expect(discoverAlts(jobId, applicant, [], [], deps())).resolves.toEqual({
+      truncated: false,
+    });
+    expect(getFindings(jobId)).toEqual([]);
   });
 });

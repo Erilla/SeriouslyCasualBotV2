@@ -341,9 +341,13 @@ export async function getBlizzardGuildRoster(
  * achievements" is a real answer, and the TTL bounds how long it lasts.
  */
 export async function getCharacterFingerprint(c: RaiderIoCharacter): Promise<Fingerprint | null> {
-  const realmSlug = await resolveRealmSlug(c.region, c.realm);
-  const normalized = { ...c, realm: realmSlug };
-  const key = `fingerprint:${c.region}:${realmSlug}:${c.name.toLowerCase()}`;
+  // Both halves of the key are normalized, not just the realm: resolveRealmSlug
+  // lowercases the region internally, so keying on the raw value would let "EU"
+  // and "eu" hold separate 85 KB entries for one character and fetch it twice.
+  const region = c.region.trim().toLocaleLowerCase();
+  const realmSlug = await resolveRealmSlug(region, c.realm);
+  const normalized = { ...c, region, realm: realmSlug };
+  const key = `fingerprint:${region}:${realmSlug}:${c.name.toLowerCase()}`;
 
   let entries: FingerprintEntries;
   try {
