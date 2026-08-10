@@ -81,6 +81,12 @@ export async function submitApplication(
     throw new Error(`Application #${applicationId} has no answers`);
   }
 
+  // Parse every linked character before claiming or otherwise changing the
+  // application row. The resulting list drives both placeholder reservation
+  // and the later intel sweep.
+  const named = collectRaiderIoCharacters(answers);
+  const parsedCharacterName = deriveCharacterNameFromAnswers(answers);
+
   const guild = client.guilds.cache.get(config.guildId);
   if (!guild) {
     throw new Error('Guild not found');
@@ -119,7 +125,6 @@ export async function submitApplication(
 
   // Prefer the character name parsed from the applicant's Raider.IO URL; fall
   // back to the name seeded at creation (their Discord display name).
-  const parsedCharacterName = deriveCharacterNameFromAnswers(answers);
   const characterName = parsedCharacterName || application.character_name || user.displayName;
   const channelName = `app-${characterName
     .toLowerCase()
@@ -181,7 +186,6 @@ export async function submitApplication(
   // to reserve the three intel placeholders, and whether to queue the sweep. When
   // those were separate decisions an application with no parseable Raider.IO URL
   // got placeholders that nothing would ever edit.
-  const named = collectRaiderIoCharacters(answers);
   const existingThread = await findExistingThread(guild, application.thread_id);
 
   if (existingThread) {

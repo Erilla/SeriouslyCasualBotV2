@@ -3,10 +3,16 @@ import { ChannelType, type Guild } from 'discord.js';
 import { closeDatabase, getDatabase } from '../../src/database/db.js';
 import { createTables } from '../../src/database/schema.js';
 
-const { mockedGetOrCreateChannel, mockedCreateForumPost, mockedStartIntelJob } = vi.hoisted(() => ({
+const {
+  mockedGetOrCreateChannel,
+  mockedCreateForumPost,
+  mockedStartIntelJob,
+  mockedCollectRaiderIoCharacters,
+} = vi.hoisted(() => ({
   mockedGetOrCreateChannel: vi.fn(),
   mockedCreateForumPost: vi.fn(),
   mockedStartIntelJob: vi.fn(() => 1),
+  mockedCollectRaiderIoCharacters: vi.fn(() => []),
 }));
 
 vi.mock('../../src/config.js', () => ({ config: { guildId: 'guild-1', officerRoleId: null } }));
@@ -21,6 +27,10 @@ vi.mock('../../src/functions/applications/createForumPost.js', () => ({
 }));
 vi.mock('../../src/functions/applications/intel/placeholders.js', () => ({
   startIntelJob: mockedStartIntelJob,
+}));
+vi.mock('../../src/functions/applications/raiderIoName.js', () => ({
+  collectRaiderIoCharacters: mockedCollectRaiderIoCharacters,
+  deriveCharacterNameFromAnswers: vi.fn(() => null),
 }));
 vi.mock('../../src/functions/raids/linkCharacterIdentity.js', () => ({
   linkCharacterIdentity: vi.fn(),
@@ -92,6 +102,7 @@ beforeEach(() => {
   closeDatabase();
   createTables(getDatabase(':memory:'));
   vi.clearAllMocks();
+  mockedCollectRaiderIoCharacters.mockReturnValue([]);
   mockedGetOrCreateChannel.mockResolvedValue({ id: 'applications-category' });
   mockedCreateForumPost.mockResolvedValue({ forumPost: { id: 'forum-1' }, threadId: 'thread-1' });
 });
@@ -101,6 +112,26 @@ afterEach(() => {
 });
 
 describe('submitApplication duplicate protection', () => {
+  it('parses answers before claiming the application in the database', async () => {
+    const applicationId = seedApplication('in_progress');
+    mockedCollectRaiderIoCharacters.mockImplementation(() => {
+      throw new Error('parser failure');
+    });
+
+    await expect(
+      submitApplication(
+        makeClient(makeGuild(vi.fn(async () => ({ id: 'channel-1', send: vi.fn() })))),
+        applicationId,
+        applicant,
+      ),
+    ).rejects.toThrow('parser failure');
+
+    const row = getDatabase()
+      .prepare('SELECT submitted_at FROM applications WHERE id = ?')
+      .get(applicationId) as { submitted_at: string | null };
+    expect(row.submitted_at).toBeNull();
+  });
+
   it('submits an in-progress application and reports it as submitted', async () => {
     const applicationId = seedApplication('in_progress');
     const createChannel = vi.fn(async () => ({
