@@ -246,6 +246,41 @@ describe('applicant intel linked-character top-ups', () => {
     expect(editMessage.mock.calls.map(([, messageId]) => messageId)).toEqual(['ALTS']);
   });
 
+  it('leaves existing guild and log messages untouched when an in-run append requests a top-up', async () => {
+    const messages = new Map([
+      ['ALTS', 'existing alts'],
+      ['GUILDS', 'existing guild history'],
+      ['LOGS', 'existing logs'],
+    ]);
+    const editMessage = vi.fn(async (_channelId: string, messageId: string, body: string) => {
+      messages.set(messageId, body);
+    });
+
+    await runJob(
+      jobId,
+      deps({
+        editMessage,
+        discover: vi.fn(async () => {
+          setLinkedCharacters(jobId, [linked]);
+          expect(requestTopUp(jobId)).toBe('queued');
+          throw new HttpError({
+            service: 'blizzard',
+            status: 429,
+            attempts: 1,
+            message: 'rate limited',
+            retryAfterMs: 60_000,
+          });
+        }),
+      }),
+    );
+
+    expect(getJob(jobId)?.status).toBe('paused');
+    expect(topUpRequested(jobId)).toBe(true);
+    expect(editMessage.mock.calls.map(([, messageId]) => messageId)).toEqual(['ALTS']);
+    expect(messages.get('GUILDS')).toBe('existing guild history');
+    expect(messages.get('LOGS')).toBe('existing logs');
+  });
+
   it('keeps partial top-up message protection when a paused run resumes', async () => {
     setStatus(jobId, 'done');
     requestTopUp(jobId);
