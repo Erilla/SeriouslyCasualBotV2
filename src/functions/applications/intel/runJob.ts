@@ -215,10 +215,11 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
   const publish = async (footer?: PauseFooter, terminal = false): Promise<void> => {
     const findings = getFindings(jobId);
     const channelId = job.target_channel_id!;
-    // A linked character can be appended after the run starts. Re-read the
-    // durable request here so that this publish does not overwrite phases the
-    // current run has not recomputed, even when it began as a normal run.
-    const protectExistingMessages = topUpRun || topUpRequested(jobId);
+    // Invoke this separately at each phase boundary: a linked character can be
+    // appended while any preceding message edit is awaited, so the durable
+    // request must not be cached for the lifetime of this publish.
+    const shouldPublishPhase = (computed: boolean): boolean =>
+      computed || (!topUpRun && !topUpRequested(jobId));
 
     if (job.alts_message_id) {
       try {
@@ -238,7 +239,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         logger.warn('Intel', `Job #${jobId}: failed to edit the alts message: ${error}`);
       }
     }
-    if (job.guilds_message_id && (!protectExistingMessages || guildsComputed)) {
+    if (job.guilds_message_id && shouldPublishPhase(guildsComputed)) {
       try {
         const pages = guildsComputed
           ? renderGuildHistory(guilds, applicant.region, footer)
@@ -253,7 +254,7 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         logger.warn('Intel', `Job #${jobId}: failed to edit the guilds message: ${error}`);
       }
     }
-    if (job.logs_message_id && (!protectExistingMessages || logsComputed)) {
+    if (job.logs_message_id && shouldPublishPhase(logsComputed)) {
       try {
         // Never paged: bounded at MAX_TIERS=5 x MAX_LINES_PER_TIER=3.
         const body = logsComputed
