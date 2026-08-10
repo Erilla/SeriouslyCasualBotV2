@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database/db.js';
 import type { IntelJobRow } from '../../../types/index.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 import type { GuildHistoryEntry } from './render.js';
 
 export type JobPhase = 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'done';

@@ -8,7 +8,7 @@ import {
   type WclZone,
 } from '../functions/applications/mythic-logs/zoneCatalogue.js';
 import { shouldPreemptWclPoints } from '../functions/applications/intel/rateLimit.js';
-import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
+import type { RaiderIoCharacter } from '../functions/applications/characterLinks.js';
 
 // ─── Token Cache ─────────────────────────────────────────────
 

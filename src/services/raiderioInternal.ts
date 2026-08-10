@@ -1,7 +1,7 @@
 import { httpRequest } from './httpClient.js';
 import { mapLimit } from '../utils/concurrency.js';
 import { logger } from './logger.js';
-import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
+import type { RaiderIoCharacter } from '../functions/applications/characterLinks.js';
 
 /**
  * Raider.IO's *internal* API — the endpoints its own site calls. These are

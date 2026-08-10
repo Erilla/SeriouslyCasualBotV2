@@ -2,7 +2,7 @@ import { gunzipSync, gzipSync } from 'zlib';
 import { config } from '../config.js';
 import { httpRequest, CircuitOpenError, HttpError } from './httpClient.js';
 import { getCachedOrFetch, ttl } from './apiCache.js';
-import type { RaiderIoCharacter } from '../functions/applications/raiderIoName.js';
+import type { RaiderIoCharacter } from '../functions/applications/characterLinks.js';
 import type { Fingerprint } from '../functions/applications/alts/compareFingerprints.js';
 
 export interface BlizzardSocket {

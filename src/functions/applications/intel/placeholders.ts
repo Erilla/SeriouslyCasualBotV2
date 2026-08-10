@@ -1,6 +1,6 @@
 import { EmbedBuilder, Colors } from 'discord.js';
 import { createJob, setApplicantCharacters, setMessageIds } from './jobStore.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 
 /**
  * Discord cannot insert a message between existing ones, and the sweep takes

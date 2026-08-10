@@ -6,7 +6,7 @@ import {
 } from './selectMythicReports.js';
 import type { WclZone } from './zoneCatalogue.js';
 import { mapLimit } from '../../../utils/concurrency.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 import type { GuildHistoryEntry, GuildStint, RenderedTier } from '../intel/render.js';
 import type {
   EncounterKill,

@@ -15,7 +15,7 @@ import { splitMessage } from './splitMessage.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { resolveApplicationLogCategory } from './applicationLogCategory.js';
 import { placeholderEmbed } from './intel/placeholders.js';
-import type { RaiderIoCharacter } from './raiderIoName.js';
+import type { RaiderIoCharacter } from './characterLinks.js';
 
 export interface CreateForumPostResult {
   forumPost: { id: string };

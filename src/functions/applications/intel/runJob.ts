@@ -35,7 +35,7 @@ import { PhaseTimings } from './phaseTimings.js';
 import type { WclZone } from '../mythic-logs/zoneCatalogue.js';
 import { WclPointsExhausted, type RaidReportRef } from '../../../services/warcraftlogs.js';
 import type { MythicKillDate } from '../../../services/raiderioInternal.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 
 export const MAX_JOB_ATTEMPTS = 20;
 export const MAX_JOB_AGE_MS = 7 * 24 * 60 * 60 * 1000;

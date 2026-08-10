@@ -5,7 +5,7 @@ import { normalizeRealmSlug } from '../../../services/blizzard.js';
 import { compareFingerprints, type Fingerprint } from './compareFingerprints.js';
 import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/jobStore.js';
 import type { PhaseTimings } from '../intel/phaseTimings.js';
-import type { RaiderIoCharacter } from '../raiderIoName.js';
+import type { RaiderIoCharacter } from '../characterLinks.js';
 import {
   RAIDERIO_CHARACTER_CONCURRENCY,
   type CharacterGuild,
