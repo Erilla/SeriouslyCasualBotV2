@@ -24,13 +24,29 @@ const achievements = {
   ],
 };
 
+function createBlizzardTestDatabase(): void {
+  const db = getDatabase(':memory:');
+  createTables(db);
+  db.prepare('INSERT INTO api_cache (key, payload, fetched_at) VALUES (?, ?, ?)').run(
+    'realm-index:eu',
+    JSON.stringify({
+      realms: [
+        { name: 'Argent Dawn', slug: 'argent-dawn' },
+        { name: 'Silvermoon', slug: 'silvermoon' },
+        { name: 'Tarren Mill', slug: 'tarren-mill' },
+      ],
+    }),
+    new Date().toISOString(),
+  );
+}
+
 // getAccessToken() caches the OAuth token at module scope for the life of this
 // file, so it only ever calls httpRequest once. Prime it here, outside every
 // test's own mock queue, so every other test's mockResolvedValueOnce/
 // mockRejectedValueOnce lines up with the achievements/roster call it's
 // meant for, not an incidental token fetch.
 beforeAll(async () => {
-  createTables(getDatabase(':memory:'));
+  createBlizzardTestDatabase();
   mocked.mockResolvedValueOnce({ access_token: 'warmup-token', expires_in: 3600 } as never);
   mocked.mockResolvedValueOnce({ achievements: [] } as never);
   await getCharacterFingerprint(character);
@@ -41,7 +57,7 @@ beforeAll(async () => {
 describe('getCharacterFingerprint', () => {
   beforeEach(() => {
     mocked.mockReset();
-    createTables(getDatabase(':memory:'));
+    createBlizzardTestDatabase();
   });
   afterEach(() => closeDatabase());
 
@@ -111,7 +127,7 @@ describe('getCharacterFingerprint', () => {
 describe('getBlizzardGuildRoster', () => {
   beforeEach(() => {
     mocked.mockReset();
-    createTables(getDatabase(':memory:'));
+    createBlizzardTestDatabase();
   });
   afterEach(() => closeDatabase());
 
@@ -227,7 +243,7 @@ describe('pruneCache', () => {
 describe('fingerprint cache payload is compressed', () => {
   beforeEach(() => {
     mocked.mockReset();
-    createTables(getDatabase(':memory:'));
+    createBlizzardTestDatabase();
   });
   afterEach(() => closeDatabase());
 
