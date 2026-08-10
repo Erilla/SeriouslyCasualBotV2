@@ -63,8 +63,27 @@ npm run test:watch # watch mode during development
 
 - **Unit tests** cover pure functions and utility helpers (no Discord client, no DB).
 - **Integration tests** (`npm run test:integration`) test DB logic against a real SQLite in-memory database.
+  `npm test` already includes these — its globs are `tests/unit/**` *and* `tests/integration/**`, so
+  `test:integration` is a subset for running them alone, not extra coverage.
+- **E2E tests** (`npm run test:e2e`) are NOT part of `npm test` and need a `.env.test` plus a live
+  test guild. They do not run in CI, so assertions about a handler's reply shape can rot unnoticed —
+  if you change one, check `tests/e2e/` by hand.
 - Aim for test coverage on all business logic in `src/functions/` and `src/services/`.
 - Do not mock the database in unit tests — use in-memory SQLite instead.
+
+### Previewing Discord output without deploying
+
+Some output is only awkward to reach on a live bot — an application that named no character, a
+character Raider.IO cannot resolve. `npm run preview:intel` prints the real embeds and job-row
+transitions for those states offline, using the production renderer against in-memory SQLite:
+
+```bash
+npm run preview:intel   # scripts/preview-linked-intel.mts
+```
+
+Scripts under `scripts/` are outside the build (`rootDir` is `src/`) but still import production
+modules, so `npm run typecheck` checks them via `tsconfig.scripts.json`. Without that they would
+break silently the first time a signature they use changed.
 
 ## Code Style
 
