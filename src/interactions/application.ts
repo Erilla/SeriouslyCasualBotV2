@@ -1,7 +1,9 @@
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction, ModalSubmitInteraction } from 'discord.js';
 import type { ButtonHandler, ModalHandler } from './registry.js';
+import { config } from '../config.js';
 import { getDatabase } from '../database/db.js';
+import { refreshLinkedCharacters } from '../functions/applications/refreshLinkedCharacters.js';
 import { audit, alertOfficers } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
 import { startApplication } from '../functions/applications/startApplication.js';
@@ -47,6 +49,7 @@ async function apply(interaction: ButtonInteraction, _params: string[]): Promise
 const ALREADY_SUBMITTED = 'Application already submitted.';
 const SUBMISSION_IN_FLIGHT = 'Your application is being submitted — give it a moment.';
 const NO_LONGER_OPEN = 'This application is no longer open. Start a new one any time with /apply.';
+const NO_LONGER_ACTIVE = 'This application is no longer active, so its intel cannot be topped up.';
 
 /**
  * Why the summary buttons can no longer act on an application, or null when they
@@ -222,6 +225,66 @@ async function accept(interaction: ButtonInteraction, _params: string[]): Promis
   await acceptApplication(interaction);
 }
 
+/**
+ * Rescan the application's channel and thread for character links.
+ *
+ * Officer-only and ephemeral: it reports which surfaces were readable, which is
+ * reviewer diagnostics rather than anything the applicant should see in the
+ * thread. There is deliberately no cooldown — a redundant scan finds nothing new
+ * and requests no top-up, so the worst a double-click costs is two reads.
+ */
+async function intelRefresh(interaction: ButtonInteraction, params: string[]): Promise<void> {
+  const applicationId = parseInt(params[0], 10);
+  const member = await resolveMember(interaction);
+  if (!member?.roles.cache.has(config.officerRoleId)) {
+    await interaction.reply({
+      content: 'Only officers can refresh linked characters.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  if (!interaction.guild) {
+    await interaction.editReply({ content: 'This control only works inside the guild.' });
+    return;
+  }
+
+  const result = await refreshLinkedCharacters(applicationId, interaction.guild);
+
+  if (result.outcome === 'inactive') {
+    await interaction.editReply({ content: NO_LONGER_ACTIVE });
+    return;
+  }
+  if (result.outcome === 'no_job') {
+    await interaction.editReply({
+      content: `Application #${applicationId} has no intel job to top up.`,
+    });
+    return;
+  }
+  if (result.outcome === 'no_surfaces') {
+    await interaction.editReply({
+      content: `I could not read the ${result.unavailableSurfaces.join(' or ')}. Check my permissions and try again.`,
+    });
+    return;
+  }
+
+  const notes = [
+    result.unavailableSurfaces.length > 0
+      ? `Could not read the ${result.unavailableSurfaces.join(' or ')}.`
+      : null,
+    result.truncated ? 'The conversation was long, so only recent messages were scanned.' : null,
+  ].filter((note): note is string => note !== null);
+
+  const summary =
+    result.queued.length > 0
+      ? `Queued ${result.queued.length} new character(s): ${result.queued.join(', ')}. The sweep will update this thread shortly.`
+      : 'No new linked characters found.';
+
+  await interaction.editReply({ content: [summary, ...notes].join(' ') });
+}
+
 async function reject(interaction: ButtonInteraction, _params: string[]): Promise<void> {
   await rejectApplication(interaction);
 }
@@ -271,6 +334,7 @@ export const buttons: ButtonHandler[] = [
   { prefix: 'application:cancel', handle: cancel },
   { prefix: 'application:accept', handle: accept },
   { prefix: 'application:reject', handle: reject },
+  { prefix: 'application:intel_refresh', handle: intelRefresh },
   { prefix: 'application_vote', handle: vote },
 ];
 

@@ -4,12 +4,15 @@ import { createTables } from '../../src/database/schema.js';
 import {
   consumeTopUpRequest,
   createJob,
+  dueJobs,
   getAnchorFingerprint,
   getJob,
+  getJobByApplication,
   getLinkedCharacters,
   pauseJob,
   requestTopUp,
   setAnchorFingerprint,
+  setJobPrimary,
   setLinkedCharacters,
   setStatus,
   topUpRequested,
@@ -175,5 +178,68 @@ describe('applicant intel durable queue state', () => {
     expect(consumeTopUpRequest(jobId)).toBe(false);
     expect(topUpRequested(jobId)).toBe(false);
     expect(queuePayload(jobId, 'topup', 'state')).toBeNull();
+  });
+});
+
+describe('idle intel jobs', () => {
+  beforeEach(() => {
+    createTables(getDatabase(':memory:'));
+  });
+
+  afterEach(() => closeDatabase());
+
+  // An application whose answers name no character still reserves its three
+  // intel positions, so it needs a job row to hang their message ids on. It must
+  // stay invisible to the scheduler until a link gives it something to sweep.
+  it('keeps idle jobs out of the scheduler queue', () => {
+    const jobId = createJob({
+      applicationId: 7,
+      targetChannelId: 'c1',
+      character: { region: '', realm: '', name: '' },
+      status: 'idle',
+    });
+
+    expect(getJob(jobId)?.status).toBe('idle');
+    expect(dueJobs(new Date().toISOString())).toEqual([]);
+  });
+
+  it('reopens an idle job on the first top-up request', () => {
+    const jobId = createJob({
+      applicationId: 7,
+      targetChannelId: 'c1',
+      character: { region: '', realm: '', name: '' },
+      status: 'idle',
+    });
+
+    expect(requestTopUp(jobId)).toBe('reopened');
+    expect(getJob(jobId)?.status).toBe('pending');
+  });
+
+  it('finds the single job owning an application', () => {
+    const jobId = createJob({ applicationId: 7, targetChannelId: 'c1', character: primary });
+    createJob({ applicationId: 8, targetChannelId: 'c2', character: primary });
+
+    expect(getJobByApplication(7)?.id).toBe(jobId);
+    expect(getJobByApplication(9)).toBeUndefined();
+  });
+
+  // The rescue primary is chosen once from whatever the first refresh resolved;
+  // a later link must never rewrite the applicant's identity out from under the
+  // findings already attributed to it.
+  it('sets a blank primary once and never revises it', () => {
+    const jobId = createJob({
+      applicationId: 7,
+      targetChannelId: 'c1',
+      character: { region: '', realm: '', name: '' },
+      status: 'idle',
+    });
+
+    expect(setJobPrimary(jobId, { region: 'eu', realm: 'draenor', name: 'Rescued' })).toBe(true);
+    expect(setJobPrimary(jobId, { region: 'us', realm: 'illidan', name: 'Later' })).toBe(false);
+    expect(getJob(jobId)).toMatchObject({
+      character_name: 'Rescued',
+      character_realm: 'draenor',
+      character_region: 'eu',
+    });
   });
 });

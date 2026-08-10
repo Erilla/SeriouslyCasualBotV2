@@ -10,7 +10,13 @@ import type { RaiderIoCharacter } from '../characterLinks.js';
 import type { GuildHistoryEntry } from './render.js';
 
 export type JobPhase = 'logs' | 'alt_sources' | 'fingerprint' | 'alt_logs' | 'done';
-export type JobStatus = 'pending' | 'running' | 'paused' | 'done' | 'failed';
+/**
+ * 'idle' is a job that exists only to own its three reserved message ids. An
+ * application whose answers name no character still reserves those positions, so
+ * something must hold them until a conversation link gives the sweep work to do.
+ * `dueJobs` never selects it, so it costs nothing until `requestTopUp` reopens it.
+ */
+export type JobStatus = 'idle' | 'pending' | 'running' | 'paused' | 'done' | 'failed';
 export type FindingSource =
   | 'application'
   | 'linked'
@@ -72,13 +78,15 @@ export function createJob(input: {
   character: RaiderIoCharacter;
   /** Discord username of the applicant, for the confirmation pass. */
   applicantDiscord?: string | null;
+  /** Defaults to 'pending', i.e. immediately due. Pass 'idle' to reserve only. */
+  status?: JobStatus;
 }): number {
   const result = getDatabase()
     .prepare(
       `INSERT INTO applicant_intel_jobs
          (application_id, target_channel_id, character_name, character_realm, character_region,
-          applicant_discord)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+          applicant_discord, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.applicationId,
@@ -87,6 +95,7 @@ export function createJob(input: {
       input.character.realm,
       input.character.region,
       input.applicantDiscord ?? null,
+      input.status ?? 'pending',
     );
   return result.lastInsertRowid as number;
 }
@@ -95,6 +104,32 @@ export function getJob(id: number): IntelJobRow | undefined {
   return getDatabase().prepare('SELECT * FROM applicant_intel_jobs WHERE id = ?').get(id) as
     | IntelJobRow
     | undefined;
+}
+
+/** One application owns one intel job; the oldest wins if history left duplicates. */
+export function getJobByApplication(applicationId: number): IntelJobRow | undefined {
+  return getDatabase()
+    .prepare('SELECT * FROM applicant_intel_jobs WHERE application_id = ? ORDER BY id LIMIT 1')
+    .get(applicationId) as IntelJobRow | undefined;
+}
+
+/**
+ * Name the primary of a job reserved without one, returning whether it was set.
+ *
+ * Refusing to revise an existing primary is the point: findings are attributed to
+ * whoever the primary was when the fingerprint anchor was taken, so a link that
+ * arrives later must not silently re-root the whole sweep.
+ */
+export function setJobPrimary(id: number, character: RaiderIoCharacter): boolean {
+  const changes = getDatabase()
+    .prepare(
+      `UPDATE applicant_intel_jobs
+         SET character_name = ?, character_realm = ?, character_region = ?
+       WHERE id = ? AND character_name = ''`,
+    )
+    .run(character.name, character.realm, character.region, id).changes;
+  if (changes > 0) touch(id);
+  return changes > 0;
 }
 
 export function setPhase(id: number, phase: JobPhase): void {
@@ -257,6 +292,29 @@ export function getAnchorFingerprint(jobId: number): ApplicantIntelAnchorFingerp
   return { ...stored, entries: decodeFingerprint(stored.entries) };
 }
 
+/**
+ * The message carrying the officer Refresh control, kept in the queue rather than
+ * on the job row because this feature must not change the schema version.
+ */
+export function setControlMessageId(jobId: number, messageId: string): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'controls', 'refresh', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload`,
+    )
+    .run(jobId, JSON.stringify(messageId));
+}
+
+export function getControlMessageId(jobId: number): string | null {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'controls' AND key = 'refresh'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  return row?.payload ? (JSON.parse(row.payload) as string) : null;
+}
+
 export function getTopUpState(jobId: number): ApplicantIntelTopUpState | null {
   const row = getDatabase()
     .prepare(
@@ -285,7 +343,7 @@ export function requestTopUp(jobId: number): ApplicantIntelTopUpResult {
       | undefined;
     if (!job) throw new Error(`Applicant intel job ${jobId} does not exist`);
 
-    const reopened = job.status === 'done' || job.status === 'failed';
+    const reopened = job.status === 'done' || job.status === 'failed' || job.status === 'idle';
     const previous = getTopUpState(jobId);
     setTopUpState(jobId, {
       requested: true,
