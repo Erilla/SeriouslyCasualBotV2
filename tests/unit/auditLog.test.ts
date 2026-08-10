@@ -5,7 +5,7 @@ vi.mock('../../src/services/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { audit, setAuditChannel } from '../../src/services/auditLog.js';
+import { audit, auditNotice, setAuditChannel } from '../../src/services/auditLog.js';
 
 describe('audit', () => {
   beforeEach(() => {
@@ -24,5 +24,31 @@ describe('audit', () => {
     const arg = send.mock.calls[0][0];
     expect(arg.content).toBe('**Splo** rejected application: **Sploboss** (<@456>)');
     expect(arg.allowedMentions).toEqual({ parse: [] });
+  });
+});
+
+describe('auditNotice', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('posts the title and detail without pinging anyone', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    setAuditChannel({ send } as unknown as Parameters<typeof setAuditChannel>[0]);
+
+    await auditNotice('Applicant left the server', 'Brentpriest — application #42');
+
+    const arg = send.mock.calls[0][0];
+    expect(arg.content).toBe('**Applicant left the server**\nBrentpriest — application #42');
+    // The distinction from alertOfficers: no role mention, and nothing parsed.
+    expect(arg.content).not.toContain('<@&');
+    expect(arg.allowedMentions).toEqual({ parse: [] });
+  });
+
+  it('never throws when the audit channel send fails', async () => {
+    const send = vi.fn().mockRejectedValue(new Error('channel deleted'));
+    setAuditChannel({ send } as unknown as Parameters<typeof setAuditChannel>[0]);
+
+    await expect(auditNotice('Applicant left the server', 'detail')).resolves.toBeUndefined();
   });
 });

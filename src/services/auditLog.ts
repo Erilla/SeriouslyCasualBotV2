@@ -22,6 +22,36 @@ export async function audit(officer: User, action: string, detail: string): Prom
 }
 
 /**
+ * Post an officer-visible notice to the audit channel **without pinging anyone**.
+ *
+ * The quiet sibling of `alertOfficers`. Use it for a background event that is
+ * already being announced somewhere overlords are notified — the audit channel
+ * then serves as the searchable record, and pinging here would notify the same
+ * humans twice for one event.
+ *
+ * Non-throwing for the same reason as `alertOfficers`: callers fire this from
+ * paths whose failure must not become an unhandled rejection.
+ */
+export async function auditNotice(title: string, detail: string): Promise<void> {
+  const logLine = `${title}: ${detail}`;
+  logger.info('audit', logLine);
+
+  if (!auditChannel) return;
+
+  try {
+    await auditChannel.send({
+      content: `**${title}**\n${detail}`,
+      allowedMentions: { parse: [] },
+    });
+  } catch (err) {
+    logger.error(
+      'audit',
+      `Failed to post officer notice to Discord: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
  * Post an officer-visible alert to the audit channel, pinging the officer role
  * so someone actually sees it. Used for background/autonomous failures that
  * would otherwise only surface in stdout (see #42).

@@ -413,7 +413,7 @@ describe('runMigrations — v12 adds applications.departed_notified_at', () => {
     const db = getDatabase();
     downgradeToV11(db);
     db.prepare(
-      "INSERT INTO applications (character_name, applicant_user_id, status) VALUES (?, ?, 'submitted')",
+      "INSERT INTO applications (character_name, applicant_user_id, status) VALUES (?, ?, 'active')",
     ).run('Brentpriest', 'user-1');
 
     runMigrations(db);
