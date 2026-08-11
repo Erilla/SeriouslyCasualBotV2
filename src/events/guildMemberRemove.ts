@@ -2,9 +2,10 @@ import type { GuildMember, PartialGuildMember } from 'discord.js';
 import { config } from '../config.js';
 import { logger } from '../services/logger.js';
 import { notifyApplicantDeparture } from '../functions/applications/notifyApplicantDeparture.js';
+import { notifyTrialDeparture } from '../functions/trial-review/notifyTrialDeparture.js';
 
 /**
- * Tell overlords when the Discord user behind an undecided application leaves.
+ * Tell overlords when the Discord user behind an undecided application or an active trial leaves.
  *
  * Discord fires this one event for a voluntary leave, a kick and a ban alike and
  * does not say which — deliberately treated as the same thing here. If an overlord
@@ -26,17 +27,27 @@ export default {
     // is always present on a removal.
     if (member.user?.bot) return;
 
+    const departed = { userId: member.user.id, tag: member.user.tag };
+
+    // Two independent questions, each in its own try/catch: a failure answering one
+    // must not skip the other, and nothing may escape a gateway handler — an
+    // unhandled rejection here takes the process down over a notification.
     try {
-      await notifyApplicantDeparture(member.guild, {
-        userId: member.user.id,
-        tag: member.user.tag,
-      });
+      await notifyApplicantDeparture(member.guild, departed);
     } catch (error) {
-      // Nothing may escape a gateway handler: an unhandled rejection here takes
-      // the process down over a notification.
       logger.error(
         'Applications',
-        `Failed to handle departure of ${member.user?.tag ?? 'unknown member'}: ${error}`,
+        `Failed to handle departure of ${departed.tag}: ${error}`,
+        error as Error,
+      );
+    }
+
+    try {
+      await notifyTrialDeparture(member.guild, departed);
+    } catch (error) {
+      logger.error(
+        'Trials',
+        `Failed to handle trial departure of ${departed.tag}: ${error}`,
         error as Error,
       );
     }
