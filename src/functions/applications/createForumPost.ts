@@ -3,13 +3,14 @@ import {
   type ForumChannel,
   type Guild,
   ChannelType,
+  MessageFlags,
   ThreadAutoArchiveDuration,
 } from 'discord.js';
 import { logger } from '../../services/logger.js';
 import { getOrCreateChannel } from '../channels.js';
 import { generateVotingEmbed } from './generateVotingEmbed.js';
 import { buildDecisionMessage } from './decisionMessage.js';
-import { splitMessage } from './splitMessage.js';
+import { splitQaText } from './qaFormat.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { resolveApplicationLogCategory } from './applicationLogCategory.js';
 import { idlePlaceholderEmbed, intelRefreshRow, placeholderEmbed } from './intel/placeholders.js';
@@ -82,7 +83,7 @@ export async function createForumPost(
 
   const activeTag = forum.availableTags.find((t) => t.name === 'Active');
 
-  const messages = splitMessage(qaText);
+  const messages = splitQaText(qaText);
 
   // Truncate by code points rather than UTF-16 units so we never slice a surrogate pair.
   const threadName = Array.from(characterName).slice(0, 100).join('');
@@ -92,7 +93,10 @@ export async function createForumPost(
     thread = await forum.threads.create({
       name: threadName,
       autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
-      message: { content: messages[0] },
+      // SuppressEmbeds on every Q&A message: the answers are mostly profile
+      // links, and an unfurled card per link pushed the intel and voting
+      // controls far enough down the thread to need scrolling past.
+      message: { content: messages[0], flags: MessageFlags.SuppressEmbeds },
       appliedTags: activeTag ? [activeTag.id] : [],
     });
   } catch (err) {
@@ -107,7 +111,7 @@ export async function createForumPost(
   // orphaned thread nothing can find and a retry free to post a second one.
   for (let i = 1; i < messages.length; i++) {
     try {
-      await thread.send(messages[i]);
+      await thread.send({ content: messages[i], flags: MessageFlags.SuppressEmbeds });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn(
