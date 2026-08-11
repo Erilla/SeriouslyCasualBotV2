@@ -4,6 +4,8 @@ import type { ButtonHandler, ModalHandler } from './registry.js';
 import { config } from '../config.js';
 import { getDatabase } from '../database/db.js';
 import { refreshLinkedCharacters } from '../functions/applications/refreshLinkedCharacters.js';
+import { getJobByApplication } from '../functions/applications/intel/jobStore.js';
+import { syncRefreshControl } from '../functions/applications/intel/syncRefreshControl.js';
 import { audit, alertOfficers } from '../services/auditLog.js';
 import { logger } from '../services/logger.js';
 import { startApplication } from '../functions/applications/startApplication.js';
@@ -251,6 +253,29 @@ async function intelRefresh(interaction: ButtonInteraction, params: string[]): P
     return;
   }
 
+  // A sweep already in flight must not be rescanned on top of.
+  //
+  // The button is drawn disabled while a job is pending or running, but its
+  // message is never deleted, so Discord still routes a click from a row drawn
+  // before the sweep began — and each click costs a full re-read of the channel
+  // AND thread history plus a resolution pass. So the status is the guard, not
+  // the button's own disabled state.
+  //
+  // Deliberately NOT extended to a paused job: that is a sweep waiting on a rate
+  // limit rather than one doing work, it can sit for a long while, and anything
+  // queued now is picked up when it resumes.
+  const job = getJobByApplication(applicationId);
+  if (job && (job.status === 'pending' || job.status === 'running')) {
+    // Settle the stale row that was just clicked, rather than leaving it live
+    // until the scheduler's next tick up to a minute later.
+    await syncRefreshControl(interaction.client, job);
+    await interaction.editReply({
+      content:
+        'A sweep is already running for this application. Anything linked in the conversation will be picked up by it — the results will land in this thread shortly.',
+    });
+    return;
+  }
+
   const result = await refreshLinkedCharacters(applicationId, interaction.guild);
 
   if (result.outcome === 'inactive') {
@@ -287,6 +312,13 @@ async function intelRefresh(interaction: ButtonInteraction, params: string[]): P
     result.queued.length > 0
       ? `Queued ${result.queued.length} new character(s): ${result.queued.join(', ')}. The sweep will update this thread shortly.`
       : 'No new linked characters found.';
+
+  // Queueing reopened the job, so the control now belongs in its "Refreshing…"
+  // state. Redrawn here rather than waiting for the scheduler tick, which is
+  // what previously left the button live — and re-clickable — for up to a minute
+  // after a refresh had already started one.
+  const queuedJob = getJobByApplication(applicationId);
+  if (queuedJob) await syncRefreshControl(interaction.client, queuedJob);
 
   await interaction.editReply({ content: [summary, ...notes].join(' ') });
 }
