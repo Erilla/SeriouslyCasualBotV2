@@ -119,7 +119,24 @@ describe('migration v13 — trial departure columns', () => {
     expect(row).toEqual({ discord_user_id: null });
   });
 
-  it('never overwrites a departed_notified_at stamp, and is safe to run twice', () => {
+  it('leaves a closed trial NULL: the back-fill is scoped to active trials', () => {
+    db.prepare(
+      "INSERT INTO raiders (character_name, discord_user_id) VALUES ('Closed', 'u-raider')",
+    ).run();
+    db.prepare(
+      `INSERT INTO trials (character_name, role, start_date, status)
+       VALUES ('Closed', 'dps', '2026-08-01', 'closed')`,
+    ).run();
+
+    runMigrations(db);
+
+    const row = db
+      .prepare('SELECT discord_user_id FROM trials WHERE character_name = ?')
+      .get('Closed');
+    expect(row).toEqual({ discord_user_id: null });
+  });
+
+  it('never overwrites a departed_notified_at stamp, and re-running the block is a no-op', () => {
     db.prepare(
       "INSERT INTO raiders (character_name, discord_user_id) VALUES ('Twice', 'u-raider')",
     ).run();
@@ -131,6 +148,12 @@ describe('migration v13 — trial departure columns', () => {
     db.prepare(
       "UPDATE trials SET departed_notified_at = '2026-08-11 12:00:00' WHERE character_name = 'Twice'",
     ).run();
+
+    // Delete the version-13 stamp so the second call genuinely re-runs the v13
+    // block against a database that already has the columns and back-filled
+    // values, rather than skipping it on the version gate — that would only
+    // prove the gate works, not that the block itself is safe to re-run.
+    db.prepare('DELETE FROM schema_version WHERE version = 13').run();
     runMigrations(db);
 
     const row = db
@@ -140,5 +163,26 @@ describe('migration v13 — trial departure columns', () => {
       discord_user_id: 'u-raider',
       departed_notified_at: '2026-08-11 12:00:00',
     });
+  });
+
+  it('skips the v13 block entirely once the version gate has advanced past it', () => {
+    db.prepare(
+      "INSERT INTO raiders (character_name, discord_user_id) VALUES ('Gated', 'u-raider')",
+    ).run();
+    db.prepare(
+      `INSERT INTO trials (character_name, role, start_date) VALUES ('Gated', 'dps', '2026-08-01')`,
+    ).run();
+
+    runMigrations(db);
+
+    // A second call without deleting the version-13 row must be a true no-op:
+    // no further ALTER/UPDATE work, and no error from re-running against a
+    // schema that has already moved on.
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const row = db
+      .prepare('SELECT discord_user_id FROM trials WHERE character_name = ?')
+      .get('Gated');
+    expect(row).toEqual({ discord_user_id: 'u-raider' });
   });
 });

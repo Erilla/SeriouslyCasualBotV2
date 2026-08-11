@@ -23,9 +23,13 @@ export default {
     // The prod bot is in more than one guild, so a departure elsewhere is not ours.
     if (member.guild?.id !== config.guildId) return;
 
-    // A bot leaving is never an applicant. The member may be partial, but `user`
-    // is always present on a removal.
-    if (member.user?.bot) return;
+    // The member may be partial, but `user` is expected to always be present on a
+    // removal. Guard anyway: nothing may escape a gateway handler, and a missing
+    // `user` here must not become an unhandled rejection.
+    if (!member.user) return;
+
+    // A bot leaving is never an applicant.
+    if (member.user.bot) return;
 
     const departed = { userId: member.user.id, tag: member.user.tag };
 

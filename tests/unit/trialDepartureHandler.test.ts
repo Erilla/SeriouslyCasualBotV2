@@ -57,4 +57,12 @@ describe('guildMemberRemove asks about trials as well as applications', () => {
 
     expect(mockedNotifyTrial).not.toHaveBeenCalled();
   });
+
+  it('does not throw when the gateway payload has no user', async () => {
+    const memberWithoutUser = { guild: { id: config.guildId } } as never;
+
+    await expect(handler.execute(memberWithoutUser)).resolves.toBeUndefined();
+    expect(notifyApplicantDeparture).not.toHaveBeenCalled();
+    expect(mockedNotifyTrial).not.toHaveBeenCalled();
+  });
 });

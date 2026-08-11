@@ -5,7 +5,7 @@ import { notifyApplicantDeparture } from '../applications/notifyApplicantDepartu
 import { notifyTrialDeparture } from '../trial-review/notifyTrialDeparture.js';
 
 export interface DepartureSweepResult {
-  /** Applications awaiting a decision that were checked. */
+  /** Rows checked in this pass. */
   checked: number;
   notified: number;
   /** Memberships Discord would not confirm either way; left for the next boot. */
@@ -22,7 +22,11 @@ type Membership = 'present' | 'departed' | 'unknown';
  * and notify overlords about someone still sitting in the server. Only Discord
  * explicitly saying the member or user does not exist counts as a departure.
  */
-async function membershipOf(guild: Guild, userId: string): Promise<Membership> {
+async function membershipOf(
+  guild: Guild,
+  userId: string,
+  domain: 'Applications' | 'Trials',
+): Promise<Membership> {
   try {
     await guild.members.fetch(userId);
     return 'present';
@@ -35,7 +39,7 @@ async function membershipOf(guild: Guild, userId: string): Promise<Membership> {
       return 'departed';
     }
     logger.warn(
-      'Applications',
+      domain,
       `Could not determine whether ${userId} is still in the guild; leaving it for the next boot: ${error}`,
     );
     return 'unknown';
@@ -43,15 +47,11 @@ async function membershipOf(guild: Guild, userId: string): Promise<Membership> {
 }
 
 /**
- * Catch up on applicants who left while this process was not running.
+ * The applications half of {@link sweepDepartures} — see there for the rationale.
  *
- * The gateway only delivers `guildMemberRemove` to a connected client, and every
- * deploy restarts this bot — so without this sweep those departures are lost
- * silently. It runs once per boot over applications awaiting a decision that
- * nobody has been notified about, which in practice is zero or a handful of rows,
- * so a per-member fetch is cheaper than pulling the whole member list.
- *
- * Never throws: a failure here must not stop startup.
+ * Runs once per boot over applications awaiting a decision that nobody has been
+ * notified about, which in practice is zero or a handful of rows, so a per-member
+ * fetch is cheaper than pulling the whole member list.
  */
 async function sweepApplications(guild: Guild): Promise<DepartureSweepResult> {
   const result: DepartureSweepResult = { checked: 0, notified: 0, unresolved: 0 };
@@ -68,7 +68,7 @@ async function sweepApplications(guild: Guild): Promise<DepartureSweepResult> {
     for (const application of pending) {
       result.checked += 1;
 
-      const membership = await membershipOf(guild, application.applicant_user_id);
+      const membership = await membershipOf(guild, application.applicant_user_id, 'Applications');
       if (membership === 'present') continue;
       if (membership === 'unknown') {
         result.unresolved += 1;
@@ -115,7 +115,7 @@ async function sweepTrials(guild: Guild): Promise<DepartureSweepResult> {
     for (const trial of pending) {
       result.checked += 1;
 
-      const membership = await membershipOf(guild, trial.discord_user_id);
+      const membership = await membershipOf(guild, trial.discord_user_id, 'Trials');
       if (membership === 'present') continue;
       if (membership === 'unknown') {
         result.unresolved += 1;

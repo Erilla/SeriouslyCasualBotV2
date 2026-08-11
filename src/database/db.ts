@@ -337,7 +337,11 @@ export function runMigrations(database: Database.Database): void {
         // Best-effort back-fill, application link first: it is the exact record of
         // who applied, where a character-name match is an inference. Both are
         // guarded on `discord_user_id IS NULL`, so this cannot clobber an id an
-        // officer has since set, and re-running is a no-op.
+        // officer has since set, and re-running is a no-op. Both are also scoped to
+        // `status = 'active'`: every read path already requires that status, and a
+        // closed trial's character may since have been renamed or transferred to a
+        // different player, so inferring an id for it would record a fact that is
+        // not actually true, even though nothing reads it.
         const hasApplications = database
           .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='applications'")
           .get();
@@ -346,7 +350,7 @@ export function runMigrations(database: Database.Database): void {
             UPDATE trials SET discord_user_id = (
               SELECT a.applicant_user_id FROM applications a WHERE a.id = trials.application_id
             )
-            WHERE discord_user_id IS NULL AND application_id IS NOT NULL
+            WHERE discord_user_id IS NULL AND application_id IS NOT NULL AND status = 'active'
           `);
         }
 
@@ -359,7 +363,7 @@ export function runMigrations(database: Database.Database): void {
               SELECT r.discord_user_id FROM raiders r
                WHERE r.character_name = trials.character_name AND r.discord_user_id IS NOT NULL
             )
-            WHERE discord_user_id IS NULL
+            WHERE discord_user_id IS NULL AND status = 'active'
           `);
         }
       }
