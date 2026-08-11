@@ -1,6 +1,6 @@
 import { logger } from '../../../services/logger.js';
 import { mapLimit } from '../../../utils/concurrency.js';
-import { normalizeRealmSlug } from '../../../services/blizzard.js';
+import { foldRealmKey } from '../../../services/blizzard.js';
 import { addFinding, getFindings, setDiscordStatus } from '../intel/jobStore.js';
 import type { RaiderIoCharacter } from '../characterLinks.js';
 import {
@@ -19,11 +19,11 @@ const sleep = (ms: number): Promise<void> =>
 
 /**
  * The sources disagree on realm format — findings hold a slug, and Raider.IO's
- * `main_character` yields whatever its path carried — so both sides are
- * normalised before they are compared, exactly as discoverAlts does.
+ * `main_character` yields whatever its path carried — so both sides are folded to the
+ * one spelling every vocabulary agrees on before they are compared, exactly as
+ * discoverAlts does. See foldRealmKey for why folding rather than normalising.
  */
-const key = (name: string, realm: string): string =>
-  `${name}-${normalizeRealmSlug(realm)}`.toLowerCase();
+const key = (name: string, realm: string): string => `${name}-${foldRealmKey(realm)}`.toLowerCase();
 
 /**
  * Compare each found character's `discord_profile` against the applicant's Discord

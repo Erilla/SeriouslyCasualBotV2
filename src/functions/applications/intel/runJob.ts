@@ -420,8 +420,23 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
         // characters it has crawled. The sweep is roster-driven, so this doubles
         // its reach for one extra request per guild. The GUILD's own realm is
         // used here, never the character's.
-        const { getBlizzardGuildRoster } = await import('../../../services/blizzard.js');
-        return getBlizzardGuildRoster(applicant.region, guild.realm, guild.name);
+        const { getBlizzardGuildRoster, resolveRaiderIoRealm } =
+          await import('../../../services/blizzard.js');
+        const roster = await getBlizzardGuildRoster(applicant.region, guild.realm, guild.name);
+
+        // This is the ONE place a Blizzard realm slug enters the sweep, so it is the
+        // one place to translate it. Every member's realm arrives as Blizzard spells
+        // it, and Blizzard deletes a hyphen Raider.IO keeps — so a match on
+        // Azjol-Nerub was recorded as `azjolnerub`, which Raider.IO cannot read back,
+        // costing that finding its class and guild and rendering a dead link.
+        //
+        // A whole roster shares a handful of realms, so this is memoised per call: the
+        // index lookup is cached for a week, but 600 members should not each await it.
+        const translated = new Map<string, string>();
+        for (const realm of new Set(roster.map((m) => m.realm))) {
+          translated.set(realm, await resolveRaiderIoRealm(applicant.region, realm));
+        }
+        return roster.map((m) => ({ ...m, realm: translated.get(m.realm) ?? m.realm }));
       },
       getAnchorFingerprint: getAnchorFingerprintForRun,
       getCharacterFingerprint: blizzard.getCharacterFingerprint,

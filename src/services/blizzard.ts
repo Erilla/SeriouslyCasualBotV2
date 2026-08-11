@@ -44,16 +44,11 @@ function ruleRealmFallback(realm: string): string {
   return realm.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
-/**
- * Compatibility normalizer for the synchronous alt-discovery key paths. New API
- * callers must use resolveRealmSlug so display names and existing slugs are
- * disambiguated by Blizzard's realm index.
- *
- * @deprecated Pass canonical resolved realm slugs through the async lifecycle.
- */
-export function normalizeRealmSlug(realm: string): string {
-  return ruleRealmFallback(realm);
-}
+// `normalizeRealmSlug` (space-to-hyphen, lowercase) lived here as the synchronous
+// stand-in for the alt sweep's keys and was removed with #88: it was neither a key
+// that the three realm vocabularies agreed on nor a slug any API accepts, and being
+// exported it kept getting reached for. Use foldRealmKey for identity keys,
+// resolveRealmSlug for Blizzard calls, raiderIoRealmSlug for Raider.IO ones.
 
 /** Blizzard's guild-name slug rule: punctuation is removed, spaces become hyphens. */
 export function guildNameSlug(name: string): string {
@@ -78,6 +73,52 @@ function foldRealm(value: string): string {
     .replace(/[^\p{L}\p{N}]/gu, '');
 }
 
+/**
+ * The one spelling of a realm that every vocabulary agrees on — letters and digits
+ * only, accents folded away.
+ *
+ * Three vocabularies reach the alt sweep and none of them is a superset of the
+ * others: Raider.IO slugs from URLs and its APIs (`azjol-nerub`, `zuljin`), Raider.IO
+ * *display names* from claimed characters and guild lookups (`Azjol-Nerub`,
+ * `Zul'jin`), and Blizzard slugs from guild rosters (`azjolnerub`, `zuljin`).
+ * Blizzard deletes a hyphen it reads as part of the name where Raider.IO keeps it, so
+ * no rule rewrites one into another without the realm index — but discarding every
+ * separator collapses all three, which is all an identity key needs.
+ *
+ * Verified against Blizzard's realm index for eu/us/kr/tw (798 realms): the display
+ * name and the slug fold to the same value for every realm, and no two distinct
+ * realms share a fold. So this is safe to key on and cannot merge two real realms.
+ *
+ * For keys only. It is not a slug and must never be sent to an API — see
+ * resolveRealmSlug for Blizzard's vocabulary and raiderIoRealmSlug for Raider.IO's.
+ */
+export function foldRealmKey(realm: string): string {
+  return foldRealm(realm);
+}
+
+/**
+ * Raider.IO's realm vocabulary, derived from a realm's display name.
+ *
+ * Differs from Blizzard's slug in one respect that matters: a literal hyphen in the
+ * name survives (`Azjol-Nerub` -> `azjol-nerub`, where Blizzard gives `azjolnerub`),
+ * and accents are kept (`Aggra (Português)` -> `aggra-português`). Apostrophes and
+ * brackets are dropped and spaces become hyphens, as in both vocabularies.
+ *
+ * Across eu/us/kr/tw the only *live* realms where this disagrees with the Blizzard
+ * slug are Azjol-Nerub (eu and us) and Arak-arahm (eu); the rest of the divergence is
+ * Blizzard's internal test realms (`*-INST`, `GMSupport …`, `zzz_…`). Small, but a
+ * finding stored under `azjolnerub` cannot be read back from Raider.IO at all, which
+ * costs it its class and guild.
+ */
+export function raiderIoRealmSlug(displayName: string): string {
+  return displayName
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
 function realmIndexLocale(region: string): string {
   if (region === 'kr') return 'ko_KR';
   if (region === 'tw') return 'zh_TW';
@@ -95,31 +136,49 @@ async function fetchRealmIndex(region: string): Promise<RealmIndex> {
   });
 }
 
-/** Resolve either a realm display name or an API slug to Blizzard's canonical slug. */
-export async function resolveRealmSlug(region: string, realm: string): Promise<string> {
-  const normalizedRegion = region.trim().toLocaleLowerCase();
-  const fallback = ruleRealmFallback(realm);
+/**
+ * The realm index entry for any spelling of a realm — display name, Blizzard slug or
+ * Raider.IO slug — matched on the fold the three vocabularies share.
+ *
+ * Returns null when the index cannot be read or holds no such realm; both are the
+ * caller's cue to fall back to a rule rather than to fail, since a realm the index
+ * does not know is still very often usable as given.
+ */
+async function findRealm(
+  region: string,
+  realm: string,
+): Promise<{ name?: string; slug?: string } | null> {
   let index: RealmIndex;
   try {
     index = await getCachedOrFetch<RealmIndex>(
-      `realm-index:${normalizedRegion}`,
+      `realm-index:${region}`,
       ttl(REALM_INDEX_TTL_MS),
-      () => fetchRealmIndex(normalizedRegion),
+      () => fetchRealmIndex(region),
     );
   } catch (error) {
     logger.warn(
       'Blizzard',
-      `Could not fetch ${normalizedRegion} realm index; using fallback for ${realm}: ${error}`,
+      `Could not fetch ${region} realm index; using fallback for ${realm}: ${error}`,
     );
-    return fallback;
+    return null;
   }
 
   const folded = foldRealm(realm);
-  const match = index.realms?.find(
-    (candidate) =>
-      Boolean(candidate.slug) &&
-      (foldRealm(candidate.name ?? '') === folded || foldRealm(candidate.slug ?? '') === folded),
+  return (
+    index.realms?.find(
+      (candidate) =>
+        Boolean(candidate.slug) &&
+        (foldRealm(candidate.name ?? '') === folded || foldRealm(candidate.slug ?? '') === folded),
+    ) ?? null
   );
+}
+
+/** Resolve either a realm display name or an API slug to Blizzard's canonical slug. */
+export async function resolveRealmSlug(region: string, realm: string): Promise<string> {
+  const normalizedRegion = region.trim().toLocaleLowerCase();
+  const fallback = ruleRealmFallback(realm);
+
+  const match = await findRealm(normalizedRegion, realm);
   if (match?.slug) return match.slug;
 
   logger.warn(
@@ -127,6 +186,28 @@ export async function resolveRealmSlug(region: string, realm: string): Promise<s
     `Realm ${realm} was not found in the ${normalizedRegion} realm index; using ${fallback}`,
   );
   return fallback;
+}
+
+/**
+ * Resolve any spelling of a realm to **Raider.IO's** slug, via the display name
+ * Blizzard's realm index holds for it.
+ *
+ * This is the reverse direction from resolveRealmSlug, and it exists because a
+ * Blizzard slug cannot be rewritten into a Raider.IO one by rule: `azjolnerub` gives
+ * no clue where the hyphen belonged. The index supplies the display name, and
+ * raiderIoRealmSlug re-derives the Raider.IO spelling from that.
+ *
+ * Falls back to the input, lowercased and space-hyphenated: for every realm but the
+ * handful where the vocabularies diverge, a Blizzard slug already *is* the Raider.IO
+ * slug, so an unreadable index costs nothing on the common path.
+ */
+export async function resolveRaiderIoRealm(region: string, realm: string): Promise<string> {
+  const normalizedRegion = region.trim().toLocaleLowerCase();
+
+  const match = await findRealm(normalizedRegion, realm);
+  if (match?.name) return raiderIoRealmSlug(match.name);
+
+  return ruleRealmFallback(realm);
 }
 
 function getAccessToken(): Promise<string> {

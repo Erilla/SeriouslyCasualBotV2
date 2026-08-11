@@ -78,6 +78,52 @@ describe('guildNameSlug', () => {
   });
 });
 
+describe('foldRealmKey', () => {
+  // The three vocabularies that reach the alt sweep, for the realms where they
+  // disagree. Each group must fold to one value or a character lands on two rows.
+  it.each([
+    ['Azjol-Nerub', ['azjol-nerub', 'azjolnerub', 'Azjol-Nerub'], 'azjolnerub'],
+    ['Zul’jin', ["zul'jin", 'zuljin', "Zul'jin"], 'zuljin'],
+    ['Aggra', ['aggra-português', 'aggra-portugues', 'Aggra (Português)'], 'aggraportugues'],
+    ['Tarren Mill', ['tarren-mill', 'Tarren Mill'], 'tarrenmill'],
+  ])('folds every spelling of %s to one key', async (_realm, spellings, expected) => {
+    const { foldRealmKey } = await import('../../src/services/blizzard.js');
+
+    expect(spellings.map(foldRealmKey)).toEqual(spellings.map(() => expected));
+  });
+
+  it('keeps genuinely different realms apart', async () => {
+    const { foldRealmKey } = await import('../../src/services/blizzard.js');
+
+    expect(foldRealmKey('Arak-arahm')).not.toBe(foldRealmKey('Azjol-Nerub'));
+    expect(foldRealmKey("Vol'jin")).not.toBe(foldRealmKey("Zul'jin"));
+  });
+});
+
+describe('raiderIoRealmSlug', () => {
+  it.each([
+    // Raider.IO keeps a literal hyphen where Blizzard deletes it.
+    ['Azjol-Nerub', 'azjol-nerub'],
+    ['Arak-arahm', 'arak-arahm'],
+    // Apostrophes and brackets go; accents and spaces-as-hyphens stay.
+    ["Zul'jin", 'zuljin'],
+    ['Aggra (Português)', 'aggra-português'],
+    ['Tarren Mill', 'tarren-mill'],
+  ])('derives Raider.IO’s slug for %s', async (displayName, expected) => {
+    const { raiderIoRealmSlug } = await import('../../src/services/blizzard.js');
+
+    expect(raiderIoRealmSlug(displayName)).toBe(expected);
+  });
+
+  it('is idempotent, so a realm that is already a Raider.IO slug survives it', async () => {
+    const { raiderIoRealmSlug } = await import('../../src/services/blizzard.js');
+
+    for (const slug of ['azjol-nerub', 'zuljin', 'aggra-português', 'tarren-mill']) {
+      expect(raiderIoRealmSlug(slug)).toBe(slug);
+    }
+  });
+});
+
 describe('resolveRealmSlug', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -188,6 +234,90 @@ describe('resolveRealmSlug', () => {
     expect(
       getDatabase().prepare('SELECT key FROM api_cache WHERE key = ?').get('realm-index:eu'),
     ).toEqual({ key: 'realm-index:eu' });
+  });
+});
+
+describe('resolveRaiderIoRealm', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubRequiredEnv();
+    createTables(getDatabase(':memory:'));
+  });
+
+  afterEach(() => {
+    closeDatabase();
+    globalThis.fetch = originalFetch;
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  function stubRealmIndex(): void {
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const href = String(url);
+      if (href === 'https://oauth.battle.net/token') {
+        return Promise.resolve(mockResponse({ access_token: 'token', expires_in: 3600 }));
+      }
+      return Promise.resolve(mockResponse(realmIndex));
+    }) as typeof globalThis.fetch;
+  }
+
+  it.each([
+    // The case that costs a finding its class and guild: a Blizzard roster hands over
+    // `azjolnerub`, and Raider.IO only answers to `azjol-nerub`.
+    ['eu', 'azjolnerub', 'azjol-nerub'],
+    ['eu', 'Azjol-Nerub', 'azjol-nerub'],
+    ['eu', 'azjol-nerub', 'azjol-nerub'],
+    // Realms where the two vocabularies already agree must come back unchanged.
+    ['eu', 'tarren-mill', 'tarren-mill'],
+    ['us', 'zuljin', 'zuljin'],
+    ['eu', 'aggra-português', 'aggra-português'],
+  ])('resolves %s %s to Raider.IO’s %s', async (region, input, expected) => {
+    stubRealmIndex();
+    const { resolveRaiderIoRealm } = await import('../../src/services/blizzard.js');
+
+    await expect(resolveRaiderIoRealm(region, input)).resolves.toBe(expected);
+  });
+
+  it('falls back to the input when the realm index has no such realm', async () => {
+    stubRealmIndex();
+    const { resolveRaiderIoRealm } = await import('../../src/services/blizzard.js');
+
+    // Unknown realms are usually usable as given, so this must not fail the sweep.
+    await expect(resolveRaiderIoRealm('eu', 'Unlisted Realm')).resolves.toBe('unlisted-realm');
+  });
+
+  it('falls back to the input when the realm index cannot be fetched', async () => {
+    globalThis.fetch = vi.fn((url: string | URL | Request) => {
+      const href = String(url);
+      if (href === 'https://oauth.battle.net/token') {
+        return Promise.resolve(mockResponse({ access_token: 'token', expires_in: 3600 }));
+      }
+      return Promise.resolve({
+        ...mockResponse({ message: 'forbidden' }),
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+      });
+    }) as typeof globalThis.fetch;
+
+    const { resolveRaiderIoRealm } = await import('../../src/services/blizzard.js');
+
+    await expect(resolveRaiderIoRealm('eu', 'tarren-mill')).resolves.toBe('tarren-mill');
+    expect(logger.warn).toHaveBeenCalledWith('Blizzard', expect.stringContaining('realm index'));
+  });
+
+  it('shares the cached realm index with resolveRealmSlug rather than fetching its own', async () => {
+    stubRealmIndex();
+    const { resolveRealmSlug, resolveRaiderIoRealm } =
+      await import('../../src/services/blizzard.js');
+
+    await resolveRealmSlug('eu', 'Azjol-Nerub');
+    await resolveRaiderIoRealm('eu', 'azjolnerub');
+
+    const indexRequests = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([url]) => String(url).includes('/data/wow/realm/index'));
+    expect(indexRequests).toHaveLength(1);
   });
 });
 
