@@ -31,9 +31,15 @@ const MOCK_ANSWERS = [
   "Thanks for considering my application — I'm keen to contribute and learn from the team.",
 ];
 
+/**
+ * Every status a real application can hold, and nothing else. `'active'` is the
+ * awaiting-decision state (`submitApplication.ts`); the seeder used to write
+ * `'submitted'`, which production never writes, so every query looking for an
+ * undecided application skipped the seeded row — see #95.
+ */
 export type SeededApplicationStatus =
   | 'in_progress'
-  | 'submitted'
+  | 'active'
   | 'accepted'
   | 'rejected'
   | 'abandoned';
@@ -44,7 +50,7 @@ export interface SeedApplicationOptions {
   status?: SeededApplicationStatus;
   /** Number of answers to insert. Defaults to all questions. */
   answerCount?: number;
-  /** Whether to insert the 2 mock votes. Defaults to true for `submitted`/`accepted`/`rejected`; false for `in_progress`/`abandoned`. */
+  /** Whether to insert the 2 mock votes. Defaults to true for `active`/`accepted`/`rejected`; false for `in_progress`/`abandoned`. */
   includeVotes?: boolean;
 }
 
@@ -66,7 +72,7 @@ export function seedApplication(
 ): SeedApplicationResult {
   const characterName = options.characterName ?? 'Testcharacter';
   const userId = options.userId ?? 'mock-user-id-001';
-  const status = options.status ?? 'submitted';
+  const status = options.status ?? 'active';
   const includeVotes = options.includeVotes ?? (status !== 'in_progress' && status !== 'abandoned');
 
   const tx = db.transaction((): SeedApplicationResult => {

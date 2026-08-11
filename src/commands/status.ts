@@ -84,7 +84,7 @@ export default {
       .get() as { total: number; linked: number };
     const activeApps = db
       .prepare(
-        "SELECT COUNT(*) as count FROM applications WHERE status IN ('in_progress', 'submitted', 'active')",
+        "SELECT COUNT(*) as count FROM applications WHERE status IN ('in_progress', 'active')",
       )
       .get() as { count: number };
     const activeTrials = db

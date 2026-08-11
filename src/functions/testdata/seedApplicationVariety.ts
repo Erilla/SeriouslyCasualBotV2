@@ -20,21 +20,21 @@ const VARIETY: VarietySpec[] = [
     userId: 'mock-applicant-inprogress',
     answerCount: 3,
   },
-  { status: 'submitted', characterName: 'SubmittedChar', userId: 'mock-applicant-submitted' },
+  { status: 'active', characterName: 'ActiveChar', userId: 'mock-applicant-active' },
   { status: 'accepted', characterName: 'AcceptedChar', userId: 'mock-applicant-accepted' },
   { status: 'rejected', characterName: 'RejectedChar', userId: 'mock-applicant-rejected' },
   { status: 'abandoned', characterName: 'AbandonedChar', userId: 'mock-applicant-abandoned' },
 ];
 
 /**
- * Seeds 5 applications — one per status (in_progress, submitted, accepted, rejected, abandoned).
+ * Seeds 5 applications — one per status (in_progress, active, accepted, rejected, abandoned).
  * Useful for testing /applications view_pending, accept/reject flows, and DM resume.
  */
 export function seedApplicationVariety(db: Database.Database): SeedApplicationVarietyResult {
   const applicationIds: number[] = [];
   const byStatus = {
     in_progress: 0,
-    submitted: 0,
+    active: 0,
     accepted: 0,
     rejected: 0,
     abandoned: 0,

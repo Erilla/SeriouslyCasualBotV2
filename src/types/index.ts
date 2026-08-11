@@ -68,7 +68,7 @@ export interface ApplicationRow {
   id: number;
   character_name: string | null;
   applicant_user_id: string;
-  status: 'in_progress' | 'submitted' | 'active' | 'accepted' | 'rejected' | 'abandoned';
+  status: 'in_progress' | 'active' | 'accepted' | 'rejected' | 'abandoned';
   current_question_id: number | null;
   channel_id: string | null;
   forum_post_id: string | null;

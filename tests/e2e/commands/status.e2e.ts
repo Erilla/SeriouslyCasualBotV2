@@ -103,9 +103,9 @@ describe('/status', () => {
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 
-    // Seeded application has status 'submitted', which is included in the active set.
+    // Seeded application has status 'active', which is included in the active set.
     const dbRow = queryOne<{ count: number }>(
-      "SELECT COUNT(*) as count FROM applications WHERE status IN ('in_progress', 'submitted', 'active')",
+      "SELECT COUNT(*) as count FROM applications WHERE status IN ('in_progress', 'active')",
     );
     expect(dbRow!.count).toBe(1);
 

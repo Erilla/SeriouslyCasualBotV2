@@ -135,7 +135,7 @@ describe('seedApplicationQuestions', () => {
 // ─── seedApplication ─────────────────────────────────────────────────────────
 
 describe('seedApplication', () => {
-  it('inserts 1 application with status submitted', () => {
+  it("inserts 1 application with status 'active' — the awaiting-decision state production writes", () => {
     const result = seedApplication(db);
 
     const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(result.applicationId) as {
@@ -144,7 +144,7 @@ describe('seedApplication', () => {
     };
 
     expect(app).toBeDefined();
-    expect(app.status).toBe('submitted');
+    expect(app.status).toBe('active');
     expect(app.character_name).toBe('Testcharacter');
   });
 
@@ -263,7 +263,7 @@ describe('seedApplicationVariety', () => {
     const byStatus = Object.fromEntries(rows.map((r) => [r.status, r.count]));
 
     expect(byStatus.in_progress).toBe(1);
-    expect(byStatus.submitted).toBe(1);
+    expect(byStatus.active).toBe(1);
     expect(byStatus.accepted).toBe(1);
     expect(byStatus.rejected).toBe(1);
     expect(byStatus.abandoned).toBe(1);
