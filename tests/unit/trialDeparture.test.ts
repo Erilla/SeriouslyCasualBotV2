@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ChannelType } from 'discord.js';
 import {
   buildDepartureNotification,
   buildDepartureAuditDetail,
@@ -64,9 +65,10 @@ describe('trial departure copy', () => {
 
 // ── notifyTrialDeparture ──────────────────────────────────────────────────────
 
-/** A guild whose one thread records what was sent to it. */
+/** A guild whose one thread records what was sent to it. A trial review post is a
+ *  forum thread, i.e. `ChannelType.PublicThread` — the type `asSendable` narrows on. */
 function fakeGuild(send: (options: unknown) => Promise<void>) {
-  const thread = { id: 'THREAD', isTextBased: () => true, send };
+  const thread = { id: 'THREAD', type: ChannelType.PublicThread, send };
   return {
     channels: { cache: new Map([['THREAD', thread]]), fetch: async () => thread },
   } as never;

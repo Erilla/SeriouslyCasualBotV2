@@ -2,6 +2,7 @@ import type { Guild } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { auditNotice } from '../../services/auditLog.js';
+import { asSendable } from '../../utils.js';
 import { getOverlords } from '../raids/overlords.js';
 import {
   TRIAL_DEPARTURE_AUDIT_TITLE,
@@ -99,7 +100,8 @@ export async function notifyTrialDeparture(
   const channel =
     guild.channels.cache.get(trial.thread_id) ??
     (await guild.channels.fetch(trial.thread_id).catch(() => null));
-  if (!channel || !channel.isTextBased()) {
+  const thread = asSendable(channel);
+  if (!thread) {
     logger.warn(
       'Trials',
       `Trial #${trial.id}: thread ${trial.thread_id} is missing or not sendable`,
@@ -109,7 +111,7 @@ export async function notifyTrialDeparture(
 
   try {
     const overlordIds = getOverlords().map((overlord) => overlord.user_id);
-    await channel.send(buildDepartureNotification(overlordIds, facts));
+    await thread.send(buildDepartureNotification(overlordIds, facts));
   } catch (error) {
     logger.error(
       'Trials',
