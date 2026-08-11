@@ -12,6 +12,7 @@ import { HttpError } from '../../services/httpClient.js';
 import type { AchievementsManualRow } from '../../types/index.js';
 import { getCeOverrideCutoff } from './ceOverrides.js';
 import { determineCE } from './determineCE.js';
+import { staticDataFreshness } from './staticDataFreshness.js';
 
 // ─── Expansion names (moved from updateAchievements.ts) ─────────
 
@@ -81,21 +82,7 @@ export { determineCE };
 
 // ─── Cache freshness for static data ────────────────────────────
 
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * Static data for an expansion is immutable once every raid's EU end date is
- * in the past; while any raid is open-ended it gets a 7-day TTL. Empty
- * payloads (expansion doesn't exist yet) are never fresh.
- */
-export function staticDataFreshness(value: RaidStaticData, fetchedAt: Date): boolean {
-  const raids = value.raids ?? [];
-  if (raids.length === 0) return false;
-  const now = Date.now();
-  const allEnded = raids.every((r) => r.ends.eu !== null && new Date(r.ends.eu).getTime() < now);
-  if (allEnded) return true;
-  return now - fetchedAt.getTime() < SEVEN_DAYS_MS;
-}
+export { staticDataFreshness };
 
 // ─── Icons ──────────────────────────────────────────────────────
 

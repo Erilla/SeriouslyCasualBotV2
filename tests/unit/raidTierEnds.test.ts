@@ -92,6 +92,54 @@ describe('getRaidTierEnds', () => {
     expect(mockedGetRaidStaticData).toHaveBeenCalledTimes(3);
   });
 
+  it('serves a second run from the cache instead of refetching every tier', async () => {
+    mockedGetRaidStaticData.mockImplementation(async (expansion: number) =>
+      expansion === 9 ? { raids: [raid('nerubar-palace', null)] } : { raids: [] },
+    );
+
+    await getRaidTierEnds();
+    const afterFirst = mockedGetRaidStaticData.mock.calls.length;
+    await getRaidTierEnds();
+
+    // Only the terminator is asked again: an empty payload is never fresh, so a
+    // newly published expansion is still picked up.
+    expect(mockedGetRaidStaticData.mock.calls.length).toBe(afterFirst + 1);
+  });
+
+  it('shares the achievements panel’s cache entry rather than storing its own', async () => {
+    mockedGetRaidStaticData.mockImplementation(async (expansion: number) =>
+      expansion === 9 ? { raids: [raid('nerubar-palace', null)] } : { raids: [] },
+    );
+
+    await getRaidTierEnds();
+
+    const keys = getDatabase()
+      .prepare("SELECT key FROM api_cache WHERE key LIKE 'static-data:%'")
+      .all() as { key: string }[];
+    // The terminator's empty payload is stored too, which costs nothing: it is
+    // never fresh, so it is always refetched.
+    expect(keys.map((k) => k.key)).toContain('static-data:9');
+  });
+
+  it('re-reads the officer override even when the tier data is cached', async () => {
+    // The static data is immutable; an override is not. Caching the raid payload
+    // must never freeze a cutoff an officer changes afterwards.
+    mockedGetRaidStaticData.mockImplementation(async (expansion: number) =>
+      expansion === 9
+        ? { raids: [raid('nerubar-palace', '2025-03-04T00:00:00.000Z')] }
+        : { raids: [] },
+    );
+
+    await getRaidTierEnds();
+    getDatabase()
+      .prepare('INSERT INTO achievement_ce_overrides (raid_slug, cutoff_at) VALUES (?, ?)')
+      .run('nerubar-palace', '2025-02-01T00:00:00.000Z');
+
+    const ends = await getRaidTierEnds();
+
+    expect(ends.get('nerubar-palace')).toBe('2025-02-01T00:00:00.000Z');
+  });
+
   it('returns what it gathered when an expansion lookup throws', async () => {
     // Guild history must still publish if Raider.IO is unavailable.
     mockedGetRaidStaticData.mockImplementation(async (expansion: number) => {

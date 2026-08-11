@@ -1,5 +1,7 @@
 import { getRaidStaticData } from '../../../services/raiderio.js';
+import { getCachedOrFetch } from '../../../services/apiCache.js';
 import { getCeOverrideCutoff } from '../../guild-info/ceOverrides.js';
+import { staticDataFreshness } from '../../guild-info/staticDataFreshness.js';
 import { logger } from '../../../services/logger.js';
 
 /**
@@ -39,7 +41,18 @@ export async function getRaidTierEnds(): Promise<Map<string, string | null>> {
   for (let expansion = START_EXPANSION; expansion < START_EXPANSION + MAX_EXPANSIONS; expansion++) {
     let raids;
     try {
-      raids = (await getRaidStaticData(expansion)).raids ?? [];
+      // The SAME cache key and freshness rule the achievements panel uses, so
+      // the two share entries rather than each storing a copy — and an intel
+      // sweep costs no Raider.IO request at all for a tier either of them has
+      // already fetched. The payload is immutable once every raid has ended;
+      // until then it carries a 7-day TTL, and an empty payload is never fresh,
+      // so a newly published expansion is still picked up.
+      raids =
+        (
+          await getCachedOrFetch(`static-data:${expansion}`, staticDataFreshness, () =>
+            getRaidStaticData(expansion),
+          )
+        ).raids ?? [];
     } catch {
       // An unknown expansion id is how this walk ends, not a fault: the caller
       // keeps whatever earlier expansions produced.
