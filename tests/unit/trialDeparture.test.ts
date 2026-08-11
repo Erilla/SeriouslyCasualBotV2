@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ChannelType } from 'discord.js';
+import { ChannelType, DiscordAPIError, RESTJSONErrorCodes } from 'discord.js';
 import {
   buildDepartureNotification,
   buildDepartureAuditDetail,
@@ -16,6 +16,7 @@ vi.mock('../../src/functions/raids/overlords.js', () => ({
 
 import { auditNotice } from '../../src/services/auditLog.js';
 import { notifyTrialDeparture } from '../../src/functions/trial-review/notifyTrialDeparture.js';
+import { sweepDepartures } from '../../src/functions/departures/sweepDepartures.js';
 
 const trialFacts: DepartureFacts = {
   subject: 'trial',
@@ -205,5 +206,85 @@ describe('notifyTrialDeparture', () => {
       .prepare('SELECT departed_notified_at FROM trials WHERE id = ?')
       .get(trialId) as { departed_notified_at: string | null };
     expect(row.departed_notified_at).not.toBeNull();
+  });
+});
+
+// ── sweepDepartures — the trials pass ────────────────────────────────────────
+
+/** A guild where the named ids are gone and everyone else is still present. */
+function fakeSweepGuild(departedIds: string[], send = vi.fn(async () => undefined)) {
+  const thread = { id: 'THREAD', type: ChannelType.PublicThread, isTextBased: () => true, send };
+  return {
+    id: 'guild',
+    channels: { cache: new Map([['THREAD', thread]]), fetch: async () => thread },
+    client: { users: { fetch: async (id: string) => ({ tag: `tag-${id}` }) } },
+    members: {
+      fetch: async (id: string) => {
+        if (departedIds.includes(id)) {
+          throw new DiscordAPIError(
+            { code: RESTJSONErrorCodes.UnknownMember, message: 'Unknown Member' } as never,
+            RESTJSONErrorCodes.UnknownMember as never,
+            404,
+            'GET',
+            '',
+            {},
+          );
+        }
+        return { id };
+      },
+    },
+  } as never;
+}
+
+describe('sweepDepartures — the trials pass', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createTables(getDatabase(':memory:'));
+  });
+  afterEach(() => closeDatabase());
+
+  it('notifies for an active trial whose user is gone, and stamps it', async () => {
+    const trialId = seedTrial({ userId: 'gone' });
+
+    const result = await sweepDepartures(fakeSweepGuild(['gone']));
+
+    expect(result.trials).toEqual({ checked: 1, notified: 1, unresolved: 0 });
+    const row = getDatabase()
+      .prepare('SELECT departed_notified_at FROM trials WHERE id = ?')
+      .get(trialId) as { departed_notified_at: string | null };
+    expect(row.departed_notified_at).not.toBeNull();
+  });
+
+  it('leaves a trial alone when its user is still in the guild', async () => {
+    seedTrial({ userId: 'present' });
+
+    const result = await sweepDepartures(fakeSweepGuild([]));
+
+    expect(result.trials).toEqual({ checked: 1, notified: 0, unresolved: 0 });
+  });
+
+  it('does not check a trial with no linked Discord user at all', async () => {
+    seedTrial({ userId: null });
+
+    const result = await sweepDepartures(fakeSweepGuild(['gone']));
+
+    expect(result.trials.checked).toBe(0);
+  });
+
+  it('does not re-check a trial already notified about', async () => {
+    seedTrial({ userId: 'gone', notifiedAt: '2026-08-10 10:00:00' });
+
+    const result = await sweepDepartures(fakeSweepGuild(['gone']));
+
+    expect(result.trials).toEqual({ checked: 0, notified: 0, unresolved: 0 });
+  });
+
+  it('reports the two subjects separately', async () => {
+    const result = await sweepDepartures(fakeSweepGuild([]));
+
+    expect(result).toEqual({
+      applications: { checked: 0, notified: 0, unresolved: 0 },
+      trials: { checked: 0, notified: 0, unresolved: 0 },
+    });
   });
 });

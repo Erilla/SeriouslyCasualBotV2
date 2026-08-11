@@ -18,8 +18,7 @@ vi.mock('../../src/services/auditLog.js', () => ({
   setAuditChannel: vi.fn(),
 }));
 
-const { sweepDepartedApplicants } =
-  await import('../../src/functions/applications/sweepDepartedApplicants.js');
+const { sweepDepartures } = await import('../../src/functions/departures/sweepDepartures.js');
 
 /** The error Discord returns for a user who is not a member of the guild. */
 function unknownMember(): DiscordAPIError {
@@ -93,7 +92,7 @@ const notifiedAt = (id: number): string | null =>
     }
   ).departed_notified_at;
 
-describe('sweepDepartedApplicants', () => {
+describe('sweepDepartures — the applications pass', () => {
   beforeEach(() => {
     createTables(getDatabase(':memory:'));
     getDatabase().prepare("INSERT INTO overlords (name, user_id) VALUES ('Bob', 'O1')").run();
@@ -104,7 +103,7 @@ describe('sweepDepartedApplicants', () => {
     seed([{ id: 1, userId: 'U1' }]);
     const { guild, send } = guildWith({ members: { U1: 'gone' } });
 
-    const result = await sweepDepartedApplicants(guild);
+    const result = (await sweepDepartures(guild)).applications;
 
     expect(result).toEqual({ checked: 1, notified: 1, unresolved: 0 });
     expect(send).toHaveBeenCalledTimes(1);
@@ -114,10 +113,10 @@ describe('sweepDepartedApplicants', () => {
   it('does not notify twice across two boots', async () => {
     seed([{ id: 1, userId: 'U1' }]);
     const first = guildWith({ members: { U1: 'gone' } });
-    await sweepDepartedApplicants(first.guild);
+    await sweepDepartures(first.guild);
 
     const second = guildWith({ members: { U1: 'gone' } });
-    const result = await sweepDepartedApplicants(second.guild);
+    const result = (await sweepDepartures(second.guild)).applications;
 
     expect(result).toEqual({ checked: 0, notified: 0, unresolved: 0 });
     expect(second.send).not.toHaveBeenCalled();
@@ -127,7 +126,7 @@ describe('sweepDepartedApplicants', () => {
     seed([{ id: 1, userId: 'U1' }]);
     const { guild, send } = guildWith({ members: { U1: 'present' } });
 
-    const result = await sweepDepartedApplicants(guild);
+    const result = (await sweepDepartures(guild)).applications;
 
     expect(result).toEqual({ checked: 1, notified: 0, unresolved: 0 });
     expect(send).not.toHaveBeenCalled();
@@ -138,7 +137,7 @@ describe('sweepDepartedApplicants', () => {
     seed([{ id: 1, userId: 'U1' }]);
     const { guild, send } = guildWith({ members: { U1: 'error' } });
 
-    const result = await sweepDepartedApplicants(guild);
+    const result = (await sweepDepartures(guild)).applications;
 
     expect(result).toEqual({ checked: 1, notified: 0, unresolved: 1 });
     expect(send).not.toHaveBeenCalled();
@@ -155,7 +154,7 @@ describe('sweepDepartedApplicants', () => {
     ]);
     const { guild, send } = guildWith({ members: {} });
 
-    const result = await sweepDepartedApplicants(guild);
+    const result = (await sweepDepartures(guild)).applications;
 
     expect(result).toEqual({ checked: 0, notified: 0, unresolved: 0 });
     expect(send).not.toHaveBeenCalled();
@@ -168,7 +167,7 @@ describe('sweepDepartedApplicants', () => {
     ]);
     const { guild, send } = guildWith({ members: { U1: 'gone', U2: 'gone' } });
 
-    const result = await sweepDepartedApplicants(guild);
+    const result = (await sweepDepartures(guild)).applications;
 
     expect(result).toEqual({ checked: 2, notified: 1, unresolved: 0 });
     expect(send).toHaveBeenCalledTimes(1);
@@ -189,10 +188,9 @@ describe('sweepDepartedApplicants', () => {
 
     // Classified unresolved rather than swallowed: the row stays unstamped, so a
     // later boot with a working client still reports the departure.
-    await expect(sweepDepartedApplicants(broken)).resolves.toEqual({
-      checked: 1,
-      notified: 0,
-      unresolved: 1,
+    await expect(sweepDepartures(broken)).resolves.toEqual({
+      applications: { checked: 1, notified: 0, unresolved: 1 },
+      trials: { checked: 0, notified: 0, unresolved: 0 },
     });
     expect(notifiedAt(1)).toBeNull();
   });
