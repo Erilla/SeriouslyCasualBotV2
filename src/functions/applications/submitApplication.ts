@@ -4,6 +4,7 @@ import {
   type TextChannel,
   type Guild,
   ChannelType,
+  MessageFlags,
   OverwriteType,
   PermissionFlagsBits,
 } from 'discord.js';
@@ -12,7 +13,7 @@ import { getOrCreateChannel } from '../channels.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { createForumPost } from './createForumPost.js';
-import { splitMessage } from './splitMessage.js';
+import { splitQaText } from './qaFormat.js';
 import { buildQAText } from './buildQAText.js';
 import { deriveCharacterNameFromAnswers, collectRaiderIoCharacters } from './raiderIoName.js';
 import { collectCharacterLinkCandidates } from './characterLinks.js';
@@ -529,10 +530,12 @@ async function createApplicationChannel(
   // exists, so throwing here would report a failed submission while leaving a
   // real channel behind, and the retry that followed would create a second one.
   // The same Q&A also goes to the forum thread, which is where officers review.
-  const messages = splitMessage(qaText);
+  const messages = splitQaText(qaText);
   for (const msg of messages) {
     try {
-      await channel.send(msg);
+      // SuppressEmbeds: an application answer is mostly profile links, and one
+      // unfurled preview per link buried the Q&A itself under a wall of cards.
+      await channel.send({ content: msg, flags: MessageFlags.SuppressEmbeds });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn('Applications', `Failed to post Q&A to channel ${channel.id}: ${error.message}`);

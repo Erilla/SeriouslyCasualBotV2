@@ -1,8 +1,9 @@
-import { type Message, type User } from 'discord.js';
+import { MessageFlags, type Message, type User } from 'discord.js';
 import { getDatabase } from '../../database/db.js';
 import { logger } from '../../services/logger.js';
 import { getQuestions } from './applicationQuestions.js';
 import { buildSummaryRow } from './summaryButtons.js';
+import { formatQaBlock, splitQaText } from './qaFormat.js';
 
 // ─── Session Tracking ─────────────────────────────────────────
 
@@ -253,17 +254,15 @@ export async function showSummary(user: User, applicationId: number): Promise<vo
     return;
   }
 
-  // Build summary text
+  // Build summary text. Same formatting as the posted Q&A, so what the applicant
+  // approves here is what the officers read.
   let summary = '**Application Summary**\n\n';
   for (let i = 0; i < answers.length; i++) {
-    summary += `**${i + 1}. ${answers[i].question}**\n${answers[i].answer}\n\n`;
+    summary += `${formatQaBlock(i, answers[i].question, answers[i].answer)}\n\n`;
   }
 
-  // Split across messages if > 2000 chars
-  const messages = splitMessage(summary);
-
-  for (const msg of messages) {
-    await user.send(msg);
+  for (const msg of splitQaText(summary)) {
+    await user.send({ content: msg, flags: MessageFlags.SuppressEmbeds });
   }
 
   const row = buildSummaryRow(applicationId);
@@ -284,30 +283,4 @@ export function enterEditMode(userId: string, applicationId: number): void {
     questionIndex: 0,
     editMode: 'awaiting_number',
   });
-}
-
-// ─── Helpers ──────────────────────────────────────────────────
-
-function splitMessage(content: string, maxLength = 2000): string[] {
-  if (content.length <= maxLength) return [content];
-
-  const parts: string[] = [];
-  let remaining = content;
-
-  while (remaining.length > maxLength) {
-    // Find last newline before the limit
-    let splitAt = remaining.lastIndexOf('\n', maxLength);
-    if (splitAt === -1 || splitAt < maxLength / 2) {
-      // No good newline - split at limit
-      splitAt = maxLength;
-    }
-    parts.push(remaining.substring(0, splitAt));
-    remaining = remaining.substring(splitAt).trimStart();
-  }
-
-  if (remaining.length > 0) {
-    parts.push(remaining);
-  }
-
-  return parts;
 }

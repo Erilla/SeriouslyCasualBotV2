@@ -1,4 +1,5 @@
 import type { User } from 'discord.js';
+import { formatQaBlock } from './qaFormat.js';
 
 export interface AnswerWithQuestion {
   question: string;
@@ -19,7 +20,7 @@ export function buildQAText(
   text += `Date: ${new Date().toISOString().split('T')[0]}\n\n`;
 
   for (let i = 0; i < answers.length; i++) {
-    text += `**${i + 1}. ${answers[i].question}**\n${answers[i].answer}\n\n`;
+    text += `${formatQaBlock(i, answers[i].question, answers[i].answer)}\n\n`;
   }
 
   return text;
