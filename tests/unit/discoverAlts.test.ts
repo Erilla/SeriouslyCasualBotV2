@@ -491,6 +491,78 @@ describe('discoverAlts', () => {
     expect(matches[0].source).toBe('raider.io');
   });
 
+  it('keys one character across all three realm vocabularies, not just casing', async () => {
+    // Azjol-Nerub is where the vocabularies genuinely part company: the application
+    // carries Raider.IO's slug `azjol-nerub`, a claimed character carries the display
+    // name `Azjol-Nerub`, and a Blizzard roster carries `azjolnerub` — Blizzard deletes
+    // the hyphen. Space-to-hyphen normalisation left the first two agreeing and the
+    // third on a row of its own, stripped of class and guild because Raider.IO cannot
+    // read `azjolnerub` back.
+    const onAzjolNerub = { region: 'eu', realm: 'azjol-nerub', name: 'Brentpriest' };
+    const job = createJob({ applicationId: 2, targetChannelId: '1', character: onAzjolNerub });
+
+    await discoverAlts(
+      job,
+      onAzjolNerub,
+      [onAzjolNerub],
+      [],
+      deps({
+        getCharacterOwner: vi.fn(async () => ({
+          user: 'Brentoan',
+          discordProfile: 'brent',
+          declaredMain: null,
+        })),
+        getClaimedCharacters: vi.fn(async () => [
+          { name: 'Brenthunter', realm: 'Azjol-Nerub', className: 'Hunter', level: 90 },
+        ]),
+        getCharacterGuild: vi.fn(async () => ({ name: 'Rancour', realm: 'Azjol-Nerub' })),
+        getGuildRoster: vi.fn(async () => [
+          { name: 'Brenthunter', realm: 'azjolnerub' },
+          { name: 'Brentpriest', realm: 'azjolnerub' },
+        ]),
+      }),
+    );
+
+    const found = getFindings(job);
+    expect(found.filter((f) => f.name === 'Brenthunter')).toHaveLength(1);
+    expect(found.filter((f) => f.name === 'Brentpriest')).toHaveLength(1);
+  });
+
+  it("records realms in Raider.IO's vocabulary, so the finding can be read back", async () => {
+    // A claimed character arrives as `Zul'jin`. Lowercasing it gives `zul'jin`, which
+    // Raider.IO 404s — so the finding used to be both looked up and stored under a
+    // realm nothing could resolve, which is why the duplicate row carried no class.
+    const onZuljin = { region: 'eu', realm: 'zuljin', name: 'Brentpriest' };
+    const job = createJob({ applicationId: 3, targetChannelId: '1', character: onZuljin });
+    const getCharacterSummary = vi.fn(async () => ({ className: 'Hunter', guild: null }));
+
+    await discoverAlts(
+      job,
+      onZuljin,
+      [onZuljin],
+      [],
+      deps({
+        getCharacterSummary,
+        getCharacterOwner: vi.fn(async () => ({
+          user: 'Brentoan',
+          discordProfile: 'brent',
+          declaredMain: null,
+        })),
+        getClaimedCharacters: vi.fn(async () => [
+          { name: 'Brenthunter', realm: "Zul'jin", className: 'Hunter', level: 90 },
+        ]),
+      }),
+    );
+
+    const hunter = getFindings(job).find((f) => f.name === 'Brenthunter');
+    expect(hunter?.realm).toBe('zuljin');
+    expect(hunter?.className).toBe('Hunter');
+    // The lookup itself must use that spelling too, or it returns nothing to store.
+    expect(getCharacterSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Brenthunter', realm: 'zuljin' }),
+    );
+  });
+
   it('reports truncated when the applicant fingerprint itself is unavailable, even with nothing left to walk', async () => {
     // No guild, no roster, nothing left in the frontier — the only reason
     // truncation could be reported is the missing applicant baseline itself.

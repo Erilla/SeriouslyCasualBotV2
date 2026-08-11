@@ -1,7 +1,7 @@
 import { logger } from '../../../services/logger.js';
 import { mapLimit } from '../../../utils/concurrency.js';
 import { CircuitOpenError, HttpError } from '../../../services/httpClient.js';
-import { normalizeRealmSlug } from '../../../services/blizzard.js';
+import { foldRealmKey, raiderIoRealmSlug } from '../../../services/blizzard.js';
 import { compareFingerprints, type Fingerprint } from './compareFingerprints.js';
 import { addFinding, isScanned, markScanned, type IntelFinding } from '../intel/jobStore.js';
 import type { PhaseTimings } from '../intel/phaseTimings.js';
@@ -85,14 +85,18 @@ export interface DiscoverDeps {
   timings?: PhaseTimings;
 }
 
-// The four sources disagree on realm format: application/declared-main/fingerprint
-// characters carry a slug (e.g. "argent-dawn"), but claimed characters come from
-// Raider.IO's internal API as `ch.realm.name`, a display name (e.g. "Outland").
-// The findings table's primary key is case-sensitive, so every finding must be
-// normalised to the same slug before it is recorded or looked up, or the same
-// character lands on two rows depending on which source found it first.
-const key = (name: string, realm: string): string =>
-  `${name}-${normalizeRealmSlug(realm)}`.toLowerCase();
+// The sources disagree on realm format in three ways, not two: application, declared
+// main and kill-history characters carry a Raider.IO slug ("azjol-nerub"); claimed
+// characters and guild lookups give Raider.IO display names ("Azjol-Nerub", "Zul'jin");
+// and guild rosters come from Blizzard, whose slug deletes a hyphen Raider.IO keeps
+// ("azjolnerub"). The findings table's primary key is `(job_id, name, realm)`, so any
+// disagreement here puts one character on two rows — one of them typically stripped of
+// its class and guild, because the Raider.IO lookup for the other spelling 404s.
+//
+// Keying on the FOLD is what makes those three agree: space-to-hyphen alone left
+// `zuljin` and `zul'jin` distinct. Folding is for keys only — the realm actually
+// recorded stays a Raider.IO slug, which is what every consumer reads back.
+const key = (name: string, realm: string): string => `${name}-${foldRealmKey(realm)}`.toLowerCase();
 const sleep = (ms: number): Promise<void> =>
   ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 
@@ -153,7 +157,11 @@ export async function discoverAlts(
   async function fetchSummary(
     c: RaiderIoCharacter,
   ): Promise<{ normalized: RaiderIoCharacter; summary: CharacterSummary | null; error?: unknown }> {
-    const normalized: RaiderIoCharacter = { ...c, realm: normalizeRealmSlug(c.realm) };
+    // Raider.IO's vocabulary, not a bare space-to-hyphen: this realm is both fetched
+    // from Raider.IO immediately below and recorded on the finding, and a claimed
+    // character arrives as a display name — `Zul'jin`, which lowercases to `zul'jin`
+    // and 404s. Idempotent on realms that are already Raider.IO slugs.
+    const normalized: RaiderIoCharacter = { ...c, realm: raiderIoRealmSlug(c.realm) };
     try {
       return { normalized, summary: await deps.getCharacterSummary(normalized) };
     } catch (error) {
