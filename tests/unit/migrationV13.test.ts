@@ -54,7 +54,9 @@ describe('migration v13 — trial departure columns', () => {
   });
 
   it('back-fills discord_user_id from the linked application', () => {
-    db.prepare("INSERT INTO applications (id, applicant_user_id, status) VALUES (7, 'u-app', 'accepted')").run();
+    db.prepare(
+      "INSERT INTO applications (id, applicant_user_id, status) VALUES (7, 'u-app', 'accepted')",
+    ).run();
     db.prepare(
       `INSERT INTO trials (character_name, role, start_date, application_id)
        VALUES ('Fromapp', 'dps', '2026-08-01', 7)`,
@@ -62,25 +64,35 @@ describe('migration v13 — trial departure columns', () => {
 
     runMigrations(db);
 
-    const row = db.prepare('SELECT discord_user_id FROM trials WHERE character_name = ?').get('Fromapp');
+    const row = db
+      .prepare('SELECT discord_user_id FROM trials WHERE character_name = ?')
+      .get('Fromapp');
     expect(row).toEqual({ discord_user_id: 'u-app' });
   });
 
   it('back-fills discord_user_id from raiders when there is no application link', () => {
-    db.prepare("INSERT INTO raiders (character_name, discord_user_id) VALUES ('Fromraider', 'u-raider')").run();
+    db.prepare(
+      "INSERT INTO raiders (character_name, discord_user_id) VALUES ('Fromraider', 'u-raider')",
+    ).run();
     db.prepare(
       `INSERT INTO trials (character_name, role, start_date) VALUES ('Fromraider', 'heal', '2026-08-01')`,
     ).run();
 
     runMigrations(db);
 
-    const row = db.prepare('SELECT discord_user_id FROM trials WHERE character_name = ?').get('Fromraider');
+    const row = db
+      .prepare('SELECT discord_user_id FROM trials WHERE character_name = ?')
+      .get('Fromraider');
     expect(row).toEqual({ discord_user_id: 'u-raider' });
   });
 
   it('prefers the application link over a conflicting raiders row', () => {
-    db.prepare("INSERT INTO applications (id, applicant_user_id, status) VALUES (8, 'u-app', 'accepted')").run();
-    db.prepare("INSERT INTO raiders (character_name, discord_user_id) VALUES ('Both', 'u-raider')").run();
+    db.prepare(
+      "INSERT INTO applications (id, applicant_user_id, status) VALUES (8, 'u-app', 'accepted')",
+    ).run();
+    db.prepare(
+      "INSERT INTO raiders (character_name, discord_user_id) VALUES ('Both', 'u-raider')",
+    ).run();
     db.prepare(
       `INSERT INTO trials (character_name, role, start_date, application_id)
        VALUES ('Both', 'dps', '2026-08-01', 8)`,
@@ -88,7 +100,9 @@ describe('migration v13 — trial departure columns', () => {
 
     runMigrations(db);
 
-    const row = db.prepare('SELECT discord_user_id FROM trials WHERE character_name = ?').get('Both');
+    const row = db
+      .prepare('SELECT discord_user_id FROM trials WHERE character_name = ?')
+      .get('Both');
     expect(row).toEqual({ discord_user_id: 'u-app' });
   });
 
@@ -99,23 +113,32 @@ describe('migration v13 — trial departure columns', () => {
 
     runMigrations(db);
 
-    const row = db.prepare('SELECT discord_user_id FROM trials WHERE character_name = ?').get('Nobody');
+    const row = db
+      .prepare('SELECT discord_user_id FROM trials WHERE character_name = ?')
+      .get('Nobody');
     expect(row).toEqual({ discord_user_id: null });
   });
 
   it('never overwrites a departed_notified_at stamp, and is safe to run twice', () => {
-    db.prepare("INSERT INTO raiders (character_name, discord_user_id) VALUES ('Twice', 'u-raider')").run();
+    db.prepare(
+      "INSERT INTO raiders (character_name, discord_user_id) VALUES ('Twice', 'u-raider')",
+    ).run();
     db.prepare(
       `INSERT INTO trials (character_name, role, start_date) VALUES ('Twice', 'dps', '2026-08-01')`,
     ).run();
 
     runMigrations(db);
-    db.prepare("UPDATE trials SET departed_notified_at = '2026-08-11 12:00:00' WHERE character_name = 'Twice'").run();
+    db.prepare(
+      "UPDATE trials SET departed_notified_at = '2026-08-11 12:00:00' WHERE character_name = 'Twice'",
+    ).run();
     runMigrations(db);
 
     const row = db
       .prepare('SELECT discord_user_id, departed_notified_at FROM trials WHERE character_name = ?')
       .get('Twice');
-    expect(row).toEqual({ discord_user_id: 'u-raider', departed_notified_at: '2026-08-11 12:00:00' });
+    expect(row).toEqual({
+      discord_user_id: 'u-raider',
+      departed_notified_at: '2026-08-11 12:00:00',
+    });
   });
 });

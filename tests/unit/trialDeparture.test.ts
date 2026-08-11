@@ -39,7 +39,10 @@ describe('trial departure copy', () => {
   });
 
   it('restricts mentions to the overlord ids, so a character name cannot ping', () => {
-    const message = buildDepartureNotification(['o1'], { ...trialFacts, characterName: '@everyone' });
+    const message = buildDepartureNotification(['o1'], {
+      ...trialFacts,
+      characterName: '@everyone',
+    });
 
     expect(message.allowedMentions).toEqual({ users: ['o1'] });
   });

@@ -51,7 +51,7 @@ Migrations are inline, forward-only version blocks in `runMigrations()` (in `db.
 2. Reads the highest applied version number (`0` on a fresh DB)
 3. Runs each `if (currentVersion < N)` block in order, recording version `N` in `schema_version` inside the same transaction
 
-The current head is **version 12**. Applied migrations:
+The current head is **version 13**. Applied migrations:
 
 | Version | Change |
 |---|---|
@@ -67,6 +67,7 @@ The current head is **version 12**. Applied migrations:
 | 10 | Add the `achievement_ce_overrides` table (officer-managed CE cutoffs) |
 | 11 | Add the four `applicant_intel_*` tables (resumable applicant-intel sweep) |
 | 12 | Add `applications.departed_notified_at` (applicant-departure notified once, ever) |
+| 13 | Add `trials.discord_user_id` (the Discord account linked to this trial; NULL = unknown, never notified) and `trials.departed_notified_at` (trial-departure notified once, ever); back-fills `discord_user_id` from the linked application first, then from `raiders` by character name |
 
 When adding a migration, also bump the hardcoded latest-version assertion in
 `tests/integration/database-schema.test.ts` — CI runs the integration suite
@@ -74,4 +75,4 @@ and fails otherwise.
 
 Migrations must stay idempotent against fresh DBs, where `createTables()` has already produced the final schema — guard `ALTER`/`DROP` accordingly (e.g. v5 checks `table_info` before adding the column, drops use `IF EXISTS`).
 
-To add a migration, append a new `if (currentVersion < 13) { ... }` block that ends by inserting the version row.
+To add a migration, append a new `if (currentVersion < 14) { ... }` block that ends by inserting the version row.
