@@ -100,6 +100,11 @@ function findingLine(
   const link = unlinkable.has(`${f.name}|${f.realm}`.toLowerCase())
     ? label
     : `[${label}](${raiderIoProfileUrl(region, f.realm, f.name)})`;
+  // Bracketed onto the name rather than sitting in its own `·` segment: class is
+  // an attribute OF the character, and a reviewer scanning the list reads
+  // "Braene (Druid)" as one unit where a third dot-separated field competes with
+  // the guild and the provenance for attention.
+  const className = `(${f.className ?? 'Unknown'})`;
   const guild = f.guildName
     ? `${f.guildName} (${f.guildRealm ? displayRealm(f.guildRealm) : '?'})`
     : 'No guild';
@@ -123,7 +128,7 @@ function findingLine(
   const provenance = isSelfDeclared(f.source)
     ? 'from the application'
     : `undeclared (${evidence}${discord})`;
-  return `${link} · ${f.className ?? 'Unknown'} · ${guild} — ${provenance}`;
+  return `${link} ${className} · ${guild} — ${provenance}`;
 }
 
 /**
@@ -172,6 +177,17 @@ export function renderFoundCharacters(
 
 export interface GuildStint {
   raidName: string;
+  /**
+   * The raid's expansion, when a WCL zone was matched. Absent for the
+   * Raider.IO-slug fallback, which has no zone and therefore no expansion.
+   */
+  expansion?: string;
+  /**
+   * Whether these characters earned Cutting Edge in this raid — a full Mythic
+   * clear with the final boss killed before the tier ended. Absent (not false)
+   * when it could not be judged, so the marker is only ever shown on evidence.
+   */
+  cuttingEdge?: boolean;
   kills: number;
   /** Full ISO timestamps — kept intact so they can render as Discord timestamps. */
   first: string;
@@ -233,7 +249,12 @@ export function renderGuildHistory(
     const head = `**[${entry.guildName}](${link})** *(${displayRealm(entry.guildRealm)})* — ${dateRange(first, last)}`;
     const lines = entry.stints.map((st) => {
       const kills = `${st.kills} Mythic kill${st.kills === 1 ? '' : 's'}`;
-      return `${st.raidName} · ${kills} · ${dateRange(st.first, st.last)} · ${st.characters.join(', ')}`;
+      // Expansion then CE, both attached to the raid name: they qualify WHICH
+      // raid this was and how it went, so they belong before the kill count
+      // rather than trailing the character list.
+      const expansion = st.expansion ? ` (${st.expansion})` : '';
+      const ce = st.cuttingEdge ? ' - CE' : '';
+      return `${st.raidName}${expansion}${ce} · ${kills} · ${dateRange(st.first, st.last)} · ${st.characters.join(', ')}`;
     });
     return `${head}\n${lines.join('\n')}`;
   });

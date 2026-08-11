@@ -11,6 +11,7 @@ import { intelRefreshRow } from './placeholders.js';
 import { runJob } from './runJob.js';
 import type { IntelJobRow } from '../../../types/index.js';
 import { getZoneCatalogue, getRaidReports } from '../../../services/warcraftlogs.js';
+import { getRaidTierEnds } from '../mythic-logs/raidTierEnds.js';
 import { getMythicKillCount } from '../../../services/raiderio.js';
 import {
   getMythicKillDates,
@@ -144,6 +145,7 @@ export async function resumeApplicantIntelJobs(
           gather: gatherMythicLogs,
           confirm: confirmDiscord,
           getZoneCatalogue,
+          getRaidTierEnds,
           getMythicKillCount,
           getRaidReports,
           getMythicKillDates,

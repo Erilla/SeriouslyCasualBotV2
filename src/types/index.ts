@@ -97,7 +97,7 @@ export interface ApplicationVoteRow {
   id: number;
   application_id: number;
   user_id: string;
-  vote_type: 'for' | 'neutral' | 'against' | 'kekw';
+  vote_type: 'for' | 'neutral' | 'against';
 }
 
 export interface TrialRow {

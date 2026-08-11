@@ -16,12 +16,14 @@ export function generateVotingEmbed(applicationId: number): {
     .prepare('SELECT * FROM application_votes WHERE application_id = ?')
     .all(applicationId) as ApplicationVoteRow[];
 
-  // Group by vote type
+  // Group by vote type. A type with no group is ignored rather than counted
+  // anywhere — which is what retires a vote type safely: the button is gone, but
+  // its message is never deleted, so a click on an old embed can still write a
+  // row and this must keep rendering.
   const grouped: Record<string, ApplicationVoteRow[]> = {
     for: [],
     neutral: [],
     against: [],
-    kekw: [],
   };
 
   for (const vote of votes) {
@@ -69,11 +71,6 @@ export function generateVotingEmbed(applicationId: number): {
         inline: true,
       },
       {
-        name: `Kekw (${grouped.kekw.length})`,
-        value: formatVoters(grouped.kekw),
-        inline: true,
-      },
-      {
         name: 'Progress',
         value: progressBar,
         inline: false,
@@ -85,22 +82,14 @@ export function generateVotingEmbed(applicationId: number): {
     new ButtonBuilder()
       .setCustomId(`application_vote:for:${applicationId}`)
       .setLabel('For')
-      .setEmoji('👍')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`application_vote:neutral:${applicationId}`)
       .setLabel('Neutral')
-      .setEmoji('🤷')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`application_vote:against:${applicationId}`)
       .setLabel('Against')
-      .setEmoji('👎')
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId(`application_vote:kekw:${applicationId}`)
-      .setLabel('Kekw')
-      .setEmoji('😂')
       .setStyle(ButtonStyle.Danger),
   );
 

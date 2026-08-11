@@ -7,7 +7,7 @@
  * interactionCreate.ts is required.
  *
  * customId format for vote buttons: `application_vote:{type}:{applicationId}`
- * Vote types: "for" | "neutral" | "against" | "kekw"
+ * Vote types: "for" | "neutral" | "against"
  *
  * Status transition note: voteOnApplication() does NOT transition
  * application.status.  Status changes only occur via accept/reject modals.
