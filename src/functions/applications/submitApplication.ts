@@ -15,7 +15,11 @@ import { createForumPost } from './createForumPost.js';
 import { splitMessage } from './splitMessage.js';
 import { buildQAText } from './buildQAText.js';
 import { deriveCharacterNameFromAnswers, collectRaiderIoCharacters } from './raiderIoName.js';
+import { collectCharacterLinkCandidates } from './characterLinks.js';
+import { resolveCharacterLinks } from './resolveCharacterLinks.js';
+import { applyLinkedCharacters } from './applyLinkedCharacters.js';
 import { startIntelJob } from './intel/placeholders.js';
+import { getJob } from './intel/jobStore.js';
 import { linkCharacterIdentity } from '../raids/linkCharacterIdentity.js';
 import { getOverlords } from '../raids/overlords.js';
 import { buildOverlordNotification } from './overlordNotification.js';
@@ -307,6 +311,8 @@ export async function submitApplication(
           ? `Queued intel job #${jobId} for application #${applicationId}`
           : `Reserved idle intel job #${jobId} for application #${applicationId}`,
       );
+
+      await seedLinkedCharacters(jobId, applicationId, characterName, answers);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn(
@@ -322,6 +328,59 @@ export async function submitApplication(
   );
 
   return 'submitted';
+}
+
+/**
+ * Queue every character the answers link through a source other than Raider.IO.
+ *
+ * `named` above covers Raider.IO URLs only, and deliberately so: those identities
+ * are already in Raider.IO's vocabulary, they become 'application' findings, and
+ * their order picks the primary. Everything else the applicant links — a
+ * WarcraftLogs profile, an Armory page, WoWProgress — needs canonicalising first,
+ * so it travels the same route an officer's Refresh uses and lands as a linked
+ * character.
+ *
+ * This is the ONLY place the answers themselves are read for links. The
+ * message-harvest path cannot see them: the questionnaire runs in DMs, and the
+ * Q&A repost that carries the same text into the application channel is authored
+ * by the bot, which messageCreate skips by design. Before this ran, a druid
+ * linked twice as a WarcraftLogs URL reached the sweep through neither route and
+ * silently never appeared in the found-characters list.
+ *
+ * Never throws. An application must submit whether or not the lookups behind
+ * resolution answer, and the Refresh control already exists to recover a miss.
+ */
+async function seedLinkedCharacters(
+  jobId: number,
+  applicationId: number,
+  declaredCharacterName: string,
+  answers: AnswerWithQuestion[],
+): Promise<void> {
+  // Parse first: an application whose answers link nothing must cost no lookups.
+  const candidates = answers.flatMap((a) => collectCharacterLinkCandidates(a.answer));
+  if (candidates.length === 0) return;
+
+  try {
+    const job = getJob(jobId);
+    if (!job) return;
+
+    const resolution = await resolveCharacterLinks(candidates, { verify: true });
+    // Dedupes against the applicant characters already stored, so a Raider.IO URL
+    // that `named` handled is not queued a second time here.
+    const novel = applyLinkedCharacters(job, declaredCharacterName, resolution);
+    if (novel.length === 0) return;
+
+    logger.info(
+      'Applications',
+      `Application #${applicationId}: queued ${novel.length} linked character(s) from the answers into intel job #${jobId}`,
+    );
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.warn(
+      'Applications',
+      `Failed to queue linked characters for #${applicationId}: ${error.message}`,
+    );
+  }
 }
 
 // ─── Channel Creation ─────────────────────────────────────────
