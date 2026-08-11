@@ -92,6 +92,12 @@ export interface RunDeps {
   gather: typeof gatherMythicLogs;
   confirm: typeof confirmDiscord;
   getZoneCatalogue: () => Promise<WclZone[]>;
+  /**
+   * Raid slug -> tier end, for the guild history's CE verdicts. Optional: a job
+   * wired without it still publishes a history, just with CE judged against an
+   * unknown tier end.
+   */
+  getRaidTierEnds?: () => Promise<Map<string, string | null>>;
   getMythicKillCount: (c: RaiderIoCharacter) => Promise<number>;
   getRaidReports: (c: RaiderIoCharacter, zoneIds: Set<number>) => Promise<RaidReportRef[]>;
   // The guild-history loop's own dependency, distinct from the copies passed
@@ -570,7 +576,18 @@ export async function runJob(jobId: number, deps: RunDeps): Promise<void> {
       if (entries) killHistory.push({ character: c.name, entries });
       else killDatesFailed = true;
     }
-    guilds = aggregateGuildHistory(killHistory, zones);
+    // Degrades to an empty map rather than failing the phase: an unavailable
+    // static-data endpoint must cost CE precision, never the guild history
+    // itself.
+    let tierEnds = new Map<string, string | null>();
+    if (deps.getRaidTierEnds) {
+      try {
+        tierEnds = await deps.getRaidTierEnds();
+      } catch (error) {
+        logger.warn('Intel', `Job #${jobId}: could not read raid tier ends: ${error}`);
+      }
+    }
+    guilds = aggregateGuildHistory(killHistory, zones, tierEnds);
     timings.mark('guildHistory');
 
     if (guilds.length === 0 && killDatesFailed) {

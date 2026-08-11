@@ -16,12 +16,14 @@ export function generateVotingEmbed(applicationId: number): {
     .prepare('SELECT * FROM application_votes WHERE application_id = ?')
     .all(applicationId) as ApplicationVoteRow[];
 
-  // Group by vote type
+  // Group by vote type. A type with no group is ignored rather than counted
+  // anywhere — which is what retires a vote type safely: the button is gone, but
+  // its message is never deleted, so a click on an old embed can still write a
+  // row and this must keep rendering.
   const grouped: Record<string, ApplicationVoteRow[]> = {
     for: [],
     neutral: [],
     against: [],
-    kekw: [],
   };
 
   for (const vote of votes) {
@@ -30,20 +32,27 @@ export function generateVotingEmbed(applicationId: number): {
     }
   }
 
-  // Build progress bar (for vs against)
+  // One glyph per vote, rather than a proportional bar.
+  //
+  // The bar showed a RATIO, which on the handful of votes an application
+  // actually gets was actively misleading: a lone "for" filled it completely,
+  // reading as unanimous approval when one officer had voted. Glyphs show the
+  // count itself, so three-of-four never looks like a landslide — and abstentions
+  // become visible, where the bar could only ever ignore them.
   const forCount = grouped.for.length;
   const againstCount = grouped.against.length;
   const totalDecisive = forCount + againstCount;
-  const barLength = 20;
 
-  let progressBar: string;
-  if (totalDecisive === 0) {
-    progressBar = `${'░'.repeat(barLength)} No votes yet`;
-  } else {
-    const filledCount = Math.round((forCount / totalDecisive) * barLength);
-    const emptyCount = barLength - filledCount;
-    progressBar = `${'█'.repeat(filledCount)}${'░'.repeat(emptyCount)} ${forCount}/${totalDecisive}`;
-  }
+  const marks =
+    '✅'.repeat(forCount) + '➖'.repeat(grouped.neutral.length) + '❌'.repeat(againstCount);
+  // Only a genuinely empty vote is "no votes yet". An application everyone
+  // abstained on HAS been voted on, and the old ratio-only bar said otherwise.
+  const progressBar =
+    marks === ''
+      ? 'No votes yet'
+      : totalDecisive === 0
+        ? marks
+        : `${marks} ${forCount}/${totalDecisive}`;
 
   // Build fields
   const formatVoters = (voteList: ApplicationVoteRow[]): string =>
@@ -69,11 +78,6 @@ export function generateVotingEmbed(applicationId: number): {
         inline: true,
       },
       {
-        name: `Kekw (${grouped.kekw.length})`,
-        value: formatVoters(grouped.kekw),
-        inline: true,
-      },
-      {
         name: 'Progress',
         value: progressBar,
         inline: false,
@@ -85,22 +89,14 @@ export function generateVotingEmbed(applicationId: number): {
     new ButtonBuilder()
       .setCustomId(`application_vote:for:${applicationId}`)
       .setLabel('For')
-      .setEmoji('👍')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`application_vote:neutral:${applicationId}`)
       .setLabel('Neutral')
-      .setEmoji('🤷')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`application_vote:against:${applicationId}`)
       .setLabel('Against')
-      .setEmoji('👎')
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId(`application_vote:kekw:${applicationId}`)
-      .setLabel('Kekw')
-      .setEmoji('😂')
       .setStyle(ButtonStyle.Danger),
   );
 

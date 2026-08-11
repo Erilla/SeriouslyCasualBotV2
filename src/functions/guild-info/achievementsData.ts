@@ -11,6 +11,8 @@ import { FOREVER, getCachedOrFetch, getIconOrFetch } from '../../services/apiCac
 import { HttpError } from '../../services/httpClient.js';
 import type { AchievementsManualRow } from '../../types/index.js';
 import { getCeOverrideCutoff } from './ceOverrides.js';
+import { determineCE } from './determineCE.js';
+import { staticDataFreshness } from './staticDataFreshness.js';
 
 // ─── Expansion names (moved from updateAchievements.ts) ─────────
 
@@ -76,37 +78,11 @@ function beats(a: MergedStanding, b: MergedStanding): boolean {
 
 // ─── Cutting Edge ───────────────────────────────────────────────
 
-export function determineCE(args: {
-  mythicKilled: number;
-  totalBosses: number;
-  tierEndsEu: string | null;
-  lastBossDefeatedAt: string | null;
-}): boolean {
-  if (args.mythicKilled < args.totalBosses) return false;
-  // No end date, or the tier is still running: a full clear is CE.
-  if (!args.tierEndsEu || new Date(args.tierEndsEu).getTime() > Date.now()) return true;
-  // Kill timestamp unavailable: assume CE (matches previous behaviour).
-  if (!args.lastBossDefeatedAt) return true;
-  return new Date(args.lastBossDefeatedAt) < new Date(args.tierEndsEu);
-}
+export { determineCE };
 
 // ─── Cache freshness for static data ────────────────────────────
 
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * Static data for an expansion is immutable once every raid's EU end date is
- * in the past; while any raid is open-ended it gets a 7-day TTL. Empty
- * payloads (expansion doesn't exist yet) are never fresh.
- */
-export function staticDataFreshness(value: RaidStaticData, fetchedAt: Date): boolean {
-  const raids = value.raids ?? [];
-  if (raids.length === 0) return false;
-  const now = Date.now();
-  const allEnded = raids.every((r) => r.ends.eu !== null && new Date(r.ends.eu).getTime() < now);
-  if (allEnded) return true;
-  return now - fetchedAt.getTime() < SEVEN_DAYS_MS;
-}
+export { staticDataFreshness };
 
 // ─── Icons ──────────────────────────────────────────────────────
 

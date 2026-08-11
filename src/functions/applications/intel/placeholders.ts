@@ -58,7 +58,7 @@ export function intelRefreshRow(
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`application:intel_refresh:${applicationId}`)
-      .setLabel(inFlight ? 'Refreshing…' : 'Refresh linked characters')
+      .setLabel(inFlight ? 'Refreshing…' : 'Refresh characters')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(inFlight),
   );

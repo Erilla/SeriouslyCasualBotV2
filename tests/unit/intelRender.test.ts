@@ -125,6 +125,18 @@ describe('renderFoundCharacters', () => {
     expect(pages[0]).toContain('Rancour (Draenor)');
   });
 
+  it('brackets the class immediately after the linked name', () => {
+    const pages = renderFoundCharacters([finding({})], 'Regnipaw', 'eu');
+    expect(pages[0]).toContain(
+      '[Monkni-Draenor](https://raider.io/characters/eu/draenor/Monkni) (Monk)',
+    );
+  });
+
+  it('brackets an unknown class rather than dropping the segment', () => {
+    const pages = renderFoundCharacters([finding({ className: null })], 'Regnipaw', 'eu');
+    expect(pages[0]).toContain('(Unknown)');
+  });
+
   it('says so explicitly when nothing was found', () => {
     expect(renderFoundCharacters([], 'Regnipaw', 'eu')[0]).toContain('No other characters found');
   });
@@ -249,6 +261,63 @@ describe('renderGuildHistory', () => {
   it('links the guild name to its Raider.IO page', () => {
     const pages = renderGuildHistory(entries, 'eu');
     expect(pages[0]).toContain('**[Hindsight](https://raider.io/guilds/eu/kazzak/Hindsight)**');
+  });
+
+  it('brackets the expansion after the raid name and marks Cutting Edge', () => {
+    const pages = renderGuildHistory(
+      [
+        {
+          guildName: 'Wraithfall',
+          guildRealm: 'Draenor',
+          stints: [
+            {
+              raidName: 'VS / DR / MQD',
+              expansion: 'Midnight',
+              cuttingEdge: true,
+              kills: 8,
+              first: FIRST,
+              last: LAST,
+              characters: ['Braene'],
+            },
+          ],
+        },
+      ],
+      'eu',
+    );
+    expect(pages[0]).toContain('VS / DR / MQD (Midnight) - CE');
+  });
+
+  it('omits the CE marker for a stint that did not earn it', () => {
+    const pages = renderGuildHistory(
+      [
+        {
+          guildName: 'Wraithfall',
+          guildRealm: 'Draenor',
+          stints: [
+            {
+              raidName: 'Sporefall',
+              expansion: 'Midnight',
+              cuttingEdge: false,
+              kills: 1,
+              first: ONE_DAY,
+              last: ONE_DAY,
+              characters: ['Braene'],
+            },
+          ],
+        },
+      ],
+      'eu',
+    );
+    expect(pages[0]).toContain('Sporefall (Midnight)');
+    expect(pages[0]).not.toContain('CE');
+  });
+
+  it('renders a raid with no matched expansion unchanged', () => {
+    // The Raider.IO-slug fallback has no zone behind it, so there is no
+    // expansion to name and no boss order to judge CE against.
+    const pages = renderGuildHistory(entries, 'eu');
+    expect(pages[0]).toContain('VS / DR / MQD · 120 Mythic kills');
+    expect(pages[0]).not.toContain('CE');
   });
 
   it('hyphenates a multi-word realm in the guild link', () => {

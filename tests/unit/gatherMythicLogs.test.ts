@@ -116,6 +116,93 @@ describe('aggregateGuildHistory', () => {
     );
     expect(out[0].stints[0].raidName).toBe('Crown of the Cosmos Reborn');
   });
+
+  describe('expansion and Cutting Edge', () => {
+    const ALL_FOUR: [string, string][] = [
+      ['imperator-averzian', '2026-04-23T00:00:00.000Z'],
+      ['crown-of-the-cosmos', '2026-05-01T00:00:00.000Z'],
+      ["belo'ren-child-of-al'ar", '2026-05-15T00:00:00.000Z'],
+      ['midnight-falls', '2026-06-01T00:00:00.000Z'],
+    ];
+
+    /** Kills carrying a Raider.IO raid slug, which is how a tier end is found. */
+    const raidKills = (character: string, bosses: [string, string][], raid: string | null) => ({
+      character,
+      entries: bosses.map(([bossName, firstDefeated]) => ({
+        bossName,
+        firstDefeated,
+        guild: { name: 'Wraithfall', realm: 'draenor' },
+        raid: raid ?? undefined,
+      })),
+    });
+
+    it('names the expansion of the matched zone', () => {
+      const out = aggregateGuildHistory([raidKills('Braene', ALL_FOUR, 'midnight-1')], [zone]);
+      expect(out[0].stints[0].expansion).toBe('Midnight');
+    });
+
+    it('marks CE for a full clear whose last boss died before the tier ended', () => {
+      const out = aggregateGuildHistory(
+        [raidKills('Braene', ALL_FOUR, 'midnight-1')],
+        [zone],
+        new Map([['midnight-1', '2026-07-01T00:00:00.000Z']]),
+      );
+      expect(out[0].stints[0].cuttingEdge).toBe(true);
+    });
+
+    it('withholds CE when the last boss died after the tier ended', () => {
+      const out = aggregateGuildHistory(
+        [raidKills('Braene', ALL_FOUR, 'midnight-1')],
+        [zone],
+        new Map([['midnight-1', '2026-05-20T00:00:00.000Z']]),
+      );
+      expect(out[0].stints[0].cuttingEdge).toBe(false);
+    });
+
+    it('withholds CE for a partial clear however early the kills were', () => {
+      const out = aggregateGuildHistory(
+        [raidKills('Braene', ALL_FOUR.slice(0, 3), 'midnight-1')],
+        [zone],
+        new Map([['midnight-1', '2026-07-01T00:00:00.000Z']]),
+      );
+      expect(out[0].stints[0].cuttingEdge).toBe(false);
+    });
+
+    it('counts a full clear as CE while the tier is still running', () => {
+      // The current tier's Raider.IO slug is an opaque `tier-` code that matches
+      // no static raid, so no end date is known — and a full clear of a tier that
+      // has not ended is CE by definition.
+      const out = aggregateGuildHistory(
+        [raidKills('Braene', ALL_FOUR, 'tier-mn-1')],
+        [zone],
+        new Map(),
+      );
+      expect(out[0].stints[0].cuttingEdge).toBe(true);
+    });
+
+    it('pools the account’s characters, since the stint already reports them together', () => {
+      const out = aggregateGuildHistory(
+        [
+          raidKills('Braene', ALL_FOUR.slice(0, 2), 'midnight-1'),
+          raidKills('Kiuasdk', ALL_FOUR.slice(2), 'midnight-1'),
+        ],
+        [zone],
+        new Map([['midnight-1', '2026-07-01T00:00:00.000Z']]),
+      );
+      expect(out[0].stints[0].cuttingEdge).toBe(true);
+      expect(out[0].stints[0].characters).toEqual(['Braene', 'Kiuasdk']);
+    });
+
+    it('judges neither expansion nor CE for a raid with no matched zone', () => {
+      const out = aggregateGuildHistory(
+        [raidKills('X', [['rotmire', '2026-06-17T00:00:00.000Z']], 'rotmire')],
+        [zone],
+        new Map([['rotmire', '2026-07-01T00:00:00.000Z']]),
+      );
+      expect(out[0].stints[0].expansion).toBeUndefined();
+      expect(out[0].stints[0].cuttingEdge).toBeUndefined();
+    });
+  });
 });
 
 describe('gatherMythicLogs', () => {

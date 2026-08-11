@@ -15,6 +15,7 @@ import type {
   ZoneKill,
 } from '../../../services/warcraftlogs.js';
 import type { MythicKillDate } from '../../../services/raiderioInternal.js';
+import { determineCE } from '../../guild-info/determineCE.js';
 
 export const MAX_TIERS = 5;
 
@@ -76,10 +77,30 @@ function readableRaidName(slug: string): string {
 export function aggregateGuildHistory(
   killDates: { character: string; entries: MythicKillDate[] }[],
   zones: WclZone[],
+  /**
+   * Raider.IO raid slug -> the tier's exclusive EU end, officer CE override
+   * already applied. An absent slug means the end is UNKNOWN, which determineCE
+   * reads as "not ended" — so a full clear of it still counts as CE. That is the
+   * right answer for the current tier, whose kills carry an opaque `tier-` slug.
+   */
+  tierEnds: ReadonlyMap<string, string | null> = new Map(),
 ): GuildHistoryEntry[] {
   const byGuild = new Map<
     string,
     { name: string; realm: string; raids: Map<string, GuildStint> }
+  >();
+  // CE needs facts the stint itself does not carry: which zone it matched (for
+  // boss order and count), which raid slug names its tier, and when the FINAL
+  // boss died. Accumulated alongside rather than on GuildStint so the rendered
+  // shape stays the small thing the renderer and the stored payload expect.
+  const evidence = new Map<
+    GuildStint,
+    {
+      zone: WclZone | null;
+      raidSlug: string | null;
+      killed: Set<number>;
+      lastBossAt: string | null;
+    }
   >();
 
   for (const { character, entries } of killDates) {
@@ -94,9 +115,14 @@ export function aggregateGuildHistory(
       byGuild.set(gk, guild);
 
       let raidName = readableRaidName(raidSlugFor(entry));
+      let matchedZone: WclZone | null = null;
+      let matchedEncounterId: number | null = null;
       for (const zone of zones) {
-        if (matchBossName(zone, entry.bossName)) {
+        const encounter = matchBossName(zone, entry.bossName);
+        if (encounter) {
           raidName = zone.name;
+          matchedZone = zone;
+          matchedEncounterId = encounter.id;
           break;
         }
       }
@@ -117,7 +143,51 @@ export function aggregateGuildHistory(
       if (at > stint.last) stint.last = at;
       if (!stint.characters.includes(character)) stint.characters.push(character);
       guild.raids.set(raidName, stint);
+
+      const seen = evidence.get(stint) ?? {
+        zone: matchedZone,
+        raidSlug: null,
+        killed: new Set<number>(),
+        lastBossAt: null,
+      };
+      evidence.set(stint, seen);
+      if (matchedZone) {
+        seen.zone ??= matchedZone;
+        if (matchedEncounterId !== null) {
+          seen.killed.add(matchedEncounterId);
+          const lastBoss = matchedZone.encounters[matchedZone.encounters.length - 1];
+          // Earliest final-boss kill across the account's characters: the tier was
+          // beaten the first time any of them downed it, and a later alt kill must
+          // not push a genuine CE past the cutoff.
+          if (
+            lastBoss?.id === matchedEncounterId &&
+            (seen.lastBossAt === null || at < seen.lastBossAt)
+          ) {
+            seen.lastBossAt = at;
+          }
+        }
+      }
+      // The CURRENT tier's slug is an opaque `tier-` code that names no static
+      // raid, so it is deliberately not recorded — leaving the tier end unknown,
+      // which is the correct input for a tier that has not ended.
+      if (entry.raid && !/^tier-/.test(entry.raid)) seen.raidSlug ??= entry.raid;
     }
+  }
+
+  // Only a stint whose raid matched a WCL zone can be judged: without the zone
+  // there is no boss count to call a clear complete and no boss order to say
+  // which kill was the last one. Those stints keep both fields absent, so the
+  // renderer shows no expansion and no CE marker rather than an unearned "not
+  // CE" — the same UNKNOWN-is-not-a-negative rule the sweep applies elsewhere.
+  for (const [stint, seen] of evidence) {
+    if (!seen.zone) continue;
+    stint.expansion = seen.zone.expansion;
+    stint.cuttingEdge = determineCE({
+      mythicKilled: seen.killed.size,
+      totalBosses: seen.zone.encounters.length,
+      tierEndsEu: seen.raidSlug ? (tierEnds.get(seen.raidSlug) ?? null) : null,
+      lastBossDefeatedAt: seen.lastBossAt,
+    });
   }
 
   const lastOf = (stints: GuildStint[]): string =>
