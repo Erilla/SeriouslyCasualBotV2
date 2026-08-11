@@ -128,10 +128,12 @@ async function close(interaction: ButtonInteraction, params: string[]): Promise<
   }
 }
 
-async function modalCreate(interaction: ModalSubmitInteraction, _params: string[]): Promise<void> {
+async function modalCreate(interaction: ModalSubmitInteraction, params: string[]): Promise<void> {
   const characterName = interaction.fields.getTextInputValue('character_name');
   const role = interaction.fields.getTextInputValue('role');
   const startDate = interaction.fields.getTextInputValue('start_date');
+  // Empty when the officer picked nobody; createTrialReviewThread then tries raiders.
+  const discordUserId = params[0] || undefined;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
     await interaction.reply({
@@ -148,13 +150,17 @@ async function modalCreate(interaction: ModalSubmitInteraction, _params: string[
       characterName,
       role,
       startDate,
+      discordUserId,
     });
     const createdDetail = `**${characterName}** (#${trial.id}) as \`${role}\`${
       trial.thread_id ? ` — <#${trial.thread_id}>` : ''
     }`;
     await audit(interaction.user, 'created trial', createdDetail);
+    const linked = trial.discord_user_id
+      ? `Departure notifications are on (<@${trial.discord_user_id}>).`
+      : 'Departure notifications are **off** — no Discord account linked. Set one with `/trials change_trial_info discord_user:`.';
     await interaction.editReply({
-      content: `Trial created for **${characterName}**. Thread: <#${trial.thread_id}>`,
+      content: `Trial created for **${characterName}**. Thread: <#${trial.thread_id}>\n${linked}`,
     });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

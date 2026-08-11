@@ -35,7 +35,14 @@ export default {
     .setDescription('Manage trial reviews')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) =>
-      sub.setName('create_thread').setDescription('Create a new trial review thread'),
+      sub
+        .setName('create_thread')
+        .setDescription('Create a new trial review thread')
+        .addUserOption((opt) =>
+          opt
+            .setName('discord_user')
+            .setDescription("The trial's Discord account (enables departure notifications)"),
+        ),
     )
     .addSubcommand((sub) =>
       sub.setName('get_current_trials').setDescription('View all active trials'),
@@ -61,6 +68,9 @@ export default {
         .addStringOption((opt) => opt.setName('role').setDescription('New role'))
         .addStringOption((opt) =>
           opt.setName('start_date').setDescription('New start date (YYYY-MM-DD)'),
+        )
+        .addUserOption((opt) =>
+          opt.setName('discord_user').setDescription("Link or correct the trial's Discord account"),
         ),
     )
     .addSubcommand((sub) =>
@@ -81,9 +91,10 @@ export default {
     switch (subcommand) {
       case 'create_thread': {
         const today = new Date().toISOString().split('T')[0];
+        const discordUser = interaction.options.getUser('discord_user');
 
         const modal = new ModalBuilder()
-          .setCustomId('trial:modal:create')
+          .setCustomId(discordUser ? `trial:modal:create:${discordUser.id}` : 'trial:modal:create')
           .setTitle('Create Trial Review');
 
         const charNameInput = new TextInputBuilder()
@@ -196,8 +207,9 @@ export default {
         const characterName = interaction.options.getString('character_name') ?? undefined;
         const role = interaction.options.getString('role') ?? undefined;
         const startDate = interaction.options.getString('start_date') ?? undefined;
+        const discordUserId = interaction.options.getUser('discord_user')?.id ?? undefined;
 
-        if (!characterName && !role && !startDate) {
+        if (!characterName && !role && !startDate && !discordUserId) {
           await interaction.reply({
             content: 'You must provide at least one field to update.',
             flags: MessageFlags.Ephemeral,
@@ -234,12 +246,14 @@ export default {
             characterName,
             role,
             startDate,
+            discordUserId,
           });
 
           const changes = [];
           if (characterName) changes.push(`name=${characterName}`);
           if (role) changes.push(`role=\`${role}\``);
           if (startDate) changes.push(`start_date=${dateRef(startDate)}`);
+          if (discordUserId) changes.push(`discord_user=<@${discordUserId}>`);
 
           await audit(
             interaction.user,

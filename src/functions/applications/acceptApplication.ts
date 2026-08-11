@@ -265,6 +265,7 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
       role,
       startDate,
       applicationId,
+      discordUserId: application.applicant_user_id,
     });
     logger.info('Trials', `Created trial review from accepted application #${applicationId}`);
   } catch (error) {
