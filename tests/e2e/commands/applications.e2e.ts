@@ -262,9 +262,9 @@ describe('/applications', () => {
   // =========================================================================
 
   it('view_pending — replies ephemeral with embed listing pending seeded applications', async () => {
-    // seed_all seeds 1 submitted application (not pending).
-    // We add variety data: in_progress + abandoned are the pending ones.
-    // view_pending filters for 'in_progress', 'active', 'abandoned'.
+    // seed_all seeds 1 'active' application, which *is* pending.
+    // We add variety data on top: its in_progress, active and abandoned rows are
+    // pending too. view_pending filters for 'in_progress', 'active', 'abandoned'.
     const db = getDatabase();
     seedApplicationVariety(db);
 
@@ -295,6 +295,8 @@ describe('/applications', () => {
     const desc = firstEmbedDescription(reply);
     // InProgressChar is seeded by seedApplicationVariety with status 'in_progress'.
     expect(desc).toContain('InProgressChar');
+    // ActiveChar is seeded by seedApplicationVariety with status 'active'.
+    expect(desc).toContain('ActiveChar');
     // AbandonedChar is seeded by seedApplicationVariety with status 'abandoned'.
     expect(desc).toContain('AbandonedChar');
   });
@@ -323,13 +325,26 @@ describe('/applications', () => {
     const embedData = replyObj.options as { embeds?: Array<{ data?: { title?: string } }> };
     const title = embedData.embeds?.[0]?.data?.title ?? '';
     expect(title).toContain('Pending Applications');
-    // seed_application_variety adds in_progress + abandoned = 2 pending.
-    expect(title).toContain('2');
+    // seed_all's own 'active' application plus variety's in_progress, active and
+    // abandoned rows = 4 pending.
+    const pending = queryOne<{ count: number }>(
+      "SELECT COUNT(*) as count FROM applications WHERE status IN ('in_progress', 'active', 'abandoned')",
+    );
+    expect(pending!.count).toBe(4);
+    expect(title).toContain(String(pending!.count));
   });
 
   it('view_pending — replies with "No pending applications" when only non-pending apps exist', async () => {
-    // After seed_all the only application is 'submitted' — not pending.
-    // No need to delete anything; the baseline already has no pending apps.
+    // seed_all leaves one 'active' application behind, which *is* pending — so the
+    // baseline has to be resolved before this case exists at all. Resolve rather
+    // than delete, so a non-pending application is still present to be ignored.
+    getDatabase()
+      .prepare(
+        `UPDATE applications SET status = 'rejected', resolved_at = datetime('now')
+          WHERE status IN ('in_progress', 'active', 'abandoned')`,
+      )
+      .run();
+
     const ctx = getE2EContext();
     const channel = ctx.guild.systemChannel as TextBasedChannel;
 

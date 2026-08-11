@@ -48,7 +48,7 @@ export default {
     // Check if this thread belongs to an active application
     const application = db
       .prepare(
-        "SELECT * FROM applications WHERE (forum_post_id = ? OR thread_id = ?) AND status IN ('in_progress', 'submitted', 'active')",
+        "SELECT * FROM applications WHERE (forum_post_id = ? OR thread_id = ?) AND status IN ('in_progress', 'active')",
       )
       .get(newThread.id, newThread.id) as ApplicationRow | undefined;
 

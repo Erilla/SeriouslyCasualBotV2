@@ -203,9 +203,9 @@ describe('/testdata', () => {
     expect(iact.__editedReply).not.toBeNull();
 
     const content = replyContent(iact.__editedReply!);
-    // "Seeded 5 applications (in_progress: 1, submitted: 1, ...)."
+    // "Seeded 5 applications (in_progress: 1, active: 1, ...)."
     expect(content).toMatch(/Seeded 5 applications/i);
-    expect(content).toContain('submitted');
+    expect(content).toContain('active');
     expect(content).toContain('accepted');
     expect(content).toContain('rejected');
 

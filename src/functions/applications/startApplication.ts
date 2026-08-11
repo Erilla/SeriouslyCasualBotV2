@@ -57,7 +57,7 @@ function findBlockingApplication(userId: string): RefusedResult | null {
   const pending = db
     .prepare(
       `SELECT status FROM applications
-        WHERE applicant_user_id = ? AND status IN ('submitted', 'active')
+        WHERE applicant_user_id = ? AND status = 'active'
         ORDER BY id DESC LIMIT 1`,
     )
     .get(userId) as { status: string } | undefined;

@@ -29,8 +29,7 @@ export type DepartureOutcome = 'notified' | 'no_application' | 'no_thread' | 'se
  * The application this departure concerns, if there is one to tell overlords about.
  *
  * `status = 'active'` is the awaiting-decision state, set on submission
- * (`submitApplication.ts`). Note this is *not* `'submitted'`, which production
- * never writes — see #95. An `in_progress` applicant is deliberately excluded:
+ * (`submitApplication.ts`). An `in_progress` applicant is deliberately excluded:
  * they have no post or channel, so there is nothing for an overlord to act on.
  *
  * A non-NULL `departed_notified_at` means overlords have already been told, which

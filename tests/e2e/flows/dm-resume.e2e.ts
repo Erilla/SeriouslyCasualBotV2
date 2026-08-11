@@ -154,7 +154,7 @@ describe('resumeSessions — DM resume flow', () => {
 
   it('is a no-op when there are no in_progress applications', async () => {
     // The DB after resetAndSeed has no in_progress rows (they get wiped and
-    // seeded with a 'submitted' one).  Delete any stragglers to be safe.
+    // seeded with an 'active' one).  Delete any stragglers to be safe.
     const db = getDatabase();
     db.prepare(`DELETE FROM applications WHERE status = 'in_progress'`).run();
 

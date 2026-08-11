@@ -129,7 +129,7 @@ describe('threadUpdate — thread keep-alive event handler', () => {
     expect(app, 'an application must exist after seed').toBeDefined();
 
     // Make sure the application has an active-ish status recognised by the handler
-    // ("in_progress", "submitted", "active"). The seeded app defaults to "submitted".
+    // ("in_progress", "active"). The seeded app defaults to "active".
     const THREAD_ID = '222222222222222222';
     setApplicationThreadId(app!.id, THREAD_ID);
 

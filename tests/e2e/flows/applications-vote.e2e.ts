@@ -11,7 +11,7 @@
  *
  * Status transition note: voteOnApplication() does NOT transition
  * application.status.  Status changes only occur via accept/reject modals.
- * After two "for" votes the application remains "submitted".
+ * After two "for" votes the application remains "active".
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -44,10 +44,10 @@ interface VoteRow {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Return the seeded submitted application, or undefined if none exists. */
+/** Return the seeded awaiting-decision application, or undefined if none exists. */
 function getSeededApplication(): ApplicationRow | undefined {
   return queryOne<ApplicationRow>(
-    "SELECT id, status, thread_id FROM applications WHERE status = 'submitted' LIMIT 1",
+    "SELECT id, status, thread_id FROM applications WHERE status = 'active' LIMIT 1",
   );
 }
 
@@ -147,7 +147,7 @@ describe('applications — vote flow', () => {
 
     // 1. Locate the seeded application.
     const app = getSeededApplication();
-    expect(app, 'seeded submitted application must exist').toBeDefined();
+    expect(app, 'seeded active application must exist').toBeDefined();
     const applicationId = app!.id;
 
     // 2. Resolve an anchor message the bot can edit.
@@ -177,7 +177,7 @@ describe('applications — vote flow', () => {
     const ctx = getE2EContext();
 
     const app = getSeededApplication();
-    expect(app, 'seeded submitted application must exist').toBeDefined();
+    expect(app, 'seeded active application must exist').toBeDefined();
     const applicationId = app!.id;
 
     const anchorMessage = await resolveAnchorMessage(app!);
@@ -195,11 +195,11 @@ describe('applications — vote flow', () => {
     expect(voterAVotes[0]!.vote_type).toBe('against');
   });
 
-  it('application status remains "submitted" after votes — no auto-transition threshold', async () => {
+  it('application status remains "active" after votes — no auto-transition threshold', async () => {
     const ctx = getE2EContext();
 
     const app = getSeededApplication();
-    expect(app, 'seeded submitted application must exist').toBeDefined();
+    expect(app, 'seeded active application must exist').toBeDefined();
     const applicationId = app!.id;
 
     const anchorMessage = await resolveAnchorMessage(app!);
@@ -208,10 +208,10 @@ describe('applications — vote flow', () => {
     await castVote(anchorMessage, ctx.voterA, applicationId, 'for');
     await castVote(anchorMessage, ctx.voterB, applicationId, 'for');
 
-    // Status must remain "submitted" — only accept/reject modals change it.
+    // Status must remain "active" — only accept/reject modals change it.
     const updated = queryOne<{ status: string }>('SELECT status FROM applications WHERE id = ?', [
       applicationId,
     ]);
-    expect(updated?.status).toBe('submitted');
+    expect(updated?.status).toBe('active');
   });
 });
