@@ -26,10 +26,12 @@ const { notifyApplicantDeparture, findUnnotifiedDepartureApplication } =
   await import('../../src/functions/applications/notifyApplicantDeparture.js');
 
 const FACTS = {
+  subject: 'applicant' as const,
   characterName: 'Brentpriest',
-  applicantTag: 'brent_hs',
-  applicantUserId: 'U-APPLICANT',
-  applicationId: 42,
+  tag: 'brent_hs',
+  userId: 'U-APPLICANT',
+  reference: 'application #42',
+  closingAction: 'Reject the application to close it off.',
 };
 
 // ── The copy (ticket #90, Draft A) ────────────────────────────────────────────

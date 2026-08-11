@@ -1,53 +1,61 @@
 import type { MessageCreateOptions } from 'discord.js';
 
-/** Title used for the audit-channel mirror of a departure. */
+/** Title used for the audit-channel mirror of an applicant departure. */
 export const DEPARTURE_AUDIT_TITLE = 'Applicant left the server';
+/** Its trial counterpart, so the two are distinguishable in the audit channel. */
+export const TRIAL_DEPARTURE_AUDIT_TITLE = 'Trial left the server';
 
 export interface DepartureFacts {
-  /** applications.character_name — nullable, so the Discord tag is the fallback. */
+  /** How the leaver is labelled in the message: `(applicant)` or `(trial)`. */
+  subject: 'applicant' | 'trial';
+  /** `applications.character_name` is nullable, so the tag is the fallback. A
+   *  trial's is NOT NULL, so for trials this is always set. */
   characterName: string | null;
-  applicantTag: string;
-  applicantUserId: string;
-  applicationId: number;
+  tag: string;
+  userId: string;
+  /** `application #12` / `trial #4`, for the audit detail. */
+  reference: string;
+  /** The closing instruction: how to close this thing off. */
+  closingAction: string;
 }
 
 /**
- * The character name if the application captured one, else the Discord tag — the
- * one identifier that always exists, and what an overlord would search for.
+ * The character name if there is one, else the Discord tag — the one identifier
+ * that always exists, and what an overlord would search for.
  */
 function displayName(facts: DepartureFacts): string {
-  return facts.characterName ?? facts.applicantTag;
+  return facts.characterName ?? facts.tag;
 }
 
 /**
- * The applicant, mentioned and labelled as such. The mention is inert: it is
- * never listed in `allowedMentions`, and they have left the guild anyway. It
- * earns its place by rendering as their current display name rather than a tag
- * that may already be stale.
+ * The leaver, mentioned and labelled. The mention is inert: it is never listed in
+ * `allowedMentions`, and they have left the guild anyway. It earns its place by
+ * rendering as their current display name rather than a tag that may already be
+ * stale.
  */
-function applicantReference(facts: DepartureFacts): string {
-  return `<@${facts.applicantUserId}> (applicant)`;
+function subjectReference(facts: DepartureFacts): string {
+  return `<@${facts.userId}> (${facts.subject})`;
 }
 
 /**
- * Build the "applicant left" notification for the application log post.
+ * Build the "X left" notification for the post overlords already watch.
  *
- * Deliberately the same shape as `buildOverlordNotification`: one plain line in
- * the post overlords already watch, rather than an embed. Embeds in this bot
- * carry content (voting, intel, recruitment), and a red one reads as an error
- * rather than an event.
+ * Deliberately the same shape as `buildOverlordNotification`: one plain line
+ * rather than an embed. Embeds in this bot carry content (voting, intel,
+ * recruitment), and a red one reads as an error rather than an event.
  *
- * `allowedMentions` is locked to the explicit overlord ids for the same reason
- * as the new-application notification: `character_name` is applicant-supplied,
- * so a crafted name like `@everyone` must render as literal text.
+ * `allowedMentions` is locked to the explicit overlord ids because the character
+ * name is user-supplied, so a crafted name like `@everyone` must render as literal
+ * text. This holds for both subjects: an applicant types their own name, and an
+ * officer types a trial's.
  */
 export function buildDepartureNotification(
   overlordIds: string[],
   facts: DepartureFacts,
 ): MessageCreateOptions {
   const sentence =
-    `**${displayName(facts)}** ${applicantReference(facts)} has left the server. ` +
-    `Reject the application to close it off.`;
+    `**${displayName(facts)}** ${subjectReference(facts)} has left the server. ` +
+    facts.closingAction;
   // No overlords configured means no mention line at all — not a leading blank.
   const mentions = overlordIds.map((id) => `<@${id}>`).join(' ');
 
@@ -63,7 +71,7 @@ export function buildDepartureNotification(
  */
 export function buildDepartureAuditDetail(facts: DepartureFacts): string {
   return (
-    `${displayName(facts)} ${applicantReference(facts)} — ` +
-    `application #${facts.applicationId}, user id \`${facts.applicantUserId}\``
+    `${displayName(facts)} ${subjectReference(facts)} — ` +
+    `${facts.reference}, user id \`${facts.userId}\``
   );
 }

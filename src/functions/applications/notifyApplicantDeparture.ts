@@ -8,6 +8,7 @@ import {
   DEPARTURE_AUDIT_TITLE,
   buildDepartureAuditDetail,
   buildDepartureNotification,
+  type DepartureFacts,
 } from './departureNotification.js';
 
 /** The subset of an application row a departure notification needs. */
@@ -87,11 +88,13 @@ export async function notifyApplicantDeparture(
     return 'no_thread';
   }
 
-  const facts = {
+  const facts: DepartureFacts = {
+    subject: 'applicant',
     characterName: application.character_name,
-    applicantTag: applicant.tag,
-    applicantUserId: applicant.userId,
-    applicationId: application.id,
+    tag: applicant.tag,
+    userId: applicant.userId,
+    reference: `application #${application.id}`,
+    closingAction: 'Reject the application to close it off.',
   };
 
   const channel =
