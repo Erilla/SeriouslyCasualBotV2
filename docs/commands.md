@@ -42,10 +42,10 @@ All commands are Discord slash commands registered to a single guild.
 | `/applications view_pending` | View all pending applications (in_progress, active, abandoned) | Yes | No |
 | `/applications set_accept_message` | Set the default acceptance DM message via modal | Yes | No |
 | `/applications set_reject_message` | Set the default rejection DM message via modal | Yes | No |
-| `/trials create_thread` | Open a modal to create a new trial review thread | Yes | No |
+| `/trials create_thread` | Open a modal to create a new trial review thread. Optional `discord_user` links the trial's Discord account, enabling departure notifications | Yes | No |
 | `/trials get_current_trials` | View all active/promoted trials | Yes | No |
 | `/trials remove_trial` | Close and archive a trial by thread ID | Yes | No |
-| `/trials change_trial_info` | Update a trial's character name, role, or start date | Yes | No |
+| `/trials change_trial_info` | Update a trial's character name, role, start date, or (via optional `discord_user`) linked Discord account | Yes | No |
 | `/trials update_trial_logs` | Refresh WarcraftLogs attendance for all active trials | Yes | No |
 | `/trials update_trial_review_messages` | Refresh all trial review thread starter messages | Yes | No |
 | `/loot create_posts` | Auto-discover current raid tier and create loot priority posts | Yes | No |
@@ -63,6 +63,14 @@ All commands are Discord slash commands registered to a single guild.
 **Dev-only commands** (`devOnly: true`) are skipped at load time when `NODE_ENV=production`, so they are only registered in the local/test environment. `/test` and `/testdata` are the current dev-only commands — used to exercise scheduled jobs and seed mock data during development.
 
 ## Command Details
+
+### `/trials`
+Admin only. `create_thread` and `change_trial_info` both take an optional
+`discord_user` option to link (or correct) the Discord account behind a
+trial. A trial with no linked account is never notified when its Discord
+user leaves the server — `create_thread`'s reply states whether departure
+notifications are on or off, and the off wording points at
+`/trials change_trial_info discord_user:`.
 
 ### `/migrate`
 Admin only. One-time import from a V1 `db.sqlite` (uploaded as the `db_file` attachment): raider identity map, overlords, ignored characters, and the current raid tier's loot posts + votes. Idempotent — safe to re-run.

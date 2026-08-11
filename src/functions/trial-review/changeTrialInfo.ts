@@ -15,6 +15,7 @@ export interface TrialInfoUpdates {
   characterName?: string;
   role?: string;
   startDate?: string;
+  discordUserId?: string;
 }
 
 /**
@@ -38,14 +39,12 @@ export async function changeTrialInfo(
   const newCharName = updates.characterName ?? trial.character_name;
   const newRole = updates.role ?? trial.role;
   const newStartDate = updates.startDate ?? trial.start_date;
+  const newDiscordUserId = updates.discordUserId ?? trial.discord_user_id;
 
   // Update the trial record
-  db.prepare('UPDATE trials SET character_name = ?, role = ?, start_date = ? WHERE id = ?').run(
-    newCharName,
-    newRole,
-    newStartDate,
-    trialId,
-  );
+  db.prepare(
+    'UPDATE trials SET character_name = ?, role = ?, start_date = ?, discord_user_id = ? WHERE id = ?',
+  ).run(newCharName, newRole, newStartDate, newDiscordUserId, trialId);
 
   // If start_date changed, recalculate alerts
   if (updates.startDate && updates.startDate !== trial.start_date) {

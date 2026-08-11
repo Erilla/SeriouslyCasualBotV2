@@ -109,6 +109,10 @@ export interface TrialRow {
   logs_message_id: string | null;
   application_id: number | null;
   status: 'active' | 'promoted' | 'closed';
+  /** Whose Discord account this trial is; NULL when nobody has linked it. */
+  discord_user_id: string | null;
+  /** When overlords were told this trial left the Discord; NULL if they have not been. */
+  departed_notified_at: string | null;
 }
 
 export interface TrialAlertRow {

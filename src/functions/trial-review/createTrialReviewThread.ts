@@ -22,6 +22,32 @@ export interface TrialData {
   role: string;
   startDate: string;
   applicationId?: number;
+  /** Whose Discord account this trial is, when the officer named them. */
+  discordUserId?: string;
+}
+
+/**
+ * Whose Discord account a new trial belongs to.
+ *
+ * The officer's pick wins outright. The `raiders` lookup is only a fallback and is
+ * expected to miss: a manually created trial is precisely the case where the
+ * character has not been through a wowaudit sync yet, which is why the command
+ * offers a user picker at all. Null means departure notifications stay off for this
+ * trial until someone links it.
+ */
+export function resolveTrialDiscordUserId(
+  characterName: string,
+  picked: string | undefined,
+): string | null {
+  if (picked) return picked;
+
+  const raider = getDatabase()
+    .prepare(
+      'SELECT discord_user_id FROM raiders WHERE character_name = ? AND discord_user_id IS NOT NULL',
+    )
+    .get(characterName) as { discord_user_id: string } | undefined;
+
+  return raider?.discord_user_id ?? null;
 }
 
 /**
@@ -138,17 +164,23 @@ export async function createTrialReviewThread(
 ): Promise<TrialRow> {
   const db = getDatabase();
 
-  const { characterName, role, startDate, applicationId } = trialData;
+  const { characterName, role, startDate, applicationId, discordUserId } = trialData;
   const { twoWeek, fourWeek, sixWeek } = calculateReviewDates(startDate);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
 
   // Insert trial record
   const result = db
     .prepare(
-      `INSERT INTO trials (character_name, role, start_date, application_id, status)
-       VALUES (?, ?, ?, ?, 'active')`,
+      `INSERT INTO trials (character_name, role, start_date, application_id, status, discord_user_id)
+       VALUES (?, ?, ?, ?, 'active', ?)`,
     )
-    .run(characterName, role, startDate, applicationId ?? null);
+    .run(
+      characterName,
+      role,
+      startDate,
+      applicationId ?? null,
+      resolveTrialDiscordUserId(characterName, discordUserId),
+    );
 
   const trialId = result.lastInsertRowid as number;
 

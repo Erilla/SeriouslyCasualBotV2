@@ -104,7 +104,9 @@ export function createTables(db: Database.Database): void {
       thread_id TEXT,
       logs_message_id TEXT,
       application_id INTEGER REFERENCES applications(id),
-      status TEXT DEFAULT 'active'
+      status TEXT DEFAULT 'active',
+      discord_user_id TEXT,
+      departed_notified_at TEXT
     );
 
     -- 13. trial_alerts (FK to trials)

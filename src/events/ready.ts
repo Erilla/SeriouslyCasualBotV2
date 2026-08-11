@@ -11,7 +11,7 @@ import { alertHighestMythicPlusDone } from '../functions/raids/alertHighestMythi
 import { updateAchievements } from '../functions/guild-info/updateAchievements.js';
 import { rescheduleAllAlerts } from '../functions/trial-review/scheduleTrialAlerts.js';
 import { resumeSessions } from '../functions/applications/resumeSessions.js';
-import { sweepDepartedApplicants } from '../functions/applications/sweepDepartedApplicants.js';
+import { sweepDepartures } from '../functions/departures/sweepDepartures.js';
 import { dailyBackup } from '../functions/backups/dailyBackup.js';
 import { runDailyMaintenance } from '../functions/maintenance/runDailyMaintenance.js';
 import { recordTaskRun } from '../services/statusTracker.js';
@@ -161,8 +161,11 @@ export default {
     // before announcing startup.
     // Deliberately after the channel bootstrap, so the audit mirror has a channel.
     const departures = guild
-      ? await sweepDepartedApplicants(guild)
-      : { checked: 0, notified: 0, unresolved: 0 };
+      ? await sweepDepartures(guild)
+      : {
+          applications: { checked: 0, notified: 0, unresolved: 0 },
+          trials: { checked: 0, notified: 0, unresolved: 0 },
+        };
 
     // One summary line instead of five — logged after setDiscordChannel, so
     // it reaches #bot-logs and carries the build number (cached lookup).
@@ -177,8 +180,11 @@ export default {
       'bot',
       `Startup complete — ${buildLabel} | scheduler: ${schedulerStats.intervals} intervals, ${schedulerStats.crons} cron | ` +
         `trials: ${trialAlerts} alerts rescheduled | applications: ${sessionsResumed} sessions resumed, ` +
-        `departures: ${departures.notified}/${departures.checked} notified` +
-        (departures.unresolved > 0 ? ` (${departures.unresolved} unresolved)` : ''),
+        `departures: apps ${departures.applications.notified}/${departures.applications.checked}, ` +
+        `trials ${departures.trials.notified}/${departures.trials.checked}` +
+        (departures.applications.unresolved + departures.trials.unresolved > 0
+          ? ` (${departures.applications.unresolved + departures.trials.unresolved} unresolved)`
+          : ''),
     );
   },
 };
