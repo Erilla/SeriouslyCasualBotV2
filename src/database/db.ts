@@ -306,6 +306,66 @@ export function runMigrations(database: Database.Database): void {
       database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(12);
     })();
   }
+
+  if (currentVersion < 13) {
+    // Trial departures. Two columns, for two different reasons.
+    //
+    // `discord_user_id` exists because a trial row never knew whose Discord account
+    // it was: it carries a character name and, only sometimes, an application link.
+    // Storing the id is what makes the notification possible at all, and it survives
+    // a character rename in a way a name match would not.
+    //
+    // `departed_notified_at` is the durable once-only marker, exactly as v12 added
+    // for applications: the gateway event is missed on every redeploy, and the boot
+    // sweep that catches up would otherwise re-notify forever.
+    //
+    // Same guards as v12: table_info returns [] for a missing table, so check
+    // sqlite_master first or the ALTER throws.
+    database.transaction(() => {
+      const tableExists = database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='trials'")
+        .get();
+      if (tableExists) {
+        const cols = database.pragma('table_info(trials)') as { name: string }[];
+        if (!cols.some((c) => c.name === 'discord_user_id')) {
+          database.exec('ALTER TABLE trials ADD COLUMN discord_user_id TEXT');
+        }
+        if (!cols.some((c) => c.name === 'departed_notified_at')) {
+          database.exec('ALTER TABLE trials ADD COLUMN departed_notified_at TEXT');
+        }
+
+        // Best-effort back-fill, application link first: it is the exact record of
+        // who applied, where a character-name match is an inference. Both are
+        // guarded on `discord_user_id IS NULL`, so this cannot clobber an id an
+        // officer has since set, and re-running is a no-op.
+        const hasApplications = database
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='applications'")
+          .get();
+        if (hasApplications) {
+          database.exec(`
+            UPDATE trials SET discord_user_id = (
+              SELECT a.applicant_user_id FROM applications a WHERE a.id = trials.application_id
+            )
+            WHERE discord_user_id IS NULL AND application_id IS NOT NULL
+          `);
+        }
+
+        const hasRaiders = database
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='raiders'")
+          .get();
+        if (hasRaiders) {
+          database.exec(`
+            UPDATE trials SET discord_user_id = (
+              SELECT r.discord_user_id FROM raiders r
+               WHERE r.character_name = trials.character_name AND r.discord_user_id IS NOT NULL
+            )
+            WHERE discord_user_id IS NULL
+          `);
+        }
+      }
+      database.prepare('INSERT INTO schema_version (version) VALUES (?)').run(13);
+    })();
+  }
 }
 
 export function closeDatabase(): void {
