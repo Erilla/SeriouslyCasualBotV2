@@ -32,20 +32,27 @@ export function generateVotingEmbed(applicationId: number): {
     }
   }
 
-  // Build progress bar (for vs against)
+  // One glyph per vote, rather than a proportional bar.
+  //
+  // The bar showed a RATIO, which on the handful of votes an application
+  // actually gets was actively misleading: a lone "for" filled it completely,
+  // reading as unanimous approval when one officer had voted. Glyphs show the
+  // count itself, so three-of-four never looks like a landslide — and abstentions
+  // become visible, where the bar could only ever ignore them.
   const forCount = grouped.for.length;
   const againstCount = grouped.against.length;
   const totalDecisive = forCount + againstCount;
-  const barLength = 20;
 
-  let progressBar: string;
-  if (totalDecisive === 0) {
-    progressBar = `${'░'.repeat(barLength)} No votes yet`;
-  } else {
-    const filledCount = Math.round((forCount / totalDecisive) * barLength);
-    const emptyCount = barLength - filledCount;
-    progressBar = `${'█'.repeat(filledCount)}${'░'.repeat(emptyCount)} ${forCount}/${totalDecisive}`;
-  }
+  const marks =
+    '✅'.repeat(forCount) + '➖'.repeat(grouped.neutral.length) + '❌'.repeat(againstCount);
+  // Only a genuinely empty vote is "no votes yet". An application everyone
+  // abstained on HAS been voted on, and the old ratio-only bar said otherwise.
+  const progressBar =
+    marks === ''
+      ? 'No votes yet'
+      : totalDecisive === 0
+        ? marks
+        : `${marks} ${forCount}/${totalDecisive}`;
 
   // Build fields
   const formatVoters = (voteList: ApplicationVoteRow[]): string =>

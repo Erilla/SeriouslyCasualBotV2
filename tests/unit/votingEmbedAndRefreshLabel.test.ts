@@ -75,6 +75,65 @@ describe('generateVotingEmbed', () => {
     expect(names).toContain('Against (1)');
   });
 
+  describe('the tally line', () => {
+    const seed = (applicationId: number, votes: [string, string][]): void => {
+      const db = getDatabase();
+      db.prepare(
+        `INSERT INTO applications (id, applicant_user_id, status, character_name)
+         VALUES (?, 'u1', 'active', 'Braene')`,
+      ).run(applicationId);
+      for (const [user, type] of votes) {
+        db.prepare(
+          'INSERT INTO application_votes (application_id, user_id, vote_type) VALUES (?, ?, ?)',
+        ).run(applicationId, user, type);
+      }
+    };
+
+    const tally = (applicationId: number): string =>
+      generateVotingEmbed(applicationId).embeds[0].data.fields?.find((f) => f.name === 'Progress')
+        ?.value ?? '';
+
+    it('marks one glyph per vote, for then neutral then against', () => {
+      seed(10, [
+        ['u1', 'for'],
+        ['u2', 'against'],
+        ['u3', 'for'],
+        ['u4', 'neutral'],
+      ]);
+      expect(tally(10)).toContain('✅✅➖❌');
+    });
+
+    it('keeps the decisive count alongside the glyphs', () => {
+      seed(11, [
+        ['u1', 'for'],
+        ['u2', 'for'],
+        ['u3', 'against'],
+      ]);
+      expect(tally(11)).toContain('2/3');
+    });
+
+    it('uses no block-bar characters at all', () => {
+      seed(12, [['u1', 'for']]);
+      expect(tally(12)).not.toMatch(/[█░]/);
+    });
+
+    it('shows neutral votes rather than calling them no votes', () => {
+      // The old bar counted only for-vs-against, so an application everyone
+      // abstained on read as "No votes yet" — which is not what happened.
+      seed(13, [
+        ['u1', 'neutral'],
+        ['u2', 'neutral'],
+      ]);
+      expect(tally(13)).toContain('➖➖');
+      expect(tally(13)).not.toContain('No votes yet');
+    });
+
+    it('still says so when nobody has voted', () => {
+      seed(14, []);
+      expect(tally(14)).toBe('No votes yet');
+    });
+  });
+
   it('ignores a stale kekw vote rather than throwing', () => {
     // The button is gone, but its message is never deleted — a click on an old
     // embed can still write the row, and the embed must survive reading it.
