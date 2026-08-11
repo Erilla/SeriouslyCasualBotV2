@@ -4,13 +4,11 @@ import {
   type Guild,
   ChannelType,
   ThreadAutoArchiveDuration,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
 } from 'discord.js';
 import { logger } from '../../services/logger.js';
 import { getOrCreateChannel } from '../channels.js';
 import { generateVotingEmbed } from './generateVotingEmbed.js';
+import { buildDecisionMessage } from './decisionMessage.js';
 import { splitMessage } from './splitMessage.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
 import { resolveApplicationLogCategory } from './applicationLogCategory.js';
@@ -168,17 +166,7 @@ export async function createForumPost(
   }
 
   try {
-    const decisionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`application:accept:${applicationId}`)
-        .setLabel('Accept')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`application:reject:${applicationId}`)
-        .setLabel('Reject')
-        .setStyle(ButtonStyle.Danger),
-    );
-    await thread.send({ components: [decisionRow] });
+    await thread.send(buildDecisionMessage(applicationId));
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     logger.warn(
