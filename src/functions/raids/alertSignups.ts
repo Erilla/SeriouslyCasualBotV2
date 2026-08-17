@@ -8,7 +8,8 @@ import { generateSignupQuip } from '../../services/quipGenerator.js';
 import { getProgressionContext } from '../../services/quipContext.js';
 import { getRecentQuips, recordQuip } from './quipHistory.js';
 import { getOverlords } from './overlords.js';
-import type { RaiderRow, SettingRow } from '../../types/index.js';
+import { resolveSignupMentions } from './resolveSignupMentions.js';
+import type { SettingRow } from '../../types/index.js';
 
 interface DayConfig {
   settingKey: string;
@@ -91,7 +92,7 @@ export async function alertSignups(client: Client): Promise<void> {
   // Find unsigned raiders (status 'Unknown' = no response yet)
   const unsignedCharacters = raidDetail.signups
     .filter((s) => s.status === 'Unknown')
-    .map((s) => s.character.name.toLowerCase());
+    .map((s) => s.character.name);
 
   if (unsignedCharacters.length === 0) {
     // Everyone has signed up!
@@ -104,20 +105,7 @@ export async function alertSignups(client: Client): Promise<void> {
   }
 
   // Resolve Discord user IDs for unsigned raiders
-  const raiders = db
-    .prepare('SELECT * FROM raiders WHERE inactive_since IS NULL')
-    .all() as RaiderRow[];
-  const raiderMap = new Map(raiders.map((r) => [r.character_name.toLowerCase(), r]));
-
-  const mentions: string[] = [];
-  for (const charName of unsignedCharacters) {
-    const raider = raiderMap.get(charName);
-    if (raider?.discord_user_id) {
-      mentions.push(`<@${raider.discord_user_id}>`);
-    } else {
-      mentions.push(`**${charName}**`);
-    }
-  }
+  const mentions = resolveSignupMentions(db, unsignedCharacters);
 
   // Generate a fresh signup quip via the rotating LLM cascade, with raid
   // progression + recent-quip context. Progression is best-effort (null on

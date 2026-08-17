@@ -3,6 +3,7 @@ import { getDatabase } from '../../database/db.js';
 import { getGuildRoster } from '../../services/raiderio.js';
 import { logger } from '../../services/logger.js';
 import type { RaiderRow, RaiderIdentityMapRow, IgnoredCharacterRow } from '../../types/index.js';
+import { ensureRaidersForActiveTrials } from './ensureTrialRaiders.js';
 
 const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -28,27 +29,72 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   const filteredMembers = apiMembers.filter((m) => !ignoredSet.has(m.character.name.toLowerCase()));
 
   const apiNameSet = new Set(filteredMembers.map((m) => m.character.name.toLowerCase()));
-  const dbRaiderMap = new Map(dbRaiders.map((r) => [r.character_name.toLowerCase(), r]));
+
+  // Characters with an active trial. They are legitimately absent from the
+  // Raider.IO roster -- a fresh guild invite sits at rank 8, outside
+  // ROSTER_RANKS, and Raider.IO does not list a character it has not crawled --
+  // so the absence machinery below must leave their rows alone. Without this a
+  // trial's row is hidden 24h after it appears, which is the whole point of it.
+  const activeTrialNames = new Set(
+    (
+      db.prepare(`SELECT character_name FROM trials WHERE status = 'active'`).all() as {
+        character_name: string;
+      }[]
+    ).map((t) => t.character_name.toLowerCase()),
+  );
 
   let added = 0;
   let markedMissing = 0;
   let markedInactive = 0;
   let returned = 0;
   let reactivated = 0;
+  let unhidden = 0;
+  let refreshed = 0;
 
   // Raiders inserted by this sync with no Discord user. Returned to the caller
   // so it can post auto-link suggestions / missing-user alerts (the automatic
   // path the V2 spec describes — "when a new raider is added without a Discord
   // user ... the bot attempts to auto-match"). Only freshly-added raiders are
-  // collected, so the 10-minute scheduled sync never re-alerts the same raider.
+  // collected, so the daily 06:00 sync never re-alerts the same raider.
   const newUnlinkedRaiders: RaiderRow[] = [];
 
   const transaction = db.transaction(() => {
+    // 0. Every active trial gets a roster row. Runs before anything else so the
+    // rest of this sync sees the rows it creates, and so a row created here is
+    // never stamped by the pass below in the same run.
+    newUnlinkedRaiders.push(...ensureRaidersForActiveTrials(db));
+
+    // Re-read after the ensure step: a trial already promoted to a raiding rank
+    // is both freshly inserted above and present in filteredMembers, and a stale
+    // map would make loop 3 insert their name a second time -- a UNIQUE
+    // violation that rolls back the whole sync.
+    const dbRaiderMap = new Map(
+      (db.prepare('SELECT * FROM raiders').all() as RaiderRow[]).map((r) => [
+        r.character_name.toLowerCase(),
+        r,
+      ]),
+    );
+
     const now = new Date().toISOString();
 
     // 1. Handle raiders no longer in the API roster.
     for (const raider of dbRaiders) {
       if (apiNameSet.has(raider.character_name.toLowerCase())) continue;
+
+      if (activeTrialNames.has(raider.character_name.toLowerCase())) {
+        // Self-heals a trial an earlier sync already stamped.
+        if (raider.missing_since !== null || raider.inactive_since !== null) {
+          db.prepare(
+            'UPDATE raiders SET missing_since = NULL, inactive_since = NULL WHERE id = ?',
+          ).run(raider.id);
+          unhidden++;
+          logger.info(
+            'SyncRaiders',
+            `Raider "${raider.character_name}" un-hidden: an active trial is exempt from the roster check`,
+          );
+        }
+        continue;
+      }
 
       if (raider.missing_since === null) {
         // First sync they're absent: start the grace-period clock.
@@ -97,6 +143,34 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
       }
     }
 
+    // 2b. Refresh the columns the roster owns. These were write-once until now,
+    // so an in-game promotion or realm transfer never reached the row -- and a
+    // trial row inserted with a guessed realm would keep it forever, which
+    // silently drops that character from the M+ alert (it looks characters up
+    // by name and realm).
+    for (const member of filteredMembers) {
+      const existing = dbRaiderMap.get(member.character.name.toLowerCase());
+      if (!existing) continue;
+
+      if (
+        existing.realm === member.character.realm &&
+        existing.region === member.character.region &&
+        existing.rank === member.rank &&
+        existing.class === member.character.class
+      ) {
+        continue;
+      }
+
+      db.prepare('UPDATE raiders SET realm = ?, region = ?, rank = ?, class = ? WHERE id = ?').run(
+        member.character.realm,
+        member.character.region,
+        member.rank,
+        member.character.class,
+        existing.id,
+      );
+      refreshed++;
+    }
+
     // 3. Handle new raiders from API
     const identityMap = db
       .prepare('SELECT character_name, discord_user_id FROM raider_identity_map')
@@ -140,7 +214,8 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   logger.info(
     'SyncRaiders',
     `Sync complete: ${added} added, ${returned} returned, ${reactivated} reactivated, ` +
-      `${markedMissing} newly missing, ${markedInactive} newly inactive`,
+      `${markedMissing} newly missing, ${markedInactive} newly inactive, ${unhidden} un-hidden, ` +
+      `${refreshed} refreshed`,
   );
 
   return newUnlinkedRaiders;
