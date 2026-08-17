@@ -49,6 +49,7 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   let returned = 0;
   let reactivated = 0;
   let unhidden = 0;
+  let refreshed = 0;
 
   // Raiders inserted by this sync with no Discord user. Returned to the caller
   // so it can post auto-link suggestions / missing-user alerts (the automatic
@@ -126,6 +127,34 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
       }
     }
 
+    // 2b. Refresh the columns the roster owns. These were write-once until now,
+    // so an in-game promotion or realm transfer never reached the row -- and a
+    // trial row inserted with a guessed realm would keep it forever, which
+    // silently drops that character from the M+ alert (it looks characters up
+    // by name and realm).
+    for (const member of filteredMembers) {
+      const existing = dbRaiderMap.get(member.character.name.toLowerCase());
+      if (!existing) continue;
+
+      if (
+        existing.realm === member.character.realm &&
+        existing.region === member.character.region &&
+        existing.rank === member.rank &&
+        existing.class === member.character.class
+      ) {
+        continue;
+      }
+
+      db.prepare('UPDATE raiders SET realm = ?, region = ?, rank = ?, class = ? WHERE id = ?').run(
+        member.character.realm,
+        member.character.region,
+        member.rank,
+        member.character.class,
+        existing.id,
+      );
+      refreshed++;
+    }
+
     // 3. Handle new raiders from API
     const identityMap = db
       .prepare('SELECT character_name, discord_user_id FROM raider_identity_map')
@@ -169,7 +198,8 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   logger.info(
     'SyncRaiders',
     `Sync complete: ${added} added, ${returned} returned, ${reactivated} reactivated, ` +
-      `${markedMissing} newly missing, ${markedInactive} newly inactive, ${unhidden} un-hidden`,
+      `${markedMissing} newly missing, ${markedInactive} newly inactive, ${unhidden} un-hidden, ` +
+      `${refreshed} refreshed`,
   );
 
   return newUnlinkedRaiders;

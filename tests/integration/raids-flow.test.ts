@@ -265,4 +265,37 @@ describe('raids roster sync flow (integration)', () => {
     };
     expect(row.missing_since).toBeNull();
   });
+
+  it('refreshes realm, region, rank and class when the roster disagrees', async () => {
+    const db = getDatabase();
+    db.prepare(
+      'INSERT INTO raiders (character_name, realm, region, rank, class) VALUES (?, ?, ?, ?, ?)',
+    ).run('Jovaz', 'silvermoon', 'eu', null, null);
+    mockedGetGuildRoster.mockResolvedValue([makeMember('Jovaz', 4, 'draenor', 'eu', 'Warlock')]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Jovaz') as {
+      realm: string;
+      region: string;
+      rank: number | null;
+      class: string | null;
+    };
+    expect(row).toMatchObject({ realm: 'draenor', region: 'eu', rank: 4, class: 'Warlock' });
+  });
+
+  it('leaves a row alone when the roster agrees', async () => {
+    const db = getDatabase();
+    db.prepare(
+      'INSERT INTO raiders (character_name, realm, region, rank, class) VALUES (?, ?, ?, ?, ?)',
+    ).run('Jovaz', 'draenor', 'eu', 4, 'Warlock');
+    mockedGetGuildRoster.mockResolvedValue([makeMember('Jovaz', 4, 'draenor', 'eu', 'Warlock')]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Jovaz') as {
+      rank: number | null;
+    };
+    expect(row.rank).toBe(4);
+  });
 });
