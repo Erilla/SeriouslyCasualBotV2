@@ -3,6 +3,7 @@ import { getDatabase } from '../../database/db.js';
 import { getGuildRoster } from '../../services/raiderio.js';
 import { logger } from '../../services/logger.js';
 import type { RaiderRow, RaiderIdentityMapRow, IgnoredCharacterRow } from '../../types/index.js';
+import { ensureRaidersForActiveTrials } from './ensureTrialRaiders.js';
 
 const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -28,7 +29,6 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   const filteredMembers = apiMembers.filter((m) => !ignoredSet.has(m.character.name.toLowerCase()));
 
   const apiNameSet = new Set(filteredMembers.map((m) => m.character.name.toLowerCase()));
-  const dbRaiderMap = new Map(dbRaiders.map((r) => [r.character_name.toLowerCase(), r]));
 
   // Characters with an active trial. They are legitimately absent from the
   // Raider.IO roster -- a fresh guild invite sits at rank 8, outside
@@ -59,6 +59,22 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   const newUnlinkedRaiders: RaiderRow[] = [];
 
   const transaction = db.transaction(() => {
+    // 0. Every active trial gets a roster row. Runs before anything else so the
+    // rest of this sync sees the rows it creates, and so a row created here is
+    // never stamped by the pass below in the same run.
+    newUnlinkedRaiders.push(...ensureRaidersForActiveTrials(db));
+
+    // Re-read after the ensure step: a trial already promoted to a raiding rank
+    // is both freshly inserted above and present in filteredMembers, and a stale
+    // map would make loop 3 insert their name a second time -- a UNIQUE
+    // violation that rolls back the whole sync.
+    const dbRaiderMap = new Map(
+      (db.prepare('SELECT * FROM raiders').all() as RaiderRow[]).map((r) => [
+        r.character_name.toLowerCase(),
+        r,
+      ]),
+    );
+
     const now = new Date().toISOString();
 
     // 1. Handle raiders no longer in the API roster.

@@ -298,4 +298,48 @@ describe('raids roster sync flow (integration)', () => {
     };
     expect(row.rank).toBe(4);
   });
+
+  it('adds a roster row for an active trial the roster does not list', async () => {
+    const db = getDatabase();
+    addTrial('Etav', 'active', '999');
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Etav') as
+      | { discord_user_id: string | null; missing_since: string | null }
+      | undefined;
+    expect(row?.discord_user_id).toBe('999');
+    expect(row?.missing_since).toBeNull();
+  });
+
+  it('returns an unlinked trial row so auto-match and the linking post fire', async () => {
+    addTrial('Etav', 'active', null);
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    const newUnlinked = await syncRaiders(mockClient);
+
+    expect(newUnlinked.map((r) => r.character_name)).toEqual(['Etav']);
+  });
+
+  it('does not re-return the same trial row on the next sync', async () => {
+    addTrial('Etav', 'active', null);
+    mockedGetGuildRoster.mockResolvedValue([]);
+    await syncRaiders(mockClient);
+
+    expect(await syncRaiders(mockClient)).toEqual([]);
+  });
+
+  it('survives a trial who is already in the filtered roster', async () => {
+    const db = getDatabase();
+    addTrial('Etav', 'active', '999');
+    mockedGetGuildRoster.mockResolvedValue([makeMember('Etav', 3, 'silvermoon', 'eu', 'Priest')]);
+
+    await expect(syncRaiders(mockClient)).resolves.toBeDefined();
+
+    const count = db
+      .prepare('SELECT COUNT(*) AS n FROM raiders WHERE character_name = ?')
+      .get('Etav') as { n: number };
+    expect(count.n).toBe(1);
+  });
 });
