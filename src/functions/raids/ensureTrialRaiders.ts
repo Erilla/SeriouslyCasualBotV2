@@ -48,10 +48,12 @@ export function trialRealm(
  * filtered to ROSTER_RANKS, and a new trial fails that gate both ways — a fresh
  * guild invite sits at rank 8, and Raider.IO does not list a character it has
  * not crawled. Without a row the trial is invisible to every roster consumer,
- * including the signup ping.
+ * including the signup ping. And the sync only runs once a day at 06:00 (via
+ * `dailyMaintenance`), so trial creation calls this directly rather than leaving a
+ * trial rowless until the next morning.
  *
- * Idempotent, so both callers (acceptApplication and syncRaiders) can run it
- * freely. Two rows are never created for one character, an ignored character is
+ * Idempotent, so both callers (createTrialReviewThread and syncRaiders) can run
+ * it freely. Two rows are never created for one character, an ignored character is
  * never resurrected, and an existing Discord link is never overwritten — though
  * a null one is filled, which is the only way an already-inserted unlinked row
  * ever picks up the link the trial record knows about.
@@ -108,7 +110,7 @@ export function ensureRaiderForTrial(db: Database, trial: EnsurableTrial): Ensur
  *
  * Returns only the rows this call inserted that have no Discord link, which is
  * what syncRaiders feeds to auto-match and the linking message. Rows that
- * already existed are excluded so the ten-minute sync never re-alerts the same
+ * already existed are excluded so the daily 06:00 sync never re-alerts the same
  * raider.
  */
 export function ensureRaidersForActiveTrials(db: Database): RaiderRow[] {

@@ -27,9 +27,27 @@ vi.mock('../../src/config.js', () => ({
 
 import { syncRaiders } from '../../src/functions/raids/syncRaiders.js';
 import { getGuildRoster } from '../../src/services/raiderio.js';
+import { logger } from '../../src/services/logger.js';
 
 const mockClient = {} as Client;
 const mockedGetGuildRoster = vi.mocked(getGuildRoster);
+
+/**
+ * How many rows the refresh pass reported updating, read off the "Sync complete"
+ * line. The row contents alone cannot tell us: a needless UPDATE writes the
+ * values the row already had, so only the counter distinguishes skip from write.
+ */
+function refreshedCount(): number {
+  const line = vi
+    .mocked(logger.info)
+    .mock.calls.map((call) => String(call[1]))
+    .find((message) => message.startsWith('Sync complete'));
+
+  expect(line).toBeDefined();
+  const match = /(\d+) refreshed/.exec(line!);
+  expect(match).not.toBeNull();
+  return Number(match![1]);
+}
 
 function makeMember(
   name: string,
@@ -282,6 +300,7 @@ describe('raids roster sync flow (integration)', () => {
       class: string | null;
     };
     expect(row).toMatchObject({ realm: 'draenor', region: 'eu', rank: 4, class: 'Warlock' });
+    expect(refreshedCount()).toBe(1);
   });
 
   it('leaves a row alone when the roster agrees', async () => {
@@ -297,6 +316,32 @@ describe('raids roster sync flow (integration)', () => {
       rank: number | null;
     };
     expect(row.rank).toBe(4);
+    // The equality guard held: no UPDATE was issued at all.
+    expect(refreshedCount()).toBe(0);
+  });
+
+  it('refreshes an exempt trial row without un-doing the exemption', async () => {
+    // Pins that the refresh pass touches only the four roster-owned columns: a
+    // widening that also wrote missing_since/inactive_since would re-hide a trial
+    // the exemption pass had just un-hidden.
+    const db = getDatabase();
+    db.prepare(
+      `INSERT INTO raiders (character_name, realm, region, rank, class, missing_since)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('Etav', 'silvermoon', 'eu', null, null, '2026-08-01T00:00:00Z');
+    addTrial('Etav');
+    mockedGetGuildRoster.mockResolvedValue([makeMember('Etav', 4, 'draenor', 'eu', 'Warlock')]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Etav') as {
+      realm: string;
+      missing_since: string | null;
+      inactive_since: string | null;
+    };
+    expect(row.realm).toBe('draenor');
+    expect(row.missing_since).toBeNull();
+    expect(row.inactive_since).toBeNull();
   });
 
   it('adds a roster row for an active trial the roster does not list', async () => {

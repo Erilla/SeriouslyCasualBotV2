@@ -12,6 +12,7 @@ import { config } from '../../config.js';
 import { logger } from '../../services/logger.js';
 import { getOrCreateChannel } from '../channels.js';
 import { addOverlordsToThread } from '../raids/overlords.js';
+import { ensureRaiderForTrial } from '../raids/ensureTrialRaiders.js';
 import { generateTrialLogsContent } from './generateTrialLogs.js';
 import { scheduleTrialAlerts } from './scheduleTrialAlerts.js';
 import { ensureTrialForumTags } from './trialForumTags.js';
@@ -168,21 +169,39 @@ export async function createTrialReviewThread(
   const { twoWeek, fourWeek, sixWeek } = calculateReviewDates(startDate);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
 
+  const trialDiscordUserId = resolveTrialDiscordUserId(characterName, discordUserId);
+
   // Insert trial record
   const result = db
     .prepare(
       `INSERT INTO trials (character_name, role, start_date, application_id, status, discord_user_id)
        VALUES (?, ?, ?, ?, 'active', ?)`,
     )
-    .run(
-      characterName,
-      role,
-      startDate,
-      applicationId ?? null,
-      resolveTrialDiscordUserId(characterName, discordUserId),
-    );
+    .run(characterName, role, startDate, applicationId ?? null, trialDiscordUserId);
 
   const trialId = result.lastInsertRowid as number;
+
+  // A trial is a roster member, so give them a `raiders` row now. This is the one
+  // place both trial-creation paths (an accepted application and `/trials create`)
+  // pass through, so it is the only non-sync writer of trial roster rows. Doing it
+  // here matters because the roster sync only runs once a day at 06:00 via
+  // `dailyMaintenance` -- without this a trial created in the evening has no row,
+  // and so no signup ping, until the next morning.
+  //
+  // Never fatal: a missing roster row must not cost us the review thread, and the
+  // daily sync ensures it anyway.
+  try {
+    ensureRaiderForTrial(db, {
+      character_name: characterName,
+      discord_user_id: trialDiscordUserId,
+      application_id: applicationId ?? null,
+    });
+  } catch (error) {
+    logger.warn(
+      'Trials',
+      `Failed to add "${characterName}" to the roster for trial #${trialId}: ${error}`,
+    );
+  }
 
   // Insert trial alerts
   const insertAlert = db.prepare(

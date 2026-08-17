@@ -22,7 +22,6 @@ import { closeThread } from '../threads.js';
 import { refreshPendingApplicationCategory } from './applicationLogCategory.js';
 import { createTrialReviewThread } from '../trial-review/createTrialReviewThread.js';
 import { assignRaiderRole } from './assignRaiderRole.js';
-import { ensureRaiderForTrial } from '../raids/ensureTrialRaiders.js';
 import type { ApplicationRow, DefaultMessageRow } from '../../types/index.js';
 
 /**
@@ -273,22 +272,6 @@ export async function processAcceptModal(interaction: ModalSubmitInteraction): P
     logger.warn(
       'Trials',
       `Failed to create trial review for application #${applicationId}: ${error}`,
-    );
-  }
-
-  // A trial is a roster member: give them a raiders row now rather than waiting
-  // up to ten minutes for the next sync, which would ensure it anyway. Never
-  // fails the accept -- the sync is the backstop.
-  try {
-    ensureRaiderForTrial(db, {
-      character_name: characterName,
-      discord_user_id: application.applicant_user_id,
-      application_id: applicationId,
-    });
-  } catch (error) {
-    logger.warn(
-      'Applications',
-      `Failed to add ${characterName} to the roster for application #${applicationId}: ${error}`,
     );
   }
 

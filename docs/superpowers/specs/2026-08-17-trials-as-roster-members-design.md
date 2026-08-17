@@ -12,7 +12,7 @@ The Wednesday signup reminder named two new trials as plain text while pinging e
 
 `alertSignups` resolved mentions from the `raiders` table alone. Neither Etav nor Neralia had a row, so both fell through to the bold-name branch — even though the bot knew both Discord accounts (Neralia's in `trials.discord_user_id`, Etav's in `raider_identity_map`).
 
-The immediate ping bug is already fixed by `resolveSignupMentions` (raiders → active trials → identity map). This spec addresses the underlying cause: **a trial is not a roster member as far as the `raiders` table is concerned.**
+The immediate ping bug is already fixed by `resolveSignupMentions` (raiders → active trials → identity map, the last gated behind an accepted application). This spec addresses the underlying cause: **a trial is not a roster member as far as the `raiders` table is concerned.**
 
 ### Why neither trial had a row
 
@@ -66,30 +66,30 @@ When a trial closes, nothing special happens: the exemption stops applying and n
 - `ensureRaidersForActiveTrials(db): RaiderRow[]` — loops active trials, returns the freshly inserted rows that have no Discord link.
 - `trialRealm(db, trial): { realm: string; region: string }` — reads `applicant_intel_jobs.character_realm`/`character_region` via the trial's `application_id`; falls back to the `silvermoon`/`eu` guild default. `rank` and `class` are left NULL and filled by the refresh rule once the character appears in the roster.
 
-**`acceptApplication`** calls `ensureRaiderForTrial` immediately after `createTrialReviewThread`, best-effort and non-fatal like the surrounding steps, so the row exists within seconds instead of waiting up to ten minutes for the next sync.
+**`createTrialReviewThread`** calls `ensureRaiderForTrial` immediately after its `INSERT INTO trials`, best-effort and non-fatal, so the row exists within seconds. This matters more than it first appears: **`syncRaiders` runs once a day, at 06:00, via the `dailyMaintenance` cron** (`src/events/ready.ts`) — not every ten minutes, as an earlier draft of this spec claimed. Without a direct call, a trial created in the evening would have no roster row until the next morning.
 
-**`resolveSignupMentions`** is unchanged. Once trials have rows, its first branch hits; the trials and identity-map fallbacks remain as belt-and-braces for the window before the first sync, and they cost nothing.
+`createTrialReviewThread` is deliberately the call site rather than `acceptApplication`, because it is the one function **both** trial-creation paths already go through: accepting an application, and `/trials create`. One writer, both paths covered. (`seedTrialDiscord` also calls it; seeded trials getting roster rows in the test guild is expected.)
+
+**`resolveSignupMentions`** keeps its fallbacks, and they are **load-bearing, not belt-and-braces**: with a daily sync, a raiders row can be up to a day behind reality, and the `trials` fallback is what pings a trial in that window. Its third source, `raider_identity_map`, is **gated behind an accepted application**. The map is written at application _submission_ from a character name the applicant typed, before any officer decision, so an ungated read would let a rejected applicant — or anyone who typed an existing raider's character name — be pinged in that character's place. An entry is trusted only when an `applications` row exists that is `accepted`, has `applicant_user_id` equal to the map's `discord_user_id`, and has `character_name` matching the map's, `COLLATE NOCASE`.
 
 ### Data flow
 
 ```
-accept application ──► trials row (+ discord_user_id) ──► ensureRaiderForTrial ──► raiders row (linked)
+accept application ──┐
+                     ├─► createTrialReviewThread ──► trials row ──► ensureRaiderForTrial ──► raiders row (± linked)
+/trials create ──────┘
 
-/trial command ──────► trials row (± discord_user_id) ──┐
-                                                        │  (no direct call; picked up below)
-syncRaiders (10 min) ──► ensureRaidersForActiveTrials ◄──┘  ──► raiders row (± linked)
-                     ──► exempt active trials from stamping
-                     ──► refresh realm/region/rank/class from the roster
+syncRaiders (daily 06:00) ──► ensureRaidersForActiveTrials ──► raiders row (± linked)
+                          ──► exempt active trials from stamping
+                          ──► refresh realm/region/rank/class from the roster
 ```
 
-There are exactly two writers: `acceptApplication` and `syncRaiders`. The `/trial`
-command deliberately does **not** call the ensure function itself — a manually
-created trial is picked up by the next sync, within ten minutes. Both writers go
+There are exactly two writers: `createTrialReviewThread` and `syncRaiders`. Both go
 through `ensureRaiderForTrial`, so there is one insert path regardless.
 
 ### Error handling
 
-The `acceptApplication` call is wrapped and logged as a warning on failure; accepting an application must never fail because a roster row could not be written, and the sync will pick it up regardless. The sync-side steps run inside the existing `db.transaction`, so a throw rolls the whole sync back rather than leaving the table half-updated — matching current behaviour.
+The `createTrialReviewThread` call is wrapped and logged as a warning on failure; creating a trial review thread must never fail because a roster row could not be written, and the daily sync will pick it up regardless. The sync-side steps run inside the existing `db.transaction`, so a throw rolls the whole sync back rather than leaving the table half-updated — matching current behaviour.
 
 ## Consequences, deliberately accepted
 
@@ -115,7 +115,11 @@ Integration tests in `tests/integration/raids-flow.test.ts`:
 - a character arriving in the roster has `realm`, `region`, `rank` and `class` refreshed
 - the sync inserts rows for active trials and returns the unlinked ones for auto-match
 
-One test in the applications suite: accepting an application leaves a linked `raiders` row.
+Plus, in `tests/unit/trialCreationRosterRow.test.ts`, the trial-creation contract: the object `createTrialReviewThread` hands `ensureRaiderForTrial` leaves a linked row, for both the application path (realm from the intel job) and the `/trials create` path (no application, guild-default realm). The full function is not driven — that would need a forum-channel Discord mock the repo has no harness for.
+
+Refresh-pass tests read the `refreshed` count off the "Sync complete" log line rather than the row contents, because a needless UPDATE writes back the values already there and so is invisible in the row: 0 refreshed when the roster agrees, 1 when it disagrees. One further test pins that refreshing an exempt trial's realm does not re-stamp `missing_since`/`inactive_since`.
+
+In `tests/unit/resolveSignupMentions.test.ts`, the gate: an identity-map entry whose application is `submitted`, `rejected`, missing, or belongs to another user produces the bold-name fallback; an `accepted` one produces the mention.
 
 ## Out of scope
 

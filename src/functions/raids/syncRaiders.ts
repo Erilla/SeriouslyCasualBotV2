@@ -55,7 +55,7 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   // so it can post auto-link suggestions / missing-user alerts (the automatic
   // path the V2 spec describes — "when a new raider is added without a Discord
   // user ... the bot attempts to auto-match"). Only freshly-added raiders are
-  // collected, so the 10-minute scheduled sync never re-alerts the same raider.
+  // collected, so the daily 06:00 sync never re-alerts the same raider.
   const newUnlinkedRaiders: RaiderRow[] = [];
 
   const transaction = db.transaction(() => {

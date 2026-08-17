@@ -4,7 +4,13 @@
 
 **Goal:** Give every active trial a `raiders` row that the Raider.IO roster sync will not hide, so trials are pinged and listed like any other raider.
 
-**Architecture:** One idempotent module (`ensureTrialRaiders.ts`) owns the insert path. `syncRaiders` calls it, exempts active trials from the missing/inactive stamping, and refreshes roster-owned columns from the API. `acceptApplication` calls the same function so the row appears within seconds rather than at the next ten-minute sync.
+**Architecture:** One idempotent module (`ensureTrialRaiders.ts`) owns the insert path. `syncRaiders` calls it, exempts active trials from the missing/inactive stamping, and refreshes roster-owned columns from the API. `createTrialReviewThread` calls the same function so the row appears within seconds rather than at the next sync.
+
+> **As-shipped corrections (final review, 2026-08-17).** Read these before trusting the step-by-step text below; the plan was written against two wrong assumptions.
+>
+> 1. **Cadence.** `syncRaiders` does **not** run every ten minutes. It runs **once a day at 06:00**, inside the `dailyMaintenance` cron (`src/events/ready.ts`). The only interval task in the app is the applicant-intel resumer. Everywhere this plan says "within ten minutes", read "not until 06:00 tomorrow" — which is why the direct ensure call is load-bearing, and why `resolveSignupMentions`' active-trial fallback is load-bearing too rather than belt-and-braces.
+> 2. **The call site moved (Task 5).** The ensure call lives in `createTrialReviewThread` (`src/functions/trial-review/createTrialReviewThread.ts`, right after its `INSERT INTO trials`), **not** in `acceptApplication`. That is the one function both trial-creation paths already go through — an accepted application and `/trials create` — so a manually created trial no longer waits for the sync either. The `acceptApplication` block Task 5 describes was added and then removed, so there is exactly one non-sync writer. The contract test moved with it, to `tests/unit/trialCreationRosterRow.test.ts`.
+> 3. **The identity map is gated.** `resolveSignupMentions` trusts a `raider_identity_map` row only when an `applications` row exists that is `accepted`, whose `applicant_user_id` equals the map's `discord_user_id`, and whose `character_name` matches the map's `COLLATE NOCASE`. The map is written at submission from a name the applicant typed, so an ungated read would let a rejected applicant, or anyone who typed an existing raider's name, be pinged in that character's place.
 
 **Tech Stack:** TypeScript (ESM, Node16 module resolution), better-sqlite3 (synchronous), discord.js v14, Vitest.
 
@@ -378,7 +384,7 @@ export function trialRealm(
  * not crawled. Without a row the trial is invisible to every roster consumer,
  * including the signup ping.
  *
- * Idempotent, so both callers (acceptApplication and syncRaiders) can run it
+ * Idempotent, so both callers (createTrialReviewThread and syncRaiders) can run it
  * freely. Two rows are never created for one character, an ignored character is
  * never resurrected, and an existing Discord link is never overwritten — though
  * a null one is filled, which is the only way an already-inserted unlinked row
@@ -436,7 +442,7 @@ export function ensureRaiderForTrial(db: Database, trial: EnsurableTrial): Ensur
  *
  * Returns only the rows this call inserted that have no Discord link, which is
  * what syncRaiders feeds to auto-match and the linking message. Rows that
- * already existed are excluded so the ten-minute sync never re-alerts the same
+ * already existed are excluded so the daily 06:00 sync never re-alerts the same
  * raider.
  */
 export function ensureRaidersForActiveTrials(db: Database): RaiderRow[] {
@@ -953,7 +959,7 @@ EOF
 
 ### Task 5: Insert the row at accept time
 
-The sync covers this within ten minutes; this closes that window so an accepted applicant is a roster member immediately.
+The sync only covers this at 06:00 the next morning; this closes that window so a new trial is a roster member immediately. See the as-shipped correction at the top: the call went into `createTrialReviewThread`, not `acceptApplication`, so `/trials create` is covered too.
 
 **Files:**
 
@@ -1048,7 +1054,7 @@ try {
 }
 
 // A trial is a roster member: give them a raiders row now rather than waiting
-// up to ten minutes for the next sync, which would ensure it anyway. Never
+// until the 06:00 sync, which would ensure it anyway. Never
 // fails the accept -- the sync is the backstop.
 try {
   ensureRaiderForTrial(db, {
@@ -1080,7 +1086,7 @@ git commit -F - <<'EOF'
 feat(applications): accepting an application adds the trial to the roster
 
 What an officer already expects to happen. The roster sync would ensure the row
-within ten minutes regardless, so this is purely about closing that window, and
+at 06:00 regardless, so this is purely about closing that window, and
 it never fails the accept.
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
@@ -1112,7 +1118,7 @@ Expected: active trials listed with `has_row: 0` for Etav and Neralia. Record th
 
 Summarise for the user: tasks complete, suite green, commits local and unpushed. Deploying to test means pushing `main`, which restarts the test bot; promoting to prod is a fast-forward push of `main` to `prod`. Ask before either — do not push.
 
-After deploy, the check to repeat is Step 2's query: `has_row` should be 1 for every active trial within ten minutes, with `missing_since` staying null.
+After deploy, the check to repeat is Step 2's query: `has_row` should be 1 for every active trial immediately after the trial is created (and for pre-existing trials, after the 06:00 sync), with `missing_since` staying null.
 
 ---
 
