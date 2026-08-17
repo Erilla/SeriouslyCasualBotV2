@@ -186,4 +186,83 @@ describe('raids roster sync flow (integration)', () => {
     expect(names).toContain('ActiveGuy');
     expect(names).not.toContain('GoneGuy');
   });
+
+  function addTrial(name: string, status = 'active', discordUserId: string | null = '999') {
+    getDatabase()
+      .prepare(
+        `INSERT INTO trials (character_name, role, start_date, status, discord_user_id)
+         VALUES (?, 'DPS', '2026-08-18', ?, ?)`,
+      )
+      .run(name, status, discordUserId);
+  }
+
+  it('does not mark an active trial missing when Raider.IO has not crawled them', async () => {
+    const db = getDatabase();
+    db.prepare('INSERT INTO raiders (character_name, discord_user_id) VALUES (?, ?)').run(
+      'Etav',
+      '999',
+    );
+    addTrial('Etav');
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Etav') as {
+      missing_since: string | null;
+    };
+    expect(row.missing_since).toBeNull();
+  });
+
+  it('clears a stamp a previous sync left on an active trial', async () => {
+    const db = getDatabase();
+    db.prepare(
+      `INSERT INTO raiders (character_name, discord_user_id, missing_since, inactive_since)
+       VALUES (?, ?, ?, ?)`,
+    ).run('Etav', '999', '2026-08-01T00:00:00Z', '2026-08-02T00:00:00Z');
+    addTrial('Etav');
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Etav') as {
+      missing_since: string | null;
+      inactive_since: string | null;
+    };
+    expect(row.missing_since).toBeNull();
+    expect(row.inactive_since).toBeNull();
+  });
+
+  it('still marks a closed trial missing', async () => {
+    const db = getDatabase();
+    db.prepare('INSERT INTO raiders (character_name, discord_user_id) VALUES (?, ?)').run(
+      'Oldtrial',
+      '999',
+    );
+    addTrial('Oldtrial', 'closed');
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Oldtrial') as {
+      missing_since: string | null;
+    };
+    expect(row.missing_since).not.toBeNull();
+  });
+
+  it('matches the trial exemption case-insensitively', async () => {
+    const db = getDatabase();
+    db.prepare('INSERT INTO raiders (character_name, discord_user_id) VALUES (?, ?)').run(
+      'Etav',
+      '999',
+    );
+    addTrial('etav');
+    mockedGetGuildRoster.mockResolvedValue([]);
+
+    await syncRaiders(mockClient);
+
+    const row = db.prepare('SELECT * FROM raiders WHERE character_name = ?').get('Etav') as {
+      missing_since: string | null;
+    };
+    expect(row.missing_since).toBeNull();
+  });
 });

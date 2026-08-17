@@ -30,11 +30,25 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   const apiNameSet = new Set(filteredMembers.map((m) => m.character.name.toLowerCase()));
   const dbRaiderMap = new Map(dbRaiders.map((r) => [r.character_name.toLowerCase(), r]));
 
+  // Characters with an active trial. They are legitimately absent from the
+  // Raider.IO roster -- a fresh guild invite sits at rank 8, outside
+  // ROSTER_RANKS, and Raider.IO does not list a character it has not crawled --
+  // so the absence machinery below must leave their rows alone. Without this a
+  // trial's row is hidden 24h after it appears, which is the whole point of it.
+  const activeTrialNames = new Set(
+    (
+      db.prepare(`SELECT character_name FROM trials WHERE status = 'active'`).all() as {
+        character_name: string;
+      }[]
+    ).map((t) => t.character_name.toLowerCase()),
+  );
+
   let added = 0;
   let markedMissing = 0;
   let markedInactive = 0;
   let returned = 0;
   let reactivated = 0;
+  let unhidden = 0;
 
   // Raiders inserted by this sync with no Discord user. Returned to the caller
   // so it can post auto-link suggestions / missing-user alerts (the automatic
@@ -49,6 +63,21 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
     // 1. Handle raiders no longer in the API roster.
     for (const raider of dbRaiders) {
       if (apiNameSet.has(raider.character_name.toLowerCase())) continue;
+
+      if (activeTrialNames.has(raider.character_name.toLowerCase())) {
+        // Self-heals a trial an earlier sync already stamped.
+        if (raider.missing_since !== null || raider.inactive_since !== null) {
+          db.prepare(
+            'UPDATE raiders SET missing_since = NULL, inactive_since = NULL WHERE id = ?',
+          ).run(raider.id);
+          unhidden++;
+          logger.info(
+            'SyncRaiders',
+            `Raider "${raider.character_name}" un-hidden: an active trial is exempt from the roster check`,
+          );
+        }
+        continue;
+      }
 
       if (raider.missing_since === null) {
         // First sync they're absent: start the grace-period clock.
@@ -140,7 +169,7 @@ export async function syncRaiders(_client: Client): Promise<RaiderRow[]> {
   logger.info(
     'SyncRaiders',
     `Sync complete: ${added} added, ${returned} returned, ${reactivated} reactivated, ` +
-      `${markedMissing} newly missing, ${markedInactive} newly inactive`,
+      `${markedMissing} newly missing, ${markedInactive} newly inactive, ${unhidden} un-hidden`,
   );
 
   return newUnlinkedRaiders;
