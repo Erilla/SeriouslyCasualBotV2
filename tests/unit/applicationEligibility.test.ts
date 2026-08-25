@@ -119,60 +119,13 @@ describe('startApplication eligibility', () => {
     expect(result).toMatchObject({ outcome: 'refused', reason: 'already_raider' });
   });
 
-  it('applies the rejection cooldown to someone whose older application was accepted', async () => {
-    // An accepted row must not mask a more recent rejection: filtering it in
-    // ahead of the cooldown query reported "already accepted" and blocked the
-    // applicant permanently instead of for a week.
-    seedApplication('accepted', '2026-01-01 10:00:00');
-    const rejectedId = seedApplication('rejected');
-    getDatabase()
-      .prepare(`UPDATE applications SET resolved_at = datetime('now', '-2 days') WHERE id = ?`)
-      .run(rejectedId);
-
-    const result = await startApplication(fakeUser(), fakeMember([]));
-
-    expect(result).toMatchObject({ outcome: 'refused', reason: 'recently_rejected' });
-  });
-
-  it('refuses a re-application within 7 days of being rejected', async () => {
-    seedApplication('rejected');
-    getDatabase().prepare(`UPDATE applications SET resolved_at = datetime('now', '-2 days')`).run();
-
-    const result = await startApplication(fakeUser(), fakeMember([]));
-
-    expect(result).toMatchObject({ outcome: 'refused', reason: 'recently_rejected' });
-    expect(countApplications()).toBe(1);
-  });
-
-  it('tells a recently rejected applicant when they may apply again', async () => {
-    seedApplication('rejected');
-    getDatabase().prepare(`UPDATE applications SET resolved_at = datetime('now', '-2 days')`).run();
-
-    const result = await startApplication(fakeUser(), fakeMember([]));
-
-    // Rendered as a Discord timestamp so it lands in each reader's own timezone.
-    expect(result.outcome === 'refused' && result.message).toMatch(/<t:\d+:[A-Za-z]>/);
-  });
-
-  it('allows a new application once 7 days have passed since rejection', async () => {
-    seedApplication('rejected');
-    getDatabase().prepare(`UPDATE applications SET resolved_at = datetime('now', '-8 days')`).run();
+  it('allows an applicant to reapply immediately after rejection', async () => {
+    seedApplication('rejected', '2026-08-25 18:44:00');
 
     const result = await startApplication(fakeUser(), fakeMember([]));
 
     expect(result.outcome).toBe('started');
     expect(countApplications()).toBe(2);
-  });
-
-  it('treats the boundary as elapsed exactly 7 days after rejection', async () => {
-    seedApplication('rejected');
-    getDatabase()
-      .prepare(`UPDATE applications SET resolved_at = datetime('now', '-7 days', '-1 minute')`)
-      .run();
-
-    const result = await startApplication(fakeUser(), fakeMember([]));
-
-    expect(result.outcome).toBe('started');
   });
 
   it('ignores an abandoned application entirely', async () => {
