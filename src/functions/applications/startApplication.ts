@@ -5,13 +5,7 @@ import { getQuestions } from './applicationQuestions.js';
 import { activeSessions, startSessionTimeout } from './dmQuestionnaire.js';
 import type { ApplicationRow, ConfigRow } from '../../types/index.js';
 
-/** How long a rejected applicant must wait before applying again. */
-export const REAPPLY_AFTER_DAYS = 7;
-
-export type StartApplicationRefusal =
-  | 'already_raider'
-  | 'application_pending'
-  | 'recently_rejected';
+export type StartApplicationRefusal = 'already_raider' | 'application_pending';
 
 export type StartApplicationResult =
   | { outcome: 'started' }
@@ -42,14 +36,9 @@ function hasRaiderRole(member: GuildMember | null): boolean {
  *
  * - 'in_progress' — the caller resumes those instead.
  * - 'abandoned' — a cancelled or timed-out attempt must never block a retry.
- * - 'accepted' — people get accepted, leave, and come back. Whether someone is
- *   currently in the guild is what should stop them applying, and the raider-role
- *   check is what expresses that; a years-old accepted row is not evidence of it.
- *   Including it here also let an accepted row mask a more recent rejection, so a
- *   returning applicant was refused outright instead of waiting out the cooldown.
- *
- * Date arithmetic stays in SQLite so it runs against the same clock and UTC
- * representation that wrote resolved_at.
+ * - 'accepted' and 'rejected' — completed applications never block a new one.
+ *   Current guild membership is what stops a former applicant from reapplying,
+ *   via the raider-role check above.
  */
 function findBlockingApplication(userId: string): RefusedResult | null {
   const db = getDatabase();
@@ -69,30 +58,6 @@ function findBlockingApplication(userId: string): RefusedResult | null {
       message:
         'You already have an application awaiting a decision. Officers will get back to you — ' +
         'it can take up to a week.',
-    };
-  }
-
-  const rejected = db
-    .prepare(
-      `SELECT strftime('%s', resolved_at, '+${REAPPLY_AFTER_DAYS} days') AS retry_epoch
-         FROM applications
-        WHERE applicant_user_id = ?
-          AND status = 'rejected'
-          AND resolved_at IS NOT NULL
-          AND datetime(resolved_at, '+${REAPPLY_AFTER_DAYS} days') > datetime('now')
-        ORDER BY resolved_at DESC LIMIT 1`,
-    )
-    .get(userId) as { retry_epoch: string } | undefined;
-
-  if (rejected) {
-    return {
-      outcome: 'refused',
-      reason: 'recently_rejected',
-      // A Discord timestamp renders in each reader's own timezone, which a
-      // formatted UTC string would not.
-      message:
-        `Your last application was declined. You're welcome to apply again after ` +
-        `<t:${rejected.retry_epoch}:F>.`,
     };
   }
 
