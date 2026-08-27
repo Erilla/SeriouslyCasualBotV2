@@ -36,28 +36,31 @@ export async function checkRaidExpansions(client: Client): Promise<void> {
         return aEnd - bEnd;
       });
 
-      // Find the first raid where ends.eu > now or ends.eu is null (current tier)
-      const currentRaid = raids.find((raid) => {
+      // A tier can contain multiple raids. Create posts for every raid that
+      // has not ended, including a one-boss raid alongside the main raid.
+      const currentRaids = raids.filter((raid) => {
         if (raid.ends.eu === null) return true;
         return new Date(raid.ends.eu) > now;
       });
 
-      if (currentRaid) {
-        logger.info('Loot', `Found current raid: ${currentRaid.name} (expansion ${expansion})`);
+      if (currentRaids.length > 0) {
+        for (const currentRaid of currentRaids) {
+          logger.info('Loot', `Found current raid: ${currentRaid.name} (expansion ${expansion})`);
 
-        for (const encounter of currentRaid.encounters) {
-          await addLootPost(channel, {
-            id: encounter.id,
-            name: encounter.name,
-          });
+          for (const encounter of currentRaid.encounters) {
+            await addLootPost(channel, {
+              id: encounter.id,
+              name: encounter.name,
+            });
+          }
+
+          logger.info(
+            'Loot',
+            `Raid expansion check complete: created ${currentRaid.encounters.length} loot posts for "${currentRaid.name}"`,
+          );
         }
 
-        logger.info(
-          'Loot',
-          `Raid expansion check complete: created ${currentRaid.encounters.length} loot posts for "${currentRaid.name}"`,
-        );
-
-        // Found and processed the current raid, we're done
+        // Found and processed the current tier, we're done.
         done = true;
       }
 
