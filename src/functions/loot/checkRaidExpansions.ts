@@ -39,6 +39,7 @@ export async function checkRaidExpansions(client: Client): Promise<void> {
       // A tier can contain multiple raids. Create posts for every raid that
       // has not ended, including a one-boss raid alongside the main raid.
       const currentRaids = raids.filter((raid) => {
+        if (raid.starts.eu !== null && new Date(raid.starts.eu) > now) return false;
         if (raid.ends.eu === null) return true;
         return new Date(raid.ends.eu) > now;
       });

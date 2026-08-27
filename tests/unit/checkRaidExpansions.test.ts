@@ -59,6 +59,15 @@ describe('checkRaidExpansions', () => {
             ends: { us: null, eu: null },
             encounters: [{ id: 30, slug: 'one-boss', name: 'One Boss' }],
           },
+          {
+            id: 4,
+            slug: 'announced-raid',
+            name: 'Announced Raid',
+            expansion_id: 9,
+            starts: { us: '2030-01-01T00:00:00.000Z', eu: '2030-01-01T00:00:00.000Z' },
+            ends: { us: null, eu: null },
+            encounters: [{ id: 40, slug: 'announced-boss', name: 'Announced Boss' }],
+          },
         ],
       };
     });
