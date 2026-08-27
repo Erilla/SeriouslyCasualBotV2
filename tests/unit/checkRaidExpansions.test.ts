@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { mockedGetRaidStaticData, postedBosses } = vi.hoisted(() => ({
+const { mockedGetRaidStaticData, mockedLoggerError, postedBosses } = vi.hoisted(() => ({
   mockedGetRaidStaticData: vi.fn(),
+  mockedLoggerError: vi.fn(),
   postedBosses: [] as Array<{ id: number; name: string }>,
 }));
 
 vi.mock('../../src/config.js', () => ({ config: { guildId: 'guild-id' } }));
 vi.mock('../../src/services/logger.js', () => ({
-  logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn() },
+  logger: { debug: vi.fn(), error: mockedLoggerError, info: vi.fn() },
 }));
 vi.mock('../../src/services/raiderio.js', () => ({ getRaidStaticData: mockedGetRaidStaticData }));
 vi.mock('../../src/functions/channels.js', () => ({
@@ -20,9 +21,12 @@ vi.mock('../../src/functions/loot/addLootPost.js', () => ({
 }));
 
 const { checkRaidExpansions } = await import('../../src/functions/loot/checkRaidExpansions.js');
+const { addLootPost } = await import('../../src/functions/loot/addLootPost.js');
 
 afterEach(() => {
   mockedGetRaidStaticData.mockReset();
+  mockedLoggerError.mockReset();
+  vi.mocked(addLootPost).mockReset();
   postedBosses.splice(0);
 });
 
@@ -78,5 +82,30 @@ describe('checkRaidExpansions', () => {
       { id: 20, name: 'Main Boss' },
       { id: 30, name: 'One Boss' },
     ]);
+  });
+
+  it('logs the expansion and error when creating a loot post fails', async () => {
+    mockedGetRaidStaticData.mockResolvedValueOnce({
+      raids: [
+        {
+          id: 1,
+          slug: 'current-raid',
+          name: 'Current Raid',
+          expansion_id: 9,
+          starts: { us: '2026-01-01T00:00:00.000Z', eu: '2026-01-01T00:00:00.000Z' },
+          ends: { us: null, eu: null },
+          encounters: [{ id: 10, slug: 'blocked-boss', name: 'Blocked Boss' }],
+        },
+      ],
+    });
+    vi.mocked(addLootPost).mockRejectedValueOnce(new Error('Discord send failed'));
+
+    await checkRaidExpansions({ guilds: { fetch: vi.fn(async () => ({})) } } as never);
+
+    expect(mockedLoggerError).toHaveBeenCalledWith(
+      'Loot',
+      'Loot post creation stopped at expansion 9',
+      expect.objectContaining({ message: 'Discord send failed' }),
+    );
   });
 });

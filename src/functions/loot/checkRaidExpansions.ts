@@ -66,8 +66,8 @@ export async function checkRaidExpansions(client: Client): Promise<void> {
       }
 
       expansion++;
-    } catch {
-      // API returned error (e.g. 400 for unknown expansion) - no more expansions
+    } catch (error) {
+      logger.error('Loot', `Loot post creation stopped at expansion ${expansion}`, error as Error);
       done = true;
     }
   }
