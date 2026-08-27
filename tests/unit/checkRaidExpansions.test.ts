@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { mockedGetRaidStaticData, mockedLoggerError, postedBosses } = vi.hoisted(() => ({
-  mockedGetRaidStaticData: vi.fn(),
-  mockedLoggerError: vi.fn(),
-  postedBosses: [] as Array<{ id: number; name: string }>,
-}));
+const { mockedGetRaidStaticData, mockedLoggerError, mockedUpdateLootPost, postedBosses } =
+  vi.hoisted(() => ({
+    mockedGetRaidStaticData: vi.fn(),
+    mockedLoggerError: vi.fn(),
+    mockedUpdateLootPost: vi.fn(),
+    postedBosses: [] as Array<{ id: number; name: string }>,
+  }));
 
 vi.mock('../../src/config.js', () => ({ config: { guildId: 'guild-id' } }));
 vi.mock('../../src/services/logger.js', () => ({
@@ -19,6 +21,9 @@ vi.mock('../../src/functions/loot/addLootPost.js', () => ({
     postedBosses.push(boss);
   }),
 }));
+vi.mock('../../src/functions/loot/updateLootPost.js', () => ({
+  updateLootPost: mockedUpdateLootPost,
+}));
 
 const { checkRaidExpansions } = await import('../../src/functions/loot/checkRaidExpansions.js');
 const { addLootPost } = await import('../../src/functions/loot/addLootPost.js');
@@ -26,6 +31,7 @@ const { addLootPost } = await import('../../src/functions/loot/addLootPost.js');
 afterEach(() => {
   mockedGetRaidStaticData.mockReset();
   mockedLoggerError.mockReset();
+  mockedUpdateLootPost.mockReset();
   vi.mocked(addLootPost).mockReset();
   postedBosses.splice(0);
 });
@@ -82,6 +88,7 @@ describe('checkRaidExpansions', () => {
       { id: 20, name: 'Main Boss' },
       { id: 30, name: 'One Boss' },
     ]);
+    expect(mockedUpdateLootPost).toHaveBeenCalledTimes(2);
   });
 
   it('logs the expansion and error when creating a loot post fails', async () => {

@@ -4,6 +4,7 @@ import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
 import { getRaidStaticData } from '../../services/raiderio.js';
 import { addLootPost } from './addLootPost.js';
+import { updateLootPost } from './updateLootPost.js';
 
 export async function checkRaidExpansions(client: Client): Promise<void> {
   let channel: TextChannel;
@@ -53,6 +54,7 @@ export async function checkRaidExpansions(client: Client): Promise<void> {
               id: encounter.id,
               name: encounter.name,
             });
+            await updateLootPost(client, encounter.id);
           }
 
           logger.info(
