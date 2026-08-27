@@ -11,18 +11,32 @@ export interface Boss {
 
 export async function addLootPost(channel: TextChannel, boss: Boss): Promise<void> {
   const db = getDatabase();
-  const existing = db.prepare('SELECT 1 FROM loot_posts WHERE boss_id = ?').get(boss.id);
-  if (existing) {
-    logger.debug('Loot', `Keeping existing loot post for boss "${boss.name}" (id=${boss.id})`);
-    return;
-  }
-
   const postData = generateLootPost(boss.name, boss.id, {
     major: '*None*',
     minor: '*None*',
     wantIn: '*None*',
     wantOut: '*None*',
   });
+
+  const existing = db
+    .prepare('SELECT message_id FROM loot_posts WHERE boss_id = ?')
+    .get(boss.id) as { message_id: string } | undefined;
+  if (existing) {
+    try {
+      await channel.messages.fetch(existing.message_id);
+      logger.debug('Loot', `Keeping existing loot post for boss "${boss.name}" (id=${boss.id})`);
+      return;
+    } catch {
+      const message = await channel.send(postData);
+      db.prepare('UPDATE loot_posts SET channel_id = ?, message_id = ? WHERE boss_id = ?').run(
+        channel.id,
+        message.id,
+        boss.id,
+      );
+      logger.debug('Loot', `Recreated missing loot post for boss "${boss.name}" (id=${boss.id})`);
+      return;
+    }
+  }
 
   const message = await channel.send(postData);
 
