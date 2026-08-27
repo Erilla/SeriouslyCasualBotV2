@@ -10,6 +10,13 @@ export interface Boss {
 }
 
 export async function addLootPost(channel: TextChannel, boss: Boss): Promise<void> {
+  const db = getDatabase();
+  const existing = db.prepare('SELECT 1 FROM loot_posts WHERE boss_id = ?').get(boss.id);
+  if (existing) {
+    logger.debug('Loot', `Keeping existing loot post for boss "${boss.name}" (id=${boss.id})`);
+    return;
+  }
+
   const postData = generateLootPost(boss.name, boss.id, {
     major: '*None*',
     minor: '*None*',
@@ -19,7 +26,6 @@ export async function addLootPost(channel: TextChannel, boss: Boss): Promise<voi
 
   const message = await channel.send(postData);
 
-  const db = getDatabase();
   db.prepare(
     'INSERT INTO loot_posts (boss_id, boss_name, boss_url, channel_id, message_id) VALUES (?, ?, ?, ?, ?)',
   ).run(boss.id, boss.name, boss.url ?? null, channel.id, message.id);
