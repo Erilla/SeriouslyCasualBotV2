@@ -55,6 +55,8 @@ export interface GenerateQuipOptions {
   overlordNames?: string[];
   /** How many raiders haven't signed up yet. Omitted = no count line. */
   unsignedCount?: number;
+  /** Whether every raider has signed up, so the quip should celebrate instead of nudge. */
+  allSignedUp?: boolean;
   /** Current Mythic progression, or null/omitted to skip the line. */
   progression?: ProgressionContext | null;
   /** Recent quips the model should avoid resembling. */
@@ -172,6 +174,7 @@ function buildPrompt({
   twoDayReminder,
   overlordNames = [],
   unsignedCount,
+  allSignedUp = false,
   progression,
   recentQuips = [],
 }: GenerateQuipOptions): string {
@@ -182,6 +185,9 @@ function buildPrompt({
   const persona = PERSONAS[Math.floor(Math.random() * PERSONAS.length)];
 
   const contextLines = [`Context: the next raid is on ${raidDay}. ${reminderNote}`];
+  if (allSignedUp) {
+    contextLines.push('Every raider has signed up — celebrate the completed roster.');
+  }
   if (typeof unsignedCount === 'number' && unsignedCount > 0) {
     contextLines.push(`${unsignedCount} raiders still haven't signed up.`);
   }
@@ -199,7 +205,9 @@ function buildPrompt({
       : 'Tone: playful, sarcastic, WoW-themed. OK to be cheeky; keep it safe for a shared Discord channel.';
 
   const lines = [
-    'You write one-line nudges that a World of Warcraft raiding guild uses to get their raiders to sign up for the next raid.',
+    allSignedUp
+      ? 'You write one-line celebration quips for a World of Warcraft raiding guild after every raider has signed up for the next raid.'
+      : 'You write one-line nudges that a World of Warcraft raiding guild uses to get their raiders to sign up for the next raid.',
     '',
     ...contextLines,
     '',

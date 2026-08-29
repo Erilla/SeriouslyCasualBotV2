@@ -519,6 +519,17 @@ describe('generateSignupQuip', () => {
     expect(prompt).toContain("6 raiders still haven't signed up");
   });
 
+  it('frames the quip as a celebration when everyone has signed up', async () => {
+    const prompt = await capturePrompt({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      allSignedUp: true,
+    });
+
+    expect(prompt).toContain('Every raider has signed up — celebrate the completed roster.');
+    expect(prompt).not.toContain('get their raiders to sign up');
+  });
+
   it('includes progression context in progress mode', async () => {
     const prompt = await capturePrompt({
       raidDay: 'Sunday',
