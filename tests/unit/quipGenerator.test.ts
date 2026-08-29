@@ -591,12 +591,12 @@ describe('generateSignupQuip', () => {
     expect(body.tools).toEqual([{ google_search: {} }]);
   });
 
-  it('grounds OpenAI with the search-preview model and web_search_options', async () => {
+  it('grounds OpenAI with the current Chat Completions search model and web_search_options', async () => {
     setAllKeys();
     const fetchMock = mockAllProvidersOk();
     await generateSignupQuip({ raidDay: 'Sunday', twoDayReminder: false, now: OPENAI_FIRST });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.model).toBe('gpt-4o-mini-search-preview');
+    expect(body.model).toBe('gpt-5-search-api');
     expect(body.web_search_options).toEqual({ search_context_size: 'low' });
     expect(body.temperature).toBeUndefined();
   });

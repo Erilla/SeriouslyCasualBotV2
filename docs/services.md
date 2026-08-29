@@ -68,7 +68,7 @@ the model can reference a current meme.
 | Provider | Endpoint | Model | Auth |
 |---|---|---|---|
 | Gemini | `generativelanguage.googleapis.com/v1beta/...:generateContent` | `gemini-flash-lite-latest` (alias — pinned versions get retired) | `GEMINI_API_KEY` header |
-| OpenAI | `api.openai.com/v1/chat/completions` | `gpt-4o-mini-search-preview` | `OPENAI_API_KEY` bearer |
+| OpenAI | `api.openai.com/v1/chat/completions` | `gpt-5-search-api` | `OPENAI_API_KEY` bearer |
 | Claude | `api.anthropic.com/v1/messages` | `claude-haiku-4-5` | `ANTHROPIC_API_KEY` header |
 
 All keys are optional — an unset key skips that provider. The model that served
