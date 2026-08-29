@@ -95,10 +95,25 @@ export async function alertSignups(client: Client): Promise<void> {
     .map((s) => s.character.name);
 
   if (unsignedCharacters.length === 0) {
-    // Everyone has signed up!
+    // Everyone has signed up — celebrate with the same fresh quip machinery
+    // used by ordinary reminders, so the message stays varied and relevant.
+    const overlordNames = getOverlords().map((o) => o.name);
+    const progression = await getProgressionContext();
+    const recentQuips = getRecentQuips(db);
+    const { quip, generated } = await generateSignupQuip({
+      raidDay: dayConfig.raidDay,
+      twoDayReminder: dayConfig.twoDayReminder,
+      allSignedUp: true,
+      overlordNames,
+      progression,
+      recentQuips,
+    });
     const channel = await getRaidersLoungeChannel(client);
     if (channel) {
-      await channel.send('Everyone has signed for the next raid!');
+      await channel.send(quip);
+      if (generated) {
+        recordQuip(db, quip);
+      }
     }
     logger.info('AlertSignups', 'All raiders have signed up for the next raid');
     return;
