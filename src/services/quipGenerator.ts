@@ -83,11 +83,10 @@ interface QuipProvider {
   call: (apiKey: string, prompt: string) => Promise<ProviderResult>;
 }
 
-// Model constants for PROVIDERS initialization
-// The search-preview variant is the only gpt-4o-mini that supports
-// web_search_options on chat completions. It also rejects sampling params,
-// which is why callOpenAI sends no temperature.
-const OPENAI_MODEL = 'gpt-4o-mini-search-preview';
+// Model constants for PROVIDERS initialization.
+// gpt-5-search-api is the current Chat Completions model for web search.
+// It also rejects sampling params, which is why callOpenAI sends no temperature.
+const OPENAI_MODEL = 'gpt-5-search-api';
 const ANTHROPIC_MODEL = 'claude-haiku-4-5';
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
