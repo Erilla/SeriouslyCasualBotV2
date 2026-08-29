@@ -33,8 +33,12 @@ beforeEach(() => {
   getDatabase().prepare('UPDATE settings SET value = 1 WHERE key = ?').run('alertSignup_Sunday');
   vi.clearAllMocks();
 
-  mockedGetUpcomingRaids.mockResolvedValue([{ id: 1, difficulty: 'Mythic', status: 'Planned' }] as never);
-  mockedGetRaid.mockResolvedValue({ signups: [{ status: 'Present', character: { name: 'Ready' } }] } as never);
+  mockedGetUpcomingRaids.mockResolvedValue([
+    { id: 1, difficulty: 'Mythic', status: 'Planned' },
+  ] as never);
+  mockedGetRaid.mockResolvedValue({
+    signups: [{ status: 'Present', character: { name: 'Ready' } }],
+  } as never);
   mockedGetProgressionContext.mockResolvedValue(null);
   mockedGetOverlords.mockReturnValue([]);
 });
@@ -48,7 +52,10 @@ describe('alertSignups', () => {
   it('posts and remembers a generated celebration quip when every raider has signed up', async () => {
     const channel = { send: vi.fn().mockResolvedValue(undefined) };
     mockedGetOrCreateChannel.mockResolvedValue(channel as never);
-    mockedGenerateSignupQuip.mockResolvedValue({ quip: 'The roster is locked and loaded!', generated: true });
+    mockedGenerateSignupQuip.mockResolvedValue({
+      quip: 'The roster is locked and loaded!',
+      generated: true,
+    });
 
     await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client);
 
