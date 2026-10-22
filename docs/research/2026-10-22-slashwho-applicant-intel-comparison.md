@@ -187,9 +187,10 @@ cannot tell a thin history from a truncated one.
   character** against the 60/hour bot bucket, plus one read per poll.
 - The sheet watcher already does the equivalent internally (`manualConnections.add` with origin
   `applicant_sheet`) without spending HTTP quota, so the two intakes behave differently.
-- `POST .../connected-characters` is currently **not** behind `authorizeConnectionMutation` — unlike
-  `PATCH`/`DELETE` — so any caller can link a character to any dossier. That is SlashWho's decision
-  to make, but the bot would rely on a mutation that is not access-controlled.
+- `POST .../connected-characters` is the only mutation route that does not pass through
+  `authorizeConnectionMutation`, and that guard is a write-rate limiter rather than an access gate
+  (anonymous callers are allowed 10/hour, bots 60). It is also the only way to link characters, so
+  the bot would depend on a write path that cannot carry an application origin.
 - There is no way to tell SlashWho "this character is the applicant's declared main" apart from
   linking it; provenance in the payload is limited to
   `submitted | raiderio_declared | fingerprint_derived | manually_added` and no confidence.
@@ -293,9 +294,9 @@ applicant gets almost nothing. SlashWho fixes all five, and its discovery is at 
 dossier is seeded with the declared characters.
 
 Three things must be confirmed before the ADR: whether the two services share Warcraft Logs
-credentials, whether officers accept a dossier link in place of the three detailed embeds, and whether
-SlashWho will add an authenticated form of the connection mutation (the bot would otherwise depend on
-an unauthenticated write, and on `origin` provenance it cannot set through the public API).
+credentials, whether officers accept a dossier link in place of the three detailed embeds, and the
+shape of the bot-facing SlashWho endpoint (a separate issue in the SlashWho tracker) — in particular
+an authenticated create that links all declared characters with an application origin.
 
 ## Reproduction
 
