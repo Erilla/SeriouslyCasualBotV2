@@ -99,6 +99,29 @@ async function lookupProgression(): Promise<ProgressionContext | null> {
 
 type StaticRaid = Awaited<ReturnType<typeof getRaidStaticData>>['raids'][number];
 
+function startTime(raid: StaticRaid): number {
+  return raid.starts.eu ? new Date(raid.starts.eu).getTime() : 0;
+}
+
+/**
+ * Raider.io gives the main tier and every concurrently-active side raid the
+ * same far-future sentinel end date, so "first active raid" is just API order
+ * and tends to land on a one-boss side raid the guild already cleared. The
+ * main tier is the active raid with the most encounters; ties go to the most
+ * recently released raid, then slug for determinism.
+ */
+function isBetterMainTier(raid: StaticRaid, best: StaticRaid): boolean {
+  if (raid.encounters.length !== best.encounters.length) {
+    return raid.encounters.length > best.encounters.length;
+  }
+
+  const raidStart = startTime(raid);
+  const bestStart = startTime(best);
+  if (raidStart !== bestStart) return raidStart > bestStart;
+
+  return raid.slug < best.slug;
+}
+
 async function findCurrentRaid(): Promise<StaticRaid | null> {
   let expansion = START_EXPANSION;
   let currentRaid: StaticRaid | null = null;
@@ -116,15 +139,15 @@ async function findCurrentRaid(): Promise<StaticRaid | null> {
     if ((staticData.raids ?? []).length === 0) break;
 
     const now = Date.now();
-    const candidates = (staticData.raids ?? [])
-      .filter((r) => !r.name.startsWith('Fated') && !r.name.startsWith('Awakened'))
-      .sort((a, b) => {
-        const aEnd = a.ends.eu ? new Date(a.ends.eu).getTime() : Infinity;
-        const bEnd = b.ends.eu ? new Date(b.ends.eu).getTime() : Infinity;
-        return aEnd - bEnd;
-      });
-    const found = candidates.find((r) => r.ends.eu === null || new Date(r.ends.eu).getTime() > now);
-    if (found) currentRaid = found;
+    const active = (staticData.raids ?? []).filter(
+      (r) =>
+        !r.name.startsWith('Fated') &&
+        !r.name.startsWith('Awakened') &&
+        (r.ends.eu === null || new Date(r.ends.eu).getTime() > now),
+    );
+    if (active.length > 0) {
+      currentRaid = active.reduce((best, raid) => (isBetterMainTier(raid, best) ? raid : best));
+    }
 
     expansion++;
   }

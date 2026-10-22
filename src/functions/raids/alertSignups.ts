@@ -24,6 +24,17 @@ const DAY_MAP: Record<number, DayConfig> = {
   6: { settingKey: 'alertSignup_Sunday', raidDay: 'Sunday', twoDayReminder: false },
 };
 
+// The quip is one line, and the alert body already lists the unsigned raiders
+// by name. Supply each optional detail only some of the time so consecutive
+// reminders don't all lead with the same count / Overlord / progression line.
+const COUNT_INCLUSION_CHANCE = 0.34;
+const OVERLORD_INCLUSION_CHANCE = 0.34;
+const PROGRESSION_INCLUSION_CHANCE = 0.5;
+
+function roll(chance: number): boolean {
+  return Math.random() < chance;
+}
+
 async function getRaidersLoungeChannel(client: Client): Promise<TextChannel | null> {
   try {
     const guild = await client.guilds.fetch(config.guildId);
@@ -97,8 +108,8 @@ export async function alertSignups(client: Client): Promise<void> {
   if (unsignedCharacters.length === 0) {
     // Everyone has signed up — celebrate with the same fresh quip machinery
     // used by ordinary reminders, so the message stays varied and relevant.
-    const overlordNames = getOverlords().map((o) => o.name);
-    const progression = await getProgressionContext();
+    const overlordNames = roll(OVERLORD_INCLUSION_CHANCE) ? getOverlords().map((o) => o.name) : [];
+    const progression = roll(PROGRESSION_INCLUSION_CHANCE) ? await getProgressionContext() : null;
     const recentQuips = getRecentQuips(db);
     const { quip, generated } = await generateSignupQuip({
       raidDay: dayConfig.raidDay,
@@ -124,16 +135,17 @@ export async function alertSignups(client: Client): Promise<void> {
 
   // Generate a fresh signup quip via the rotating LLM cascade, with raid
   // progression + recent-quip context. Progression is best-effort (null on
-  // any raider.io hiccup) and never blocks the alert.
-  const overlordNames = getOverlords().map((o) => o.name);
-  const progression = await getProgressionContext();
+  // any raider.io hiccup) and never blocks the alert. Optional flavour is
+  // rolled so the quip doesn't restate the same facts every reminder.
+  const overlordNames = roll(OVERLORD_INCLUSION_CHANCE) ? getOverlords().map((o) => o.name) : [];
+  const progression = roll(PROGRESSION_INCLUSION_CHANCE) ? await getProgressionContext() : null;
   const recentQuips = getRecentQuips(db);
 
   const { quip, generated } = await generateSignupQuip({
     raidDay: dayConfig.raidDay,
     twoDayReminder: dayConfig.twoDayReminder,
     overlordNames,
-    unsignedCount: unsignedCharacters.length,
+    unsignedCount: roll(COUNT_INCLUSION_CHANCE) ? unsignedCharacters.length : undefined,
     progression,
     recentQuips,
   });

@@ -127,6 +127,48 @@ describe('getProgressionContext', () => {
     expect(ctx?.raidName).toBe('Current Raid');
   });
 
+  it('picks the multi-boss main tier over concurrent one-boss side raids', async () => {
+    const sentinel = { us: '2030-01-01T00:00:00Z', eu: '2030-01-01T00:00:00Z' };
+    const sideRaid = (id: number, slug: string, name: string) => ({
+      id,
+      slug,
+      name,
+      expansion_id: 11,
+      starts: { us: '2026-08-18T15:00:00Z', eu: '2026-08-19T04:00:00Z' },
+      ends: sentinel,
+      encounters: [{ id, slug: `${slug}-boss`, name: `${name} Boss` }],
+    });
+
+    mockedStatic.mockResolvedValueOnce({
+      raids: [
+        sideRaid(1, 'side-raid-a', 'Side Raid A'),
+        {
+          id: 2,
+          slug: 'main-tier',
+          name: 'Main Tier',
+          expansion_id: 11,
+          starts: { us: '2026-08-18T15:00:00Z', eu: '2026-08-19T04:00:00Z' },
+          ends: sentinel,
+          encounters: ENCOUNTERS,
+        },
+        sideRaid(3, 'side-raid-b', 'Side Raid B'),
+      ],
+    });
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 1,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 1,
+        encountersTotal: 3,
+      },
+    ]);
+
+    const ctx = await getProgressionContext();
+    expect(ctx?.raidName).toBe('Main Tier');
+    expect(mockedRankings).toHaveBeenCalledWith('main-tier');
+  });
+
   it('returns null when the API returns empty raids instead of erroring', async () => {
     mockedStatic.mockResolvedValue({ raids: [] });
 

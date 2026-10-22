@@ -510,6 +510,22 @@ describe('generateSignupQuip', () => {
     expect(prompt).toContain('at most one or two');
   });
 
+  it('bans retaliation framing and repeated openings', async () => {
+    const prompt = await capturePrompt({ raidDay: 'Sunday', twoDayReminder: false });
+    expect(prompt).toContain('Do not imply an officer will retaliate');
+    expect(prompt).toContain('Do not start with a number');
+    expect(prompt).toContain('Do not use the phrase "click that button"');
+  });
+
+  it('bans Overlord retaliation when names are provided', async () => {
+    const prompt = await capturePrompt({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      overlordNames: ['Bing', 'Splo'],
+    });
+    expect(prompt).toContain('never imply they will retaliate');
+  });
+
   it('includes the unsigned count when provided', async () => {
     const prompt = await capturePrompt({
       raidDay: 'Sunday',
@@ -545,7 +561,7 @@ describe('generateSignupQuip', () => {
     expect(prompt).toContain('currently progressing The End Boss in Current Raid (2/3M)');
   });
 
-  it('includes reclear context when the end boss is dead', async () => {
+  it('frames reclear context without naming the dead end boss', async () => {
     const prompt = await capturePrompt({
       raidDay: 'Sunday',
       twoDayReminder: false,
@@ -557,8 +573,8 @@ describe('generateSignupQuip', () => {
         total: 3,
       },
     });
-    expect(prompt).toContain('Current Raid on farm');
-    expect(prompt).toContain('The End Boss is dead');
+    expect(prompt).toContain('has already cleared Current Raid on Mythic (3/3)');
+    expect(prompt).not.toContain('The End Boss');
   });
 
   it('omits progression and count lines when not provided', async () => {

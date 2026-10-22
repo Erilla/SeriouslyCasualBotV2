@@ -75,9 +75,17 @@ All keys are optional — an unset key skips that provider. The model that serve
 each quip is logged at `info`.
 
 `src/services/quipContext.ts` derives the guild's current Mythic progression
-(prog boss, or reclear mode when the end boss is dead) from the Raider.IO
-endpoints above for quip flavour. Best-effort with a 10s overall deadline —
-any failure returns `null` and the quip proceeds without it.
+(prog boss, or reclear mode once the raid is cleared) from the Raider.IO
+endpoints above for quip flavour. It selects the main tier by encounter count
+among concurrently-active raids — Raider.IO gives side raids the same
+far-future end date — so a cleared one-boss side raid can't masquerade as the
+current tier. Best-effort with a 10s overall deadline — any failure returns
+`null` and the quip proceeds without it.
+
+The signup alert supplies the unsigned count, Overlord names, and progression
+only on a subset of alerts (roughly one third, one third, and one half) so
+consecutive reminders don't restate the same facts. The prompt also forbids
+retaliation framing and repeated openings/phrases.
 
 ---
 
