@@ -298,6 +298,10 @@ credentials, whether officers accept a dossier link in place of the three detail
 shape of the bot-facing SlashWho endpoint (a separate issue in the SlashWho tracker) — in particular
 an authenticated create that links all declared characters with an application origin.
 
+**Follow-ups filed:** [Erilla/SlashWho#916](https://github.com/Erilla/SlashWho/issues/916) proposes the
+authenticated `/api/v1` contract; #124 is the bot-side consumer, buildable against a fake client before
+the API lands.
+
 ## Reproduction
 
 The SlashWho side needs nothing but `curl`:
