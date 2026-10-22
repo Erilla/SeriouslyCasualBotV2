@@ -5,15 +5,17 @@ import { config } from '../config.js';
 // V1 quip corpus — handwritten + OpenAI-generated examples that shaped the
 // tone. Kept in-file so fallback still feels like "our" quips when the API
 // is down or the key isn't set. Anything appended here shows up in the
-// fallback pool and as few-shot inspiration in the Gemini prompt.
-const V1_SAMPLE_QUIPS: readonly string[] = [
-  'Oi, sign up innit?',
+// fallback pool and as few-shot inspiration in the Gemini prompt. Exported
+// for the style test so the fallback path can't drift back into punitive
+// lines or a banned opener.
+export const V1_SAMPLE_QUIPS: readonly string[] = [
+  'Sign up, innit?',
   'Have you considered signing up on time?',
   'Missing raid sign-ups is like going into battle without armor. Suit up and sign up!',
   "Don't be the ghost of raiding past — haunt the sign-up sheet instead!",
   'Raid sign-ups: where the only thing better than your DPS is your punctuality!',
-  "Bing's checklist: snacks, buffs, and raid sign-ups. Don't make him hunt you down for the last one!",
-  "Warzania's decree: Thou shalt sign up for the raid or face the wrath of a thousand guildies!",
+  "Bing's checklist: snacks, buffs, and raid sign-ups. Be the reason the last box gets ticked!",
+  "Warzania's decree: Thou shalt sign up for the raid and bask in the gratitude of a thousand guildies!",
 ];
 
 // One is picked at random per alert for variety. Personas are flavour only —
@@ -34,6 +36,26 @@ const PERSONAS: readonly string[] = [
 // model returned multiple options separated by newlines) and we bail to
 // fallback rather than post a paragraph.
 const MAX_QUIP_LENGTH = 280;
+
+// Post-generation guard for the prompt's style rules. The model occasionally
+// ignores the negative constraints (few-shot examples are persuasive), so a
+// violation is treated as a provider failure and the next one is tried rather
+// than posting it.
+const BANNED_OPENING =
+  /^(?:\d+\b(?!-)|oi\b|just one\b|(?:one|two|three|four|five|six|seven|eight|nine|ten)\b(?!-))/i;
+const BANNED_PHRASES: readonly RegExp[] = [
+  /click that button/i,
+  /\bretaliat/i,
+  /\bpunish/i,
+  /\bface the wrath\b|\bwrath of a thousand\b/i,
+  /\bhunt (?:you|them) down\b/i,
+];
+
+/** True when a quip breaks the style rules the prompt asks the model to follow. */
+export function quipViolatesStyle(quip: string): boolean {
+  const trimmed = quip.trim();
+  return BANNED_OPENING.test(trimmed) || BANNED_PHRASES.some((phrase) => phrase.test(trimmed));
+}
 
 // The `-latest` alias tracks the current cheapest flash model. We pin an
 // alias rather than a version because Google retires pinned models
@@ -141,6 +163,10 @@ export async function generateSignupQuip(options: GenerateQuipOptions): Promise<
           'QuipGen',
           `${provider.name} quip rejected (length ${cleaned.length}): ${cleaned.slice(0, 80)}`,
         );
+        continue;
+      }
+      if (quipViolatesStyle(cleaned)) {
+        logger.warn('QuipGen', `${provider.name} quip rejected (style): ${cleaned.slice(0, 80)}`);
         continue;
       }
 

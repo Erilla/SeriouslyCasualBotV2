@@ -8,7 +8,11 @@ const START_EXPANSION = 9;
 export interface ProgressionContext {
   mode: 'progress' | 'reclear';
   raidName: string;
-  /** In 'progress' mode: the current prog boss. In 'reclear' mode: the dead end boss. */
+  /**
+   * In 'progress' mode: the current prog boss. In 'reclear' mode: the end boss
+   * (kept for callers that want it; the reclear prompt deliberately does not
+   * name a dead boss).
+   */
   bossName: string;
   killed: number;
   total: number;
@@ -99,8 +103,23 @@ async function lookupProgression(): Promise<ProgressionContext | null> {
 
 type StaticRaid = Awaited<ReturnType<typeof getRaidStaticData>>['raids'][number];
 
-function startTime(raid: StaticRaid): number {
-  return raid.starts.eu ? new Date(raid.starts.eu).getTime() : 0;
+function euStartTime(raid: StaticRaid): number {
+  // No announced start yet (or an unparseable one): treat the raid as already
+  // open, so a tier that has launched but not been dated by raider.io still
+  // counts.
+  if (!raid.starts.eu) return 0;
+  const parsed = new Date(raid.starts.eu).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function euEndTime(raid: StaticRaid): number {
+  // Raider.io uses 2030-01-01 as the "no announced end" sentinel for every
+  // concurrently-active raid (the main tier and each one-boss side raid), so
+  // end dates cannot distinguish them. Missing/unparseable ends are treated
+  // as open-ended for the same reason.
+  if (!raid.ends.eu) return Infinity;
+  const parsed = new Date(raid.ends.eu).getTime();
+  return Number.isNaN(parsed) ? Infinity : parsed;
 }
 
 /**
@@ -115,8 +134,8 @@ function isBetterMainTier(raid: StaticRaid, best: StaticRaid): boolean {
     return raid.encounters.length > best.encounters.length;
   }
 
-  const raidStart = startTime(raid);
-  const bestStart = startTime(best);
+  const raidStart = euStartTime(raid);
+  const bestStart = euStartTime(best);
   if (raidStart !== bestStart) return raidStart > bestStart;
 
   return raid.slug < best.slug;
@@ -143,7 +162,8 @@ async function findCurrentRaid(): Promise<StaticRaid | null> {
       (r) =>
         !r.name.startsWith('Fated') &&
         !r.name.startsWith('Awakened') &&
-        (r.ends.eu === null || new Date(r.ends.eu).getTime() > now),
+        euStartTime(r) <= now &&
+        euEndTime(r) > now,
     );
     if (active.length > 0) {
       currentRaid = active.reduce((best, raid) => (isBetterMainTier(raid, best) ? raid : best));

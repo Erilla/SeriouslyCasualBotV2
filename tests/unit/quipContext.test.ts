@@ -169,6 +169,181 @@ describe('getProgressionContext', () => {
     expect(mockedRankings).toHaveBeenCalledWith('main-tier');
   });
 
+  it('prefers the later-starting raid when active raids have the same encounter count', async () => {
+    const sentinel = { us: '2030-01-01T00:00:00Z', eu: '2030-01-01T00:00:00Z' };
+    const raid = (id: number, slug: string, name: string, startEu: string) => ({
+      id,
+      slug,
+      name,
+      expansion_id: 11,
+      starts: { us: startEu, eu: startEu },
+      ends: sentinel,
+      encounters: ENCOUNTERS,
+    });
+
+    mockedStatic.mockResolvedValueOnce({
+      raids: [
+        raid(1, 'older-tier', 'Older Tier', '2026-01-01T00:00:00Z'),
+        raid(2, 'newer-tier', 'Newer Tier', '2026-06-01T00:00:00Z'),
+      ],
+    });
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 1,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 1,
+        encountersTotal: 3,
+      },
+    ]);
+
+    const ctx = await getProgressionContext();
+    expect(ctx?.raidName).toBe('Newer Tier');
+    expect(mockedRankings).toHaveBeenCalledWith('newer-tier');
+  });
+
+  it('falls back to the lexicographically first slug when start and encounter count tie', async () => {
+    const sentinel = { us: '2030-01-01T00:00:00Z', eu: '2030-01-01T00:00:00Z' };
+    const raid = (id: number, slug: string, name: string) => ({
+      id,
+      slug,
+      name,
+      expansion_id: 11,
+      starts: { us: '2026-06-01T00:00:00Z', eu: '2026-06-01T00:00:00Z' },
+      ends: sentinel,
+      encounters: ENCOUNTERS,
+    });
+
+    mockedStatic.mockResolvedValueOnce({
+      raids: [raid(1, 'zebra-tier', 'Zebra Tier'), raid(2, 'alpha-tier', 'Alpha Tier')],
+    });
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 1,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 1,
+        encountersTotal: 3,
+      },
+    ]);
+
+    const ctx = await getProgressionContext();
+    expect(ctx?.raidName).toBe('Alpha Tier');
+    expect(mockedRankings).toHaveBeenCalledWith('alpha-tier');
+  });
+
+  it('ignores a future raid even when it has more encounters', async () => {
+    const sentinel = { us: '2030-01-01T00:00:00Z', eu: '2030-01-01T00:00:00Z' };
+    const futureEncounters = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 10,
+      slug: `future-boss-${i}`,
+      name: `Future Boss ${i}`,
+    }));
+
+    mockedStatic.mockResolvedValueOnce({
+      raids: [
+        {
+          id: 1,
+          slug: 'current-tier',
+          name: 'Current Tier',
+          expansion_id: 11,
+          starts: { us: '2026-01-01T00:00:00Z', eu: '2026-01-01T00:00:00Z' },
+          ends: sentinel,
+          encounters: ENCOUNTERS,
+        },
+        {
+          id: 2,
+          slug: 'future-tier',
+          name: 'Future Tier',
+          expansion_id: 11,
+          starts: { us: '2099-01-01T00:00:00Z', eu: '2099-01-01T00:00:00Z' },
+          ends: sentinel,
+          encounters: futureEncounters,
+        },
+      ],
+    });
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 1,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 1,
+        encountersTotal: 3,
+      },
+    ]);
+
+    const ctx = await getProgressionContext();
+    expect(ctx?.raidName).toBe('Current Tier');
+    expect(mockedRankings).toHaveBeenCalledWith('current-tier');
+  });
+
+  it('treats an unparseable start date as already open', async () => {
+    mockedStatic.mockResolvedValueOnce({
+      raids: [
+        {
+          id: 1,
+          slug: 'undated-tier',
+          name: 'Undated Tier',
+          expansion_id: 11,
+          starts: { us: null, eu: 'not-a-date' },
+          ends: { us: '2030-01-01T00:00:00Z', eu: '2030-01-01T00:00:00Z' },
+          encounters: ENCOUNTERS,
+        },
+      ],
+    });
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 1,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 1,
+        encountersTotal: 3,
+      },
+    ]);
+
+    const ctx = await getProgressionContext();
+    expect(ctx?.raidName).toBe('Undated Tier');
+  });
+
+  it('returns the full killed/total/boss context for the live 5/8 tier', async () => {
+    const eightEncounters = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      slug: `boss-${i + 1}`,
+      name: `Boss ${i + 1}`,
+    }));
+
+    mockedStatic.mockResolvedValueOnce({
+      raids: [
+        {
+          id: 1,
+          slug: 'the-venomous-abyss',
+          name: 'The Venomous Abyss',
+          expansion_id: 11,
+          starts: { us: '2026-08-18T15:00:00Z', eu: '2026-08-19T04:00:00Z' },
+          ends: { us: '2030-01-01T00:00:00Z', eu: '2030-01-01T00:00:00Z' },
+          encounters: eightEncounters,
+        },
+      ],
+    });
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 2065,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 5,
+        encountersTotal: 8,
+      },
+    ]);
+
+    expect(await getProgressionContext()).toEqual({
+      mode: 'progress',
+      raidName: 'The Venomous Abyss',
+      bossName: 'Boss 6',
+      killed: 5,
+      total: 8,
+    });
+  });
+
   it('returns null when the API returns empty raids instead of erroring', async () => {
     mockedStatic.mockResolvedValue({ raids: [] });
 

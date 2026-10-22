@@ -4,7 +4,7 @@ import { getUpcomingRaids, getRaid } from '../../services/wowaudit.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
-import { generateSignupQuip } from '../../services/quipGenerator.js';
+import { generateSignupQuip, type GenerateQuipOptions } from '../../services/quipGenerator.js';
 import { getProgressionContext } from '../../services/quipContext.js';
 import { getRecentQuips, recordQuip } from './quipHistory.js';
 import { getOverlords } from './overlords.js';
@@ -31,8 +31,26 @@ const COUNT_INCLUSION_CHANCE = 0.34;
 const OVERLORD_INCLUSION_CHANCE = 0.34;
 const PROGRESSION_INCLUSION_CHANCE = 0.5;
 
-function roll(chance: number): boolean {
-  return Math.random() < chance;
+type OptionalFlavour = Pick<GenerateQuipOptions, 'overlordNames' | 'progression' | 'unsignedCount'>;
+
+/**
+ * Pick the optional quip context. `random` is injected so the decision is
+ * testable without spying on the global `Math.random`.
+ */
+async function optionalFlavour(
+  unsignedCount: number | undefined,
+  random: () => number,
+): Promise<OptionalFlavour> {
+  const includeOverlords = random() < OVERLORD_INCLUSION_CHANCE;
+  const includeProgression = random() < PROGRESSION_INCLUSION_CHANCE;
+  const includedCount =
+    unsignedCount !== undefined && random() < COUNT_INCLUSION_CHANCE ? unsignedCount : undefined;
+
+  return {
+    overlordNames: includeOverlords ? getOverlords().map((o) => o.name) : [],
+    progression: includeProgression ? await getProgressionContext() : null,
+    ...(includedCount !== undefined ? { unsignedCount: includedCount } : {}),
+  };
 }
 
 async function getRaidersLoungeChannel(client: Client): Promise<TextChannel | null> {
@@ -53,7 +71,10 @@ async function getRaidersLoungeChannel(client: Client): Promise<TextChannel | nu
   }
 }
 
-export async function alertSignups(client: Client): Promise<void> {
+export async function alertSignups(
+  client: Client,
+  random: () => number = Math.random,
+): Promise<void> {
   const dayOfWeek = new Date().getDay();
   const dayConfig = DAY_MAP[dayOfWeek];
 
@@ -108,16 +129,14 @@ export async function alertSignups(client: Client): Promise<void> {
   if (unsignedCharacters.length === 0) {
     // Everyone has signed up — celebrate with the same fresh quip machinery
     // used by ordinary reminders, so the message stays varied and relevant.
-    const overlordNames = roll(OVERLORD_INCLUSION_CHANCE) ? getOverlords().map((o) => o.name) : [];
-    const progression = roll(PROGRESSION_INCLUSION_CHANCE) ? await getProgressionContext() : null;
+    const flavour = await optionalFlavour(undefined, random);
     const recentQuips = getRecentQuips(db);
     const { quip, generated } = await generateSignupQuip({
       raidDay: dayConfig.raidDay,
       twoDayReminder: dayConfig.twoDayReminder,
       allSignedUp: true,
-      overlordNames,
-      progression,
       recentQuips,
+      ...flavour,
     });
     const channel = await getRaidersLoungeChannel(client);
     if (channel) {
@@ -137,17 +156,14 @@ export async function alertSignups(client: Client): Promise<void> {
   // progression + recent-quip context. Progression is best-effort (null on
   // any raider.io hiccup) and never blocks the alert. Optional flavour is
   // rolled so the quip doesn't restate the same facts every reminder.
-  const overlordNames = roll(OVERLORD_INCLUSION_CHANCE) ? getOverlords().map((o) => o.name) : [];
-  const progression = roll(PROGRESSION_INCLUSION_CHANCE) ? await getProgressionContext() : null;
+  const flavour = await optionalFlavour(unsignedCharacters.length, random);
   const recentQuips = getRecentQuips(db);
 
   const { quip, generated } = await generateSignupQuip({
     raidDay: dayConfig.raidDay,
     twoDayReminder: dayConfig.twoDayReminder,
-    overlordNames,
-    unsignedCount: roll(COUNT_INCLUSION_CHANCE) ? unsignedCharacters.length : undefined,
-    progression,
     recentQuips,
+    ...flavour,
   });
 
   // Build the alert message

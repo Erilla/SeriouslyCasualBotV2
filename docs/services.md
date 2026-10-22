@@ -83,9 +83,12 @@ current tier. Best-effort with a 10s overall deadline — any failure returns
 `null` and the quip proceeds without it.
 
 The signup alert supplies the unsigned count, Overlord names, and progression
-only on a subset of alerts (roughly one third, one third, and one half) so
-consecutive reminders don't restate the same facts. The prompt also forbids
-retaliation framing and repeated openings/phrases.
+only on a subset of alerts (roughly one third, one third, and one half), which
+makes it less likely that consecutive reminders restate the same facts. The
+prompt forbids retaliation framing and repeated openings/phrases, and a
+post-generation style check rejects a provider quip that opens with a number /
+"Oi" / "Just one" or contains retaliation phrasing. It does not compare
+against the recent-quips list.
 
 ---
 

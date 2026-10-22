@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { generateSignupQuip } from '../../src/services/quipGenerator.js';
+import {
+  generateSignupQuip,
+  quipViolatesStyle,
+  V1_SAMPLE_QUIPS,
+} from '../../src/services/quipGenerator.js';
 import { logger } from '../../src/services/logger.js';
 
 const originalFetch = globalThis.fetch;
@@ -183,9 +187,7 @@ describe('generateSignupQuip', () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
       json: async () => ({
-        candidates: [
-          { content: { parts: [{ text: '"Sign up or face the wrath of Warzania!"' }] } },
-        ],
+        candidates: [{ content: { parts: [{ text: '"Sign up before the raid bus leaves!"' }] } }],
       }),
       text: async () => '',
     })) as unknown as typeof fetch;
@@ -195,7 +197,7 @@ describe('generateSignupQuip', () => {
       twoDayReminder: false,
       now: GEMINI_FIRST,
     });
-    expect(result.quip).toBe('Sign up or face the wrath of Warzania!');
+    expect(result.quip).toBe('Sign up before the raid bus leaves!');
   });
 
   it('strips surrounding smart (curly) quotes', async () => {
@@ -246,6 +248,124 @@ describe('generateSignupQuip', () => {
       now: GEMINI_FIRST,
     });
     expect(result.quip).toBe('Sign up, you slackers!');
+  });
+
+  it('rejects a quip that opens with a banned phrase and tries the next provider', async () => {
+    process.env.GEMINI_API_KEY = 'g-key';
+    process.env.OPENAI_API_KEY = 'o-key';
+    delete process.env.ANTHROPIC_API_KEY;
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return {
+          ok: true,
+          json: async () => ({ candidates: [{ content: { parts: [{ text: 'Oi, sign up!' }] } }] }),
+          text: async () => '',
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Get in the raid!' } }] }),
+        text: async () => '',
+      };
+    }) as unknown as typeof fetch;
+
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
+    expect(result.quip).toBe('Get in the raid!');
+  });
+
+  it('rejects retaliation framing and tries the next provider', async () => {
+    process.env.GEMINI_API_KEY = 'g-key';
+    process.env.OPENAI_API_KEY = 'o-key';
+    delete process.env.ANTHROPIC_API_KEY;
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return {
+          ok: true,
+          json: async () => ({
+            candidates: [{ content: { parts: [{ text: 'Sign up or Bing will punish you.' }] } }],
+          }),
+          text: async () => '',
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Raid time!' } }] }),
+        text: async () => '',
+      };
+    }) as unknown as typeof fetch;
+
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
+    expect(result.quip).toBe('Raid time!');
+  });
+
+  it('flags banned openings and phrases', () => {
+    expect(quipViolatesStyle('Oi, sign up!')).toBe(true);
+    expect(quipViolatesStyle('Two of you still unsigned')).toBe(true);
+    expect(quipViolatesStyle('Just one more slot')).toBe(true);
+    expect(quipViolatesStyle('Sign up and click that button')).toBe(true);
+    expect(quipViolatesStyle('Sign up before Bing retaliates')).toBe(true);
+    expect(quipViolatesStyle('Sign up or face the wrath')).toBe(true);
+    expect(quipViolatesStyle("Sign up, or we'll hunt you down")).toBe(true);
+    expect(quipViolatesStyle('The raid bus is leaving — get on it!')).toBe(false);
+    expect(quipViolatesStyle('Wrath of the Lich King awaits — sign up!')).toBe(false);
+    expect(quipViolatesStyle('Two-day warning: the raid is Wednesday.')).toBe(false);
+    expect(quipViolatesStyle('One-shot the boss, then sign up.')).toBe(false);
+  });
+
+  it('keeps the static fallback corpus within the style rules', () => {
+    for (const quip of V1_SAMPLE_QUIPS) {
+      expect(quipViolatesStyle(quip), quip).toBe(false);
+    }
+  });
+
+  it('falls back to the static corpus when every provider returns an off-style quip', async () => {
+    process.env.GEMINI_API_KEY = 'g-key';
+    process.env.OPENAI_API_KEY = 'o-key';
+    process.env.ANTHROPIC_API_KEY = 'a-key';
+
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return {
+          ok: true,
+          json: async () => ({ candidates: [{ content: { parts: [{ text: 'Oi, sign up!' }] } }] }),
+          text: async () => '',
+        };
+      }
+      if (url.includes('api.openai.com')) {
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: 'Two of you still unsigned' } }] }),
+          text: async () => '',
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          content: [{ type: 'text', text: 'Sign up or Bing will punish you.' }],
+        }),
+        text: async () => '',
+      };
+    }) as unknown as typeof fetch;
+
+    const result = await generateSignupQuip({
+      raidDay: 'Sunday',
+      twoDayReminder: false,
+      now: GEMINI_FIRST,
+    });
+
+    expect(result.generated).toBe(false);
+    expect(V1_SAMPLE_QUIPS).toContain(result.quip);
+    expect(quipViolatesStyle(result.quip)).toBe(false);
   });
 
   it('falls back when Gemini returns HTTP error', async () => {
