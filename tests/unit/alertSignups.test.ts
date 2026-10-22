@@ -51,7 +51,12 @@ afterEach(() => {
 
 function sequenceRandom(...values: number[]): () => number {
   let index = 0;
-  return () => values[index++] ?? 0.99;
+  return () => {
+    if (index >= values.length) {
+      throw new Error(`sequenceRandom exhausted after ${values.length} value(s)`);
+    }
+    return values[index++];
+  };
 }
 
 describe('alertSignups', () => {
@@ -63,7 +68,10 @@ describe('alertSignups', () => {
       generated: true,
     });
 
-    await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client, sequenceRandom(0.99));
+    await alertSignups(
+      { guilds: { fetch: vi.fn() } } as unknown as Client,
+      sequenceRandom(0.99, 0.99),
+    );
 
     expect(channel.send).toHaveBeenCalledWith('The roster is locked and loaded!');
     expect(

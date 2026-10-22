@@ -277,6 +277,34 @@ describe('getProgressionContext', () => {
     expect(mockedRankings).toHaveBeenCalledWith('current-tier');
   });
 
+  it('treats an unparseable start date as already open', async () => {
+    mockedStatic.mockResolvedValueOnce({
+      raids: [
+        {
+          id: 1,
+          slug: 'undated-tier',
+          name: 'Undated Tier',
+          expansion_id: 11,
+          starts: { us: null, eu: 'not-a-date' },
+          ends: { us: '2030-01-01T00:00:00Z', eu: '2030-01-01T00:00:00Z' },
+          encounters: ENCOUNTERS,
+        },
+      ],
+    });
+    mockedStatic.mockRejectedValueOnce(new Error('400 no such expansion'));
+    mockedRankings.mockResolvedValueOnce([
+      {
+        rank: 1,
+        guild: { name: 'seriouslycasual', realm: 'silvermoon', region: 'eu' },
+        encountersDefeated: 1,
+        encountersTotal: 3,
+      },
+    ]);
+
+    const ctx = await getProgressionContext();
+    expect(ctx?.raidName).toBe('Undated Tier');
+  });
+
   it('returns the full killed/total/boss context for the live 5/8 tier', async () => {
     const eightEncounters = Array.from({ length: 8 }, (_, i) => ({
       id: i + 1,

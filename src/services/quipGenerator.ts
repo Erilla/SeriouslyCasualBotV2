@@ -42,12 +42,12 @@ const MAX_QUIP_LENGTH = 280;
 // violation is treated as a provider failure and the next one is tried rather
 // than posting it.
 const BANNED_OPENING =
-  /^(?:\d|oi\b|just one\b|(?:one|two|three|four|five|six|seven|eight|nine|ten)\b)/i;
+  /^(?:\d+\b(?!-)|oi\b|just one\b|(?:one|two|three|four|five|six|seven|eight|nine|ten)\b(?!-))/i;
 const BANNED_PHRASES: readonly RegExp[] = [
   /click that button/i,
   /\bretaliat/i,
   /\bpunish/i,
-  /\bwrath\b/i,
+  /\bface the wrath\b|\bwrath of a thousand\b/i,
   /\bhunt (?:you|them) down\b/i,
 ];
 

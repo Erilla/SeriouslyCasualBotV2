@@ -86,7 +86,9 @@ The signup alert supplies the unsigned count, Overlord names, and progression
 only on a subset of alerts (roughly one third, one third, and one half), which
 makes it less likely that consecutive reminders restate the same facts. The
 prompt forbids retaliation framing and repeated openings/phrases, and a
-post-generation style check rejects a provider quip that breaks those rules.
+post-generation style check rejects a provider quip that opens with a number /
+"Oi" / "Just one" or contains retaliation phrasing. It does not compare
+against the recent-quips list.
 
 ---
 

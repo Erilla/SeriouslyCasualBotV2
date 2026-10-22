@@ -104,16 +104,22 @@ async function lookupProgression(): Promise<ProgressionContext | null> {
 type StaticRaid = Awaited<ReturnType<typeof getRaidStaticData>>['raids'][number];
 
 function euStartTime(raid: StaticRaid): number {
-  // No announced start yet: treat the raid as already open, so a tier that has
-  // launched but not been dated by raider.io still counts.
-  return raid.starts.eu ? new Date(raid.starts.eu).getTime() : 0;
+  // No announced start yet (or an unparseable one): treat the raid as already
+  // open, so a tier that has launched but not been dated by raider.io still
+  // counts.
+  if (!raid.starts.eu) return 0;
+  const parsed = new Date(raid.starts.eu).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function euEndTime(raid: StaticRaid): number {
   // Raider.io uses 2030-01-01 as the "no announced end" sentinel for every
   // concurrently-active raid (the main tier and each one-boss side raid), so
-  // end dates cannot distinguish them.
-  return raid.ends.eu ? new Date(raid.ends.eu).getTime() : Infinity;
+  // end dates cannot distinguish them. Missing/unparseable ends are treated
+  // as open-ended for the same reason.
+  if (!raid.ends.eu) return Infinity;
+  const parsed = new Date(raid.ends.eu).getTime();
+  return Number.isNaN(parsed) ? Infinity : parsed;
 }
 
 /**

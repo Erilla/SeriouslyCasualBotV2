@@ -4,8 +4,8 @@ import { getUpcomingRaids, getRaid } from '../../services/wowaudit.js';
 import { logger } from '../../services/logger.js';
 import { config } from '../../config.js';
 import { getOrCreateChannel } from '../channels.js';
-import { generateSignupQuip } from '../../services/quipGenerator.js';
-import { getProgressionContext, type ProgressionContext } from '../../services/quipContext.js';
+import { generateSignupQuip, type GenerateQuipOptions } from '../../services/quipGenerator.js';
+import { getProgressionContext } from '../../services/quipContext.js';
 import { getRecentQuips, recordQuip } from './quipHistory.js';
 import { getOverlords } from './overlords.js';
 import { resolveSignupMentions } from './resolveSignupMentions.js';
@@ -31,11 +31,7 @@ const COUNT_INCLUSION_CHANCE = 0.34;
 const OVERLORD_INCLUSION_CHANCE = 0.34;
 const PROGRESSION_INCLUSION_CHANCE = 0.5;
 
-interface OptionalFlavour {
-  overlordNames: string[];
-  progression: ProgressionContext | null;
-  unsignedCount?: number;
-}
+type OptionalFlavour = Pick<GenerateQuipOptions, 'overlordNames' | 'progression' | 'unsignedCount'>;
 
 /**
  * Pick the optional quip context. `random` is injected so the decision is
