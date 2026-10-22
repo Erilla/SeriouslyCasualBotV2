@@ -46,6 +46,7 @@ beforeEach(() => {
 afterEach(() => {
   closeDatabase();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('alertSignups', () => {
@@ -63,5 +64,59 @@ describe('alertSignups', () => {
     expect(
       getDatabase().prepare('SELECT quip FROM quip_history ORDER BY id DESC LIMIT 1').get(),
     ).toEqual({ quip: 'The roster is locked and loaded!' });
+  });
+
+  it('includes the unsigned count and optional flavour when the roll allows it', async () => {
+    const channel = { send: vi.fn().mockResolvedValue(undefined) };
+    mockedGetOrCreateChannel.mockResolvedValue(channel as never);
+    mockedGetRaid.mockResolvedValue({
+      signups: [
+        { status: 'Unknown', character: { name: 'Unsigned' } },
+        { status: 'Present', character: { name: 'Ready' } },
+      ],
+    } as never);
+    mockedGetOverlords.mockReturnValue([{ name: 'Bing' }] as never);
+    const progression = {
+      mode: 'progress' as const,
+      raidName: 'Current Raid',
+      bossName: 'The Twin Fangs',
+      killed: 5,
+      total: 8,
+    };
+    mockedGetProgressionContext.mockResolvedValue(progression);
+    mockedGenerateSignupQuip.mockResolvedValue({ quip: 'Sign up!', generated: true });
+    vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+    await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client);
+
+    expect(mockedGenerateSignupQuip).toHaveBeenCalledWith(
+      expect.objectContaining({
+        unsignedCount: 1,
+        overlordNames: ['Bing'],
+        progression,
+      }),
+    );
+  });
+
+  it('omits the count and optional flavour when the roll says no', async () => {
+    const channel = { send: vi.fn().mockResolvedValue(undefined) };
+    mockedGetOrCreateChannel.mockResolvedValue(channel as never);
+    mockedGetRaid.mockResolvedValue({
+      signups: [{ status: 'Unknown', character: { name: 'Unsigned' } }],
+    } as never);
+    mockedGetOverlords.mockReturnValue([{ name: 'Bing' }] as never);
+    mockedGenerateSignupQuip.mockResolvedValue({ quip: 'Sign up!', generated: true });
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+
+    await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client);
+
+    expect(mockedGenerateSignupQuip).toHaveBeenCalledWith(
+      expect.objectContaining({
+        unsignedCount: undefined,
+        overlordNames: [],
+        progression: null,
+      }),
+    );
+    expect(mockedGetProgressionContext).not.toHaveBeenCalled();
   });
 });

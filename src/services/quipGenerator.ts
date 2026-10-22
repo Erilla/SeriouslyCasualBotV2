@@ -194,13 +194,13 @@ function buildPrompt({
     contextLines.push(
       progression.mode === 'progress'
         ? `The guild is currently progressing ${progression.bossName} in ${progression.raidName} (${progression.killed}/${progression.total}M).`
-        : `The guild has ${progression.raidName} on farm — ${progression.bossName} is dead, now it's reclear season.`,
+        : `The guild has already cleared ${progression.raidName} on Mythic (${progression.killed}/${progression.total}) — it's reclear season.`,
     );
   }
 
   const toneLine =
     overlordNames.length > 0
-      ? `Tone: playful, sarcastic, WoW-themed. Occasionally reference the guild's Overlords (${overlordNames.join(', ')}). OK to be cheeky; keep it safe for a shared Discord channel.`
+      ? `Tone: playful, sarcastic, WoW-themed. You may name the guild's Overlords (${overlordNames.join(', ')}) as flavour, but never imply they will retaliate, punish, or take action against unsigned raiders. OK to be cheeky; keep it safe for a shared Discord channel.`
       : 'Tone: playful, sarcastic, WoW-themed. OK to be cheeky; keep it safe for a shared Discord channel.';
 
   const lines = [
@@ -209,6 +209,8 @@ function buildPrompt({
       : 'You write one-line nudges that a World of Warcraft raiding guild uses to get their raiders to sign up for the next raid.',
     '',
     ...contextLines,
+    '',
+    'Use the context above only where it fits naturally — do not force every detail into the quip. The alert already lists the unsigned raiders by name.',
     '',
     toneLine,
     `Write in the voice of a ${persona}.`,
@@ -220,13 +222,17 @@ function buildPrompt({
   ];
 
   if (recentQuips.length > 0) {
-    lines.push('', 'Recent quips — write something clearly different from all of these:');
+    lines.push(
+      '',
+      'Recent quips — do not reuse their opening words, sentence structure, or jokes. Write something clearly different from all of these:',
+    );
     lines.push(...recentQuips.map((q, i) => `${i + 1}. ${q}`));
   }
 
   lines.push(
     '',
     'Write ONE quip. Plain text, no quotes, no preamble, no markdown. Under 200 characters. Just the quip.',
+    'Do not start with a number, "Oi", or "Just one". Do not use the phrase "click that button". Do not imply an officer will retaliate, punish, or take action against unsigned raiders.',
   );
   return lines.join('\n');
 }
