@@ -49,6 +49,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function sequenceRandom(...values: number[]): () => number {
+  let index = 0;
+  return () => values[index++] ?? 0.99;
+}
+
 describe('alertSignups', () => {
   it('posts and remembers a generated celebration quip when every raider has signed up', async () => {
     const channel = { send: vi.fn().mockResolvedValue(undefined) };
@@ -58,7 +63,7 @@ describe('alertSignups', () => {
       generated: true,
     });
 
-    await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client);
+    await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client, sequenceRandom(0.99));
 
     expect(channel.send).toHaveBeenCalledWith('The roster is locked and loaded!');
     expect(
@@ -66,7 +71,7 @@ describe('alertSignups', () => {
     ).toEqual({ quip: 'The roster is locked and loaded!' });
   });
 
-  it('includes the unsigned count and optional flavour when the roll allows it', async () => {
+  it('mixes optional flavour independently instead of all-in or all-out', async () => {
     const channel = { send: vi.fn().mockResolvedValue(undefined) };
     mockedGetOrCreateChannel.mockResolvedValue(channel as never);
     mockedGetRaid.mockResolvedValue({
@@ -85,20 +90,24 @@ describe('alertSignups', () => {
     };
     mockedGetProgressionContext.mockResolvedValue(progression);
     mockedGenerateSignupQuip.mockResolvedValue({ quip: 'Sign up!', generated: true });
-    vi.spyOn(Math, 'random').mockReturnValue(0.1);
 
-    await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client);
+    // Overlords yes, progression no, count yes.
+    await alertSignups(
+      { guilds: { fetch: vi.fn() } } as unknown as Client,
+      sequenceRandom(0.1, 0.9, 0.1),
+    );
 
     expect(mockedGenerateSignupQuip).toHaveBeenCalledWith(
       expect.objectContaining({
         unsignedCount: 1,
         overlordNames: ['Bing'],
-        progression,
+        progression: null,
       }),
     );
+    expect(mockedGetProgressionContext).not.toHaveBeenCalled();
   });
 
-  it('omits the count and optional flavour when the roll says no', async () => {
+  it('omits the count and optional flavour when the rolls say no', async () => {
     const channel = { send: vi.fn().mockResolvedValue(undefined) };
     mockedGetOrCreateChannel.mockResolvedValue(channel as never);
     mockedGetRaid.mockResolvedValue({
@@ -106,17 +115,63 @@ describe('alertSignups', () => {
     } as never);
     mockedGetOverlords.mockReturnValue([{ name: 'Bing' }] as never);
     mockedGenerateSignupQuip.mockResolvedValue({ quip: 'Sign up!', generated: true });
-    vi.spyOn(Math, 'random').mockReturnValue(0.99);
 
-    await alertSignups({ guilds: { fetch: vi.fn() } } as unknown as Client);
-
-    expect(mockedGenerateSignupQuip).toHaveBeenCalledWith(
-      expect.objectContaining({
-        unsignedCount: undefined,
-        overlordNames: [],
-        progression: null,
-      }),
+    await alertSignups(
+      { guilds: { fetch: vi.fn() } } as unknown as Client,
+      sequenceRandom(0.99, 0.99, 0.99),
     );
+
+    const options = mockedGenerateSignupQuip.mock.calls[0][0];
+    expect(options).not.toHaveProperty('unsignedCount');
+    expect(options.overlordNames).toEqual([]);
+    expect(options.progression).toBeNull();
     expect(mockedGetProgressionContext).not.toHaveBeenCalled();
+    expect(mockedGetOverlords).not.toHaveBeenCalled();
+  });
+
+  it('rolls optional flavour on the all-signed-up celebration branch', async () => {
+    const channel = { send: vi.fn().mockResolvedValue(undefined) };
+    mockedGetOrCreateChannel.mockResolvedValue(channel as never);
+    mockedGetOverlords.mockReturnValue([{ name: 'Bing' }] as never);
+    const progression = {
+      mode: 'reclear' as const,
+      raidName: 'Current Raid',
+      bossName: 'The End Boss',
+      killed: 8,
+      total: 8,
+    };
+    mockedGetProgressionContext.mockResolvedValue(progression);
+    mockedGenerateSignupQuip.mockResolvedValue({ quip: 'Full roster!', generated: true });
+
+    // Overlords yes, progression yes; the celebration branch has no count roll.
+    await alertSignups(
+      { guilds: { fetch: vi.fn() } } as unknown as Client,
+      sequenceRandom(0.1, 0.1),
+    );
+
+    const options = mockedGenerateSignupQuip.mock.calls[0][0];
+    expect(options).not.toHaveProperty('unsignedCount');
+    expect(options.overlordNames).toEqual(['Bing']);
+    expect(options.progression).toEqual(progression);
+    expect(options.allSignedUp).toBe(true);
+  });
+
+  it('can omit all optional flavour on the celebration branch', async () => {
+    const channel = { send: vi.fn().mockResolvedValue(undefined) };
+    mockedGetOrCreateChannel.mockResolvedValue(channel as never);
+    mockedGetOverlords.mockReturnValue([{ name: 'Bing' }] as never);
+    mockedGenerateSignupQuip.mockResolvedValue({ quip: 'Full roster!', generated: true });
+
+    await alertSignups(
+      { guilds: { fetch: vi.fn() } } as unknown as Client,
+      sequenceRandom(0.99, 0.99),
+    );
+
+    const options = mockedGenerateSignupQuip.mock.calls[0][0];
+    expect(options).not.toHaveProperty('unsignedCount');
+    expect(options.overlordNames).toEqual([]);
+    expect(options.progression).toBeNull();
+    expect(mockedGetProgressionContext).not.toHaveBeenCalled();
+    expect(mockedGetOverlords).not.toHaveBeenCalled();
   });
 });
