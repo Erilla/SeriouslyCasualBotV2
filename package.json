@@ -42,7 +42,7 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.58.2",
-    "vitest": "^4.1.4"
+    "vitest": "^5.0.0"
   },
   "comments": {
     "overrides": "undici is pinned to 6.24.1 by discord.js/@discordjs/rest (no upstream release bumps it); force the patched 6.27.x — same-major, API-compatible. esbuild is pinned <0.28.1 by tsx; force the patched line. Both clear Dependabot alerts; revisit/remove when the upstreams move past these."
