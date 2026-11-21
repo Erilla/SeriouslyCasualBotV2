@@ -1,0 +1,137 @@
+{
+  "version": "v1",
+  "create": {
+    "endpoint": "POST /api/v1/dossiers",
+    "request": {
+      "characters": [
+        "https://raider.io/characters/eu/silvermoon/ryii",
+        "https://raider.io/characters/eu/silvermoon/alt"
+      ]
+    },
+    "response": {
+      "root": { "region": "eu", "realm": "silvermoon", "name": "ryii" },
+      "state": "collecting",
+      "snapshotId": null,
+      "lastCollectedAt": null,
+      "evidenceRunIds": [],
+      "outcomes": [
+        {
+          "key": { "region": "eu", "realm": "silvermoon", "name": "ryii" },
+          "outcome": "queued",
+          "jobId": "54f14e37-7df7-43db-91d5-21e797d1d145"
+        },
+        {
+          "key": { "region": "eu", "realm": "silvermoon", "name": "alt" },
+          "outcome": "existing"
+        }
+      ]
+    }
+  },
+  "status": {
+    "endpoint": "GET /api/v1/dossiers/eu/silvermoon/ryii/status",
+    "response": {
+      "state": "ready",
+      "snapshotId": "13af3173-e97c-4c78-a6cb-a54b647b209f",
+      "lastCollectedAt": "2026-10-22T09:45:52.977Z",
+      "evidenceRunIds": [],
+      "etag": "3d8c0e62a1a0b4f5e6d7c8b9a0f1e2d3c4b5a6978877665544332211ffeeddcc"
+    }
+  },
+  "summary": {
+    "endpoint": "GET /api/v1/dossiers/eu/silvermoon/ryii",
+    "response": {
+      "root": { "region": "eu", "realm": "silvermoon", "name": "ryii" },
+      "state": "ready",
+      "snapshotId": "13af3173-e97c-4c78-a6cb-a54b647b209f",
+      "lastCollectedAt": "2026-10-22T09:45:52.977Z",
+      "cuttingEdgesRestored": true,
+      "characters": [
+        {
+          "key": { "region": "eu", "realm": "silvermoon", "name": "ryii" },
+          "displayName": "Ryii",
+          "className": "Mage",
+          "guild": {
+            "name": "Seriously Casual",
+            "region": "eu",
+            "realm": "silvermoon"
+          },
+          "source": "submitted",
+          "confidence": null,
+          "evidenceState": "complete",
+          "pending": false
+        }
+      ],
+      "guildHistory": [
+        {
+          "guild": {
+            "name": "Seriously Casual",
+            "region": "eu",
+            "realm": "silvermoon"
+          },
+          "firstNight": "2026-09-05",
+          "lastNight": "2026-10-09",
+          "raidNights": 2,
+          "tiers": ["The Venomous Abyss"],
+          "characters": ["eu/silvermoon/ryii"],
+          "raids": [
+            {
+              "raidName": "The Venomous Abyss",
+              "kills": 2,
+              "firstKillAt": "2026-09-05T18:26:29.653Z",
+              "lastKillAt": "2026-10-09T21:09:30.000Z",
+              "characters": ["eu/silvermoon/ryii"]
+            }
+          ]
+        }
+      ],
+      "raids": [
+        {
+          "raidName": "The Venomous Abyss",
+          "bosses": [
+            {
+              "bossName": "Nymrissa Wavecaller",
+              "state": "kill",
+              "firstKilledAt": "2026-09-05T18:26:29.653Z",
+              "characters": ["eu/silvermoon/ryii"],
+              "worldRank": 1724,
+              "reportUrl": "https://www.warcraftlogs.com/reports/example"
+            }
+          ]
+        }
+      ],
+      "raidsTruncated": false,
+      "cuttingEdges": [
+        {
+          "achievementName": "Cutting Edge: Midnight Falls",
+          "completedAt": "2026-10-09T21:09:30.000Z"
+        }
+      ],
+      "limitations": []
+    }
+  },
+  "addCharacter": {
+    "endpoint": "POST /api/v1/dossiers/eu/silvermoon/ryii/characters",
+    "request": {
+      "characterUrl": "https://raider.io/characters/eu/silvermoon/alt"
+    },
+    "response": {
+      "kind": "linked",
+      "jobId": "54f14e37-7df7-43db-91d5-21e797d1d145"
+    }
+  },
+  "refresh": {
+    "endpoint": "POST /api/v1/dossiers/eu/silvermoon/ryii/refresh",
+    "response": {
+      "mode": "full",
+      "lastCollectedAt": "2026-10-22T09:45:52.977Z"
+    }
+  },
+  "error": {
+    "response": {
+      "error": {
+        "code": "rate_limited",
+        "message": "Too many requests."
+      }
+    }
+  }
+}

@@ -56,6 +56,45 @@ Base URL: `https://{region}.api.blizzard.com`
 
 Authentication: OAuth2 application credentials via `BLIZZARD_CLIENT_ID` / `BLIZZARD_CLIENT_SECRET`, exchanged at `https://oauth.battle.net/token`. Tokens are cached with expiry tracking and refreshed automatically. The equipment profile is still fetched per raider, but the weekly readiness report no longer emits the `Gear progression` or `Needs verification` sections — the required-enchant slot list was not expansion-accurate (`BACK` takes no enchant this expansion), so both were dropped until the slot rules are corrected. `WEEKLY_GEAR_STALE_HOURS` is consequently unused for now.
 
+## SlashWho (applicant intel, behind a flag)
+
+[SlashWho](https://slashwho.com/) is the maintainer's sibling service that builds applicant dossiers. With
+`SLASHWHO_INTEL_ENABLED=true` the applicant-intel job runs through one SlashWho dossier per application
+instead of the bot's own sweep; with it off (the default) nothing here is called and the legacy sweep runs
+unchanged. The decision and its trade-offs are in
+[ADR 0001](adr/0001-slashwho-applicant-intel.md).
+
+Base URL: `SLASHWHO_API_URL` (default `https://slashwho.com`), under `/api/v1`. Contract:
+`packages/contracts/src/bot-dossier.ts` in Erilla/SlashWho; a recorded copy of its fixture is in
+`tests/fixtures/slashwho/bot-client-v1.json`.
+
+| Endpoint | Function | Description |
+|---|---|---|
+| `POST /api/v1/dossiers` `{ characters: [url, …] }` (1–10) | `ensureDossier(urls)` | One create from every declared character; the first is the root. Per-character outcomes `queued` / `existing` / `rate_limited` / `suppressed` / `not_found` / `failed`. Called **once per job** — the root is stored and reused on resume, because replaying a create while collecting is charged again |
+| `GET /api/v1/dossiers/{region}/{realm}/{name}/status` | `getStatus(root)` | The cheap poll: `state` (`collecting` / `ready` / `partial`) and `snapshotId` |
+| `GET /api/v1/dossiers/{region}/{realm}/{name}` | `getDossier(root)` | The chat-sized summary: characters with source, guild spans, the five most recent raids with a kill, Cutting Edge, limitations. Published only when its `snapshotId` matches the status read |
+| `POST /api/v1/dossiers/{region}/{realm}/{name}/characters` `{ characterUrl }` | `addDossierCharacter(root, url)` | Links a character pasted into the thread mid-run, or retries a rate-limited create outcome |
+| `POST /api/v1/dossiers/{region}/{realm}/{name}/refresh` | `refreshDossier(root)` | Re-collects; the only read-side call that spends provider budget. Implemented, not called by the bot today |
+
+Authentication: `Authorization: Bearer <SLASHWHO_BOT_API_KEY>`; a missing or wrong key is `401`. Startup
+fails if the flag is on and the key is not set.
+
+Quotas (SlashWho's bot bucket): **60 searches/hour** (a create or add-character is charged one per character
+that queues or joins a run; a fresh snapshot is free) and **300 reads/minute** (status and summary). A `429`
+carries `Retry-After` and pauses the job exactly like the other providers. Requests go through
+`httpRequest('slashwho', …)`, so the `slashwho` breaker and health counters cover them.
+
+Only Raider.IO character URLs are sent — never a Discord id, handle, message id or application id.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `SLASHWHO_INTEL_ENABLED` | `false` | Selects the SlashWho runner |
+| `SLASHWHO_API_URL` | `https://slashwho.com` | No trailing slash |
+| `SLASHWHO_BOT_API_KEY` | — | Required when the flag is on |
+| `SLASHWHO_POLL_INTERVAL_MS` | `5000` | Minimum 1000 |
+| `SLASHWHO_JOB_DEADLINE_MS` | `600000` | Publish what exists and stop waiting |
+| `SLASHWHO_FALLBACK_SWEEP` | `false` | On a SlashWho failure, run the legacy sweep instead of publishing "unavailable". Off by default because the bot and SlashWho share Warcraft Logs credentials, so a fallback double-spends one budget |
+
 ## LLM providers (signup quips)
 
 `src/services/quipGenerator.ts` generates one-line signup-reminder quips via a
