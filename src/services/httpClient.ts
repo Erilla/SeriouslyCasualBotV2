@@ -15,6 +15,14 @@ export interface HttpRequestOptions {
   timeoutMs?: number;
   maxRetries?: number;
   parseJson?: boolean;
+  /**
+   * Extra non-retryable statuses this caller handles as a definitive answer,
+   * so they leave the breaker alone like 403/404/410 do. For a caller that
+   * already stops on them itself: SlashWho's intel runner ends a job on a 401
+   * after one request, and an open breaker would instead disguise every later
+   * job's bad key as a rate limit.
+   */
+  breakerNeutralStatuses?: readonly number[];
 }
 
 export class HttpError extends Error {
@@ -210,7 +218,10 @@ export async function httpRequest<T>(
             : `${response.status} ${response.statusText}`,
           status: response.status,
         });
-        if (RESOURCE_ABSENT_STATUSES.has(response.status)) {
+        if (
+          RESOURCE_ABSENT_STATUSES.has(response.status) ||
+          opts?.breakerNeutralStatuses?.includes(response.status)
+        ) {
           // The service answered correctly; the resource simply is not there.
           // Treat it as a healthy response for breaker purposes, which also
           // lets a half-open trial close the breaker rather than re-open it.

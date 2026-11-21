@@ -260,6 +260,71 @@ describe('runSlashWhoJob', () => {
     expect(getJob(jobId)?.status).toBe('done');
   });
 
+  it('keeps a link pasted while add-character is in flight queued for a replay', async () => {
+    setLinkedCharacters(jobId, [{ region: 'eu', realm: 'silvermoon', name: 'First' }]);
+    requestTopUp(jobId);
+    let pasted = false;
+    const client = fakeClient({
+      addDossierCharacter: vi.fn(async () => {
+        if (pasted) return { kind: 'linked' as const };
+        pasted = true;
+        // A second link lands mid-request, and the dossier is ready on this poll.
+        setLinkedCharacters(jobId, [
+          { region: 'eu', realm: 'silvermoon', name: 'First' },
+          { region: 'eu', realm: 'silvermoon', name: 'Second' },
+        ]);
+        requestTopUp(jobId);
+        return { kind: 'linked' as const };
+      }),
+    });
+    await runSlashWhoJob(jobId, deps(client));
+
+    // Not finished: the replay picks up Second rather than dropping it.
+    expect(getJob(jobId)?.status).toBe('pending');
+    await runSlashWhoJob(jobId, deps(client));
+    expect(client.addDossierCharacter.mock.calls.map((c) => c[1])).toEqual([
+      'https://raider.io/characters/eu/silvermoon/First',
+      'https://raider.io/characters/eu/silvermoon/Second',
+    ]);
+    expect(getJob(jobId)?.status).toBe('done');
+  });
+
+  it('publishes a finished dossier that carries no snapshot id without waiting out the deadline', async () => {
+    const client = fakeClient({
+      getStatus: vi.fn(async () => status('partial', null)),
+      getDossier: vi.fn(async () => summaryWith({ state: 'partial', snapshotId: null })),
+    });
+    await runSlashWhoJob(jobId, deps(client));
+
+    expect(client.getStatus).toHaveBeenCalledTimes(1);
+    expect(getJob(jobId)?.status).toBe('done');
+    expect(lastBodies().ALTS).toContain('*Partial');
+    expect(lastBodies().ALTS).not.toContain('Still collecting');
+  });
+
+  it('pauses, not "unavailable", on a 5xx once the dossier exists, then resumes', async () => {
+    const client = fakeClient({
+      getStatus: vi.fn<SlashWhoClient['getStatus']>(async () => {
+        throw httpError(503);
+      }),
+    });
+    await runSlashWhoJob(jobId, deps(client));
+
+    const paused = getJob(jobId)!;
+    expect(paused.status).toBe('paused');
+    expect(paused.paused_service).toBe('slashwho');
+    const bodies = lastBodies();
+    expect(bodies.ALTS).not.toContain('research unavailable');
+    expect(bodies.ALTS).toMatch(/SlashWho could not be reached\. Retrying <t:\d+:R>/);
+    expect(bodies.ALTS).not.toContain('Rate limited');
+
+    client.getStatus.mockImplementation(async () => status('ready'));
+    await runSlashWhoJob(jobId, deps(client));
+    expect(getJob(jobId)?.status).toBe('done');
+    expect(lastBodies().ALTS).toContain('**Applicant summary**');
+    expect(client.ensureDossier).toHaveBeenCalledTimes(1);
+  });
+
   it('reuses the dossier on a reopened job instead of creating again', async () => {
     const client = fakeClient();
     await runSlashWhoJob(jobId, deps(client));

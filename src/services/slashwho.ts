@@ -418,7 +418,12 @@ export interface SlashWhoClientOptions {
 
 export function createSlashWhoClient(options: SlashWhoClientOptions): SlashWhoClient {
   const transport: SlashWhoTransport =
-    options.transport ?? ((url, init) => httpRequest<unknown>('slashwho', url, init));
+    options.transport ??
+    ((url, init) =>
+      // 401 and 400 end the job after one request (slashwhoJob's terminal
+      // path), so counting them would only open the breaker and turn a bad
+      // key into "rate limited" for every later job.
+      httpRequest<unknown>('slashwho', url, init, { breakerNeutralStatuses: [400, 401] }));
   const headers = {
     accept: 'application/json',
     authorization: `Bearer ${options.apiKey}`,

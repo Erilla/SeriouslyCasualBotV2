@@ -9,7 +9,7 @@ import {
   type SlashWhoClient,
 } from '../../../services/slashwho.js';
 import type { RaiderIoCharacter } from '../characterLinks.js';
-import { classifyError } from './rateLimit.js';
+import { backoffMs, classifyError } from './rateLimit.js';
 import {
   addFinding,
   consumeTopUpRequest,
@@ -276,6 +276,10 @@ export async function runSlashWhoJob(jobId: number, deps: SlashWhoRunDeps): Prom
    */
   const topUp = async (root: DossierKey): Promise<boolean> => {
     if (!state) return false;
+    // Consumed BEFORE the linked characters are read, never after an await: a
+    // link pasted while add-character is in flight must leave its request set,
+    // so this loop's next pass or finish()'s replay check still sees it.
+    consumeTopUpRequest(jobId);
     const current = state;
     const known = new Set(current.linkedKeys);
     const wanted = new Map<string, RaiderIoCharacter>();
@@ -309,12 +313,7 @@ export async function runSlashWhoJob(jobId: number, deps: SlashWhoRunDeps): Prom
       };
       setSlashWhoState(jobId, state);
     }
-    if (added) {
-      transitions.push('linked');
-      // The link this request announced is now on the dossier; a replay would
-      // only repeat this poll loop.
-      consumeTopUpRequest(jobId);
-    }
+    if (added) transitions.push('linked');
     return added;
   };
 
@@ -388,7 +387,10 @@ export async function runSlashWhoJob(jobId: number, deps: SlashWhoRunDeps): Prom
 
       // `snapshotId` is the publish gate: status and summary must agree on it,
       // or a snapshot published between the two reads is caught and re-read.
-      if (status.state !== 'collecting' && status.snapshotId) {
+      // A finished dossier may carry no snapshot at all (nothing collectable);
+      // null === null still agrees, so it publishes instead of polling to the
+      // deadline.
+      if (status.state !== 'collecting') {
         const read = await deps.client.getDossier(root);
         if (read.state !== 'collecting' && read.snapshotId === status.snapshotId) {
           summary = read;
@@ -425,7 +427,16 @@ export async function runSlashWhoJob(jobId: number, deps: SlashWhoRunDeps): Prom
       return;
     }
 
-    const decision = classifyError(error, job.attempts + 1);
+    let decision = classifyError(error, job.attempts + 1);
+    // Once the dossier exists, SlashWho keeps collecting whether or not the bot
+    // is listening, so a transient fault (a 5xx after retries, a timeout) is a
+    // reason to look again later, not to publish "unavailable" over a dossier
+    // that is about to be ready. Before the create, nothing was started.
+    const transient = !decision.pause && state !== null;
+    if (transient) {
+      decision = { pause: true, service: 'slashwho', resumeAfterMs: backoffMs(job.attempts + 1) };
+      logger.warn('Intel', `Job #${jobId}: SlashWho request failed, will retry: ${error}`);
+    }
     if (decision.pause) {
       const ageEpochMs = Math.max(
         parseUtcTimestamp(job.created_at).getTime(),
@@ -435,9 +446,11 @@ export async function runSlashWhoJob(jobId: number, deps: SlashWhoRunDeps): Prom
       );
       const exhausted =
         job.attempts + 1 >= MAX_JOB_ATTEMPTS || now().getTime() - ageEpochMs >= MAX_JOB_AGE_MS;
+      // Officer copy for why it stopped; the default reads "rate limited".
+      const reason = transient ? 'SlashWho could not be reached' : undefined;
       if (exhausted) {
         setStatus(jobId, 'failed');
-        await publish('abandoned');
+        await publish('abandoned', { reason });
         logOutcome('abandoned');
         return;
       }
@@ -445,6 +458,7 @@ export async function runSlashWhoJob(jobId: number, deps: SlashWhoRunDeps): Prom
       const paused = getJob(jobId);
       await publish('paused', {
         retryAt: paused?.resume_after ? new Date(paused.resume_after) : undefined,
+        reason,
       });
       logOutcome(`paused until ${paused?.resume_after}`);
       return;

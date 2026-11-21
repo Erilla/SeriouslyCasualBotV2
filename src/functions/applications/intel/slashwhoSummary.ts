@@ -176,7 +176,10 @@ export interface SummaryInput {
   dossierUrl: string | null;
   outcome: SummaryOutcome;
   retryAt?: Date;
-  /** Officer-readable reason, for `unavailable`. */
+  /**
+   * Officer-readable reason: completes "could not research this applicant: …"
+   * for `unavailable`; replaces "rate limited" for `paused` and `abandoned`.
+   */
   reason?: string;
   deadlineMs?: number;
 }
@@ -325,10 +328,12 @@ function statusNote(input: SummaryInput): string | null {
       const retry = input.retryAt
         ? ` Retrying <t:${Math.floor(input.retryAt.getTime() / 1000)}:R>.`
         : '';
-      return `*Rate limited on SlashWho.${retry}*`;
+      return `*${input.reason ?? 'Rate limited on SlashWho'}.${retry}*`;
     }
     case 'abandoned':
-      return '*Incomplete — rate limited on SlashWho too many times, gave up.*';
+      return input.reason
+        ? `*Incomplete — ${input.reason} after several tries, gave up.*`
+        : '*Incomplete — rate limited on SlashWho too many times, gave up.*';
     case 'unavailable':
       return null;
   }
@@ -392,11 +397,11 @@ export function renderPointer(
     case 'collecting':
       return `${heading} — SlashWho is collecting; it will appear in the summary above.`;
     case 'paused':
-      return `${heading} — waiting on SlashWho (rate limited); it will appear in the summary above.`;
+      return `${heading} — waiting on SlashWho; it will appear in the summary above.`;
     case 'unavailable':
       return `${heading} — not checked: SlashWho research was unavailable.`;
     case 'abandoned':
-      return `${heading} — incomplete: SlashWho stayed rate limited.${dossierUrl ? ` See the [full dossier](${dossierUrl}).` : ''}`;
+      return `${heading} — incomplete: SlashWho could not be read in time.${dossierUrl ? ` See the [full dossier](${dossierUrl}).` : ''}`;
     case 'published':
     case 'deadline':
       return `${heading} — in the summary above${dossier}.`;
