@@ -67,8 +67,9 @@ Every outcome ends in published copy; nothing is left reading "searching…".
 | `ready` / `partial`, and summary and status agree on `snapshotId` | Mirror, run the Discord pass, publish; job `done`. `partial` adds a note and the limitations |
 | Still `collecting` at `SLASHWHO_JOB_DEADLINE_MS` (10 min) | Publish what exists with a "still collecting" note and the link; job `done`. Collection carries on server-side; Refresh re-reads it |
 | `429` (or an open `slashwho` breaker) | Pause with SlashWho's `Retry-After`, publish the rate-limit note, resume on a later tick without re-creating the dossier. Abandon with honest copy after the usual attempt/age limits |
-| `401` / `403`, `400 invalid_character_url`, `404` on create or status, a response that breaks the contract | Terminal: log once, publish "research unavailable" with the declared characters, job `done` |
-| Transport failure / `5xx` after `httpRequest`'s retries | Same "unavailable" copy, unless `SLASHWHO_FALLBACK_SWEEP=true`, which runs the legacy sweep for that job |
+| `401` / `403`, `400 invalid_character_url`, `404` on create or status, a response that breaks the contract | Terminal: log once, publish "research unavailable" with the declared characters, job `done`. A `400`/`401` does not count towards the `slashwho` breaker, so a bad key keeps reading as an auth failure rather than turning into a rate limit for later jobs |
+| Transport failure / `5xx` after `httpRequest`'s retries, **before** the dossier exists | Same "unavailable" copy, unless `SLASHWHO_FALLBACK_SWEEP=true`, which runs the legacy sweep for that job |
+| Transport failure / `5xx` **after** the dossier exists | Pause and retry with the usual backoff, publishing "SlashWho could not be reached" with the retry time: SlashWho keeps collecting regardless, so the bot looks again rather than giving up. Abandon with the same copy after the usual attempt/age limits. The fallback never fires here |
 
 A link pasted into the thread mid-run is added to the dossier on the next poll and listed; one pasted after
 the job finished reopens it, and the reopened run reuses the stored dossier rather than creating a new one.
@@ -77,8 +78,9 @@ the job finished reopens it, and the reopened run reuses the stored dossier rath
 
 - Officer output moves detail behind a click. That is deliberate: the dossier carries far more than three
   embeds could, and SlashWho's limitations make incompleteness explicit.
-- A SlashWho outage is an applicant-intel outage by default. Officers see "research unavailable" and can press
-  Refresh; the operator can opt into the fallback knowing it spends the shared Warcraft Logs budget.
+- A SlashWho outage is an applicant-intel outage by default. Before the dossier exists, officers see "research
+  unavailable" and can press Refresh, and the operator can opt into the fallback knowing it spends the shared
+  Warcraft Logs budget; after it exists, the job waits out the outage and publishes when SlashWho answers.
 - The bot depends on a second deployable's release cadence. The client validates every response at the
   boundary, ignores unknown fields, and fails loudly (as "unavailable") on a breaking change.
 - SlashWho's region list excludes CN, so this hard-codes #86's current limitation for the flag-on path.

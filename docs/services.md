@@ -93,7 +93,7 @@ Only Raider.IO character URLs are sent — never a Discord id, handle, message i
 | `SLASHWHO_BOT_API_KEY` | — | Required when the flag is on |
 | `SLASHWHO_POLL_INTERVAL_MS` | `5000` | Minimum 1000 |
 | `SLASHWHO_JOB_DEADLINE_MS` | `600000` | Publish what exists and stop waiting |
-| `SLASHWHO_FALLBACK_SWEEP` | `false` | On a SlashWho failure, run the legacy sweep instead of publishing "unavailable". Off by default because the bot and SlashWho share Warcraft Logs credentials, so a fallback double-spends one budget |
+| `SLASHWHO_FALLBACK_SWEEP` | `false` | On a SlashWho failure before the dossier is created, run the legacy sweep instead of publishing "unavailable" (once the dossier exists, a failure pauses and retries instead). Off by default because the bot and SlashWho share Warcraft Logs credentials, so a fallback double-spends one budget |
 
 ## LLM providers (signup quips)
 
