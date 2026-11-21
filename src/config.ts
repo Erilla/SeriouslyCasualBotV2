@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { parseSlashWhoConfig } from './slashwhoConfig.js';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -65,6 +66,7 @@ export const config = {
   get anthropicApiKey() {
     return process.env.ANTHROPIC_API_KEY ?? '';
   },
+  slashwho: parseSlashWhoConfig(process.env),
   logLevel: optional('LOG_LEVEL', 'INFO') as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR',
   nodeEnv: optional('NODE_ENV', 'development'),
   get isDevelopment() {

@@ -82,6 +82,7 @@ describe('apiHealth tracker core', () => {
       'blizzard',
       'raiderio',
       'raiderio-internal',
+      'slashwho',
       'warcraftlogs',
       'wowaudit',
     ]);

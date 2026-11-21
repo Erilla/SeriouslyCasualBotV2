@@ -46,7 +46,7 @@ const realmSlug = (realm: string): string => realm.toLowerCase().replace(/\s+/g,
  * name carries an apostrophe (`Zul'jin`) come back without it — the slug does not
  * record one, and guessing where it belongs would be worse than omitting it.
  */
-const displayRealm = (realm: string): string =>
+export const displayRealm = (realm: string): string =>
   realm
     .split('-')
     .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
@@ -85,7 +85,7 @@ export function discordDate(iso: string): string {
   return `<t:${Math.floor(ms / 1000)}:D>`;
 }
 
-function findingLine(
+export function findingLine(
   f: IntelFinding,
   region: string,
   applicantName: string,
@@ -124,7 +124,12 @@ function findingLine(
         }`
       : f.source === 'declared alt'
         ? `names ${applicantName} as their main`
-        : `${Math.round(f.confidence ?? 100)}% confidence`;
+        : // A fingerprint match with no score (SlashWho keeps none) is a match,
+          // not a certainty: the `?? 100` below is for stated facts such as a
+          // Raider.IO-declared alt, and would show it as 100%.
+          f.source === 'fingerprint' && f.confidence === null
+          ? 'fingerprint match, no score'
+          : `${Math.round(f.confidence ?? 100)}% confidence`;
   const provenance = isSelfDeclared(f.source)
     ? 'from the application'
     : `undeclared (${evidence}${discord})`;

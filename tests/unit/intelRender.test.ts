@@ -556,3 +556,31 @@ describe('accented realms produce a URL Raider.IO accepts', () => {
     );
   });
 });
+
+describe('fingerprint findings without a score (#124)', () => {
+  // SlashWho keeps no fingerprint score, so its mirrored rows carry
+  // confidence null. findingLine's `?? 100` is for stated facts and must not
+  // turn an unscored match into "100% confidence".
+  it('renders an unscored fingerprint match as a match, never as 100%', () => {
+    const [page] = renderFoundCharacters(
+      [finding({ source: 'fingerprint', confidence: null })],
+      'Applicant',
+      'eu',
+    );
+    expect(page).not.toContain('100%');
+    expect(page).toContain('fingerprint match, no score');
+  });
+
+  it('keeps a scored fingerprint and a null-confidence Raider.IO fact as before', () => {
+    const [page] = renderFoundCharacters(
+      [
+        finding({ name: 'Scored', source: 'fingerprint', confidence: 87 }),
+        finding({ name: 'Declared', source: 'raider.io', confidence: null }),
+      ],
+      'Applicant',
+      'eu',
+    );
+    expect(page).toContain('87% confidence');
+    expect(page).toContain('100% confidence');
+  });
+});

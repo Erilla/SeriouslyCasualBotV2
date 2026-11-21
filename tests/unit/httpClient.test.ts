@@ -455,6 +455,30 @@ describe('httpRequest — a definitive 404/403 is not a service fault', () => {
     expect(isBreakerOpen('blizzard')).toBe(false);
   });
 
+  it('leaves the breaker closed for a caller-declared neutral status, and only that caller', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: false, status: 401, statusText: 'Unauthorized' }));
+
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        httpRequest('slashwho', 'https://x.test/', undefined, {
+          maxRetries: 0,
+          breakerNeutralStatuses: [401],
+        }),
+      ).rejects.toMatchObject({ status: 401 });
+    }
+    expect(isBreakerOpen('slashwho')).toBe(false);
+
+    // Without the option a 401 is still a genuine fault.
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        httpRequest('blizzard', 'https://x.test/', undefined, { maxRetries: 0 }),
+      ).rejects.toBeInstanceOf(HttpError);
+    }
+    expect(isBreakerOpen('blizzard')).toBe(true);
+  });
+
   it('still opens the breaker after five consecutive genuine faults', async () => {
     globalThis.fetch = vi
       .fn()

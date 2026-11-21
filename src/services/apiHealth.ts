@@ -3,7 +3,8 @@ export type ServiceName =
   | 'raiderio'
   | 'raiderio-internal'
   | 'warcraftlogs'
-  | 'wowaudit';
+  | 'wowaudit'
+  | 'slashwho';
 
 export type Outcome = 'ok' | 'retried' | 'rate_limited' | 'timeout' | 'failed' | 'circuit_rejected';
 
@@ -49,6 +50,7 @@ const SERVICES: ServiceName[] = [
   'raiderio-internal',
   'warcraftlogs',
   'wowaudit',
+  'slashwho',
 ];
 const WINDOW_MINUTES = 60;
 const BREAKER_OPEN_THRESHOLD = 5;

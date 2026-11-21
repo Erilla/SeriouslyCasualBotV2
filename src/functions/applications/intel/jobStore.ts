@@ -482,6 +482,40 @@ export function getSweepTruncated(jobId: number): boolean {
   return row?.payload ? (JSON.parse(row.payload) as boolean) : false;
 }
 
+/**
+ * The SlashWho runner's durable state: which dossier this job created, and
+ * which characters are already linked to it. Kept so a resumed or reopened job
+ * never repeats the create — replaying a create while the dossier is still
+ * collecting joins the run and is charged against the bot's search quota again.
+ * One upserted queue row, like the guild history, so the schema is unchanged.
+ */
+export interface SlashWhoJobState {
+  root: { region: string; realm: string; name: string };
+  /** Identity keys (`region/realm/name`, lowercased) linked to the dossier. */
+  linkedKeys: string[];
+  /** Characters to (re)try through add-character, e.g. a rate-limited create outcome. */
+  retry: RaiderIoCharacter[];
+}
+
+export function setSlashWhoState(jobId: number, state: SlashWhoJobState): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO applicant_intel_queue (job_id, kind, key, payload)
+       VALUES (?, 'slashwho', 'dossier', ?)
+       ON CONFLICT(job_id, kind, key) DO UPDATE SET payload = excluded.payload, done = 0`,
+    )
+    .run(jobId, JSON.stringify(state));
+}
+
+export function getSlashWhoState(jobId: number): SlashWhoJobState | null {
+  const row = getDatabase()
+    .prepare(
+      "SELECT payload FROM applicant_intel_queue WHERE job_id = ? AND kind = 'slashwho' AND key = 'dossier'",
+    )
+    .get(jobId) as { payload: string | null } | undefined;
+  return row?.payload ? (JSON.parse(row.payload) as SlashWhoJobState) : null;
+}
+
 export function pendingQueue(jobId: number, kind: string): { key: string; payload: unknown }[] {
   const rows = getDatabase()
     .prepare(
@@ -557,6 +591,31 @@ export function addFinding(jobId: number, f: IntelFinding): void {
     f.discordStatus,
     f.discordProfile,
   );
+}
+
+/**
+ * Fill in class and guild on an existing finding without touching its source.
+ *
+ * `addFinding` deliberately drops a second write of the same source, which is
+ * right for provenance but means a declared character seeded before SlashWho
+ * answered (with no class or guild yet) could never gain them. This only fills
+ * blanks, so it can never overwrite what a stronger source recorded.
+ */
+export function fillFindingDetails(
+  jobId: number,
+  name: string,
+  realm: string,
+  details: { className: string | null; guildName: string | null; guildRealm: string | null },
+): void {
+  getDatabase()
+    .prepare(
+      `UPDATE applicant_intel_findings
+         SET class = COALESCE(class, ?),
+             guild_name = COALESCE(guild_name, ?),
+             guild_realm = CASE WHEN guild_name IS NULL THEN ? ELSE guild_realm END
+       WHERE job_id = ? AND name = ? AND realm = ?`,
+    )
+    .run(details.className, details.guildName, details.guildRealm, jobId, name, realm);
 }
 
 /** Record the outcome of the Discord confirmation pass for one character. */

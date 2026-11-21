@@ -7,6 +7,7 @@ import { getZoneCatalogue, getRaidReports } from '../../../services/warcraftlogs
 import { getRaidTierEnds } from '../mythic-logs/raidTierEnds.js';
 import { getMythicKillCount } from '../../../services/raiderio.js';
 import {
+  getCharacterOwner,
   getMythicKillDates,
   RAIDERIO_INTERNAL_PACE_MS,
 } from '../../../services/raiderioInternal.js';
@@ -16,7 +17,11 @@ import { gatherMythicLogs } from '../mythic-logs/gatherMythicLogs.js';
 import { cacheRowCount, pruneCache } from '../../../services/apiCache.js';
 import { FINGERPRINT_TTL_MS } from '../../../services/blizzard.js';
 import { buildPageButtons } from '../../pagination.js';
-import type { PagingMeta } from './runJob.js';
+import type { PagingMeta, RunDeps } from './runJob.js';
+import { runSlashWhoJob } from './slashwhoJob.js';
+import { config } from '../../../config.js';
+import type { SlashWhoConfig } from '../../../slashwhoConfig.js';
+import { createSlashWhoClient, type SlashWhoClient } from '../../../services/slashwho.js';
 
 /** Raider.IO tier ordinals covering the last three expansions. Numeric and
  *  descending: 35 is the current tier, 28 reaches the oldest in the window. */
@@ -92,6 +97,60 @@ export async function editIntelMessage(
   });
 }
 
+/** The legacy sweep's dependencies, shared by the default runner and the fallback. */
+function legacyRunDeps(client: Client): RunDeps {
+  return {
+    editMessage: (channelId, messageId, description, paging) =>
+      editIntelMessage(client, channelId, messageId, description, paging),
+    discover: discoverAlts,
+    gather: gatherMythicLogs,
+    confirm: confirmDiscord,
+    getZoneCatalogue,
+    getRaidTierEnds,
+    getMythicKillCount,
+    getRaidReports,
+    getMythicKillDates,
+    paceMs: RAIDERIO_INTERNAL_PACE_MS,
+    tierOrdinals: TIER_ORDINALS,
+  };
+}
+
+let slashwhoClient: SlashWhoClient | null = null;
+
+/**
+ * The one switch between the two runners. SLASHWHO_INTEL_ENABLED off leaves the
+ * legacy runJob call exactly as it was; on, every due job — submitted
+ * applications, top-ups and `/test applicant_intel` alike, since all of them
+ * only queue a job — goes through one SlashWho dossier instead.
+ */
+export function selectIntelRunner(
+  client: Client,
+  settings: SlashWhoConfig = config.slashwho,
+): (jobId: number) => Promise<void> {
+  const legacy = legacyRunDeps(client);
+  if (!settings.intelEnabled) return (jobId) => runJob(jobId, legacy);
+
+  slashwhoClient ??= createSlashWhoClient({
+    baseUrl: settings.apiUrl,
+    apiKey: settings.botApiKey,
+  });
+  const api = slashwhoClient;
+  return (jobId) =>
+    runSlashWhoJob(jobId, {
+      client: api,
+      editMessage: legacy.editMessage,
+      confirm: (id, region, discord) =>
+        confirmDiscord(id, region, discord, {
+          getCharacterOwner,
+          paceMs: RAIDERIO_INTERNAL_PACE_MS,
+        }),
+      dossierBaseUrl: settings.apiUrl,
+      pollIntervalMs: settings.pollIntervalMs,
+      deadlineMs: settings.jobDeadlineMs,
+      fallback: settings.fallbackSweep ? (id) => runJob(id, legacy) : undefined,
+    });
+}
+
 /** Scheduler tick: run every job that is pending or whose pause has elapsed. */
 export async function resumeApplicantIntelJobs(
   client: Client,
@@ -99,27 +158,11 @@ export async function resumeApplicantIntelJobs(
 ): Promise<number> {
   const jobs = dueJobs(new Date().toISOString());
   let ran = 0;
+  const runner = run ?? selectIntelRunner(client);
   for (const job of jobs) {
     try {
       await syncRefreshControl(client, job);
-      if (run) {
-        await run(job.id);
-      } else {
-        await runJob(job.id, {
-          editMessage: (channelId, messageId, description, paging) =>
-            editIntelMessage(client, channelId, messageId, description, paging),
-          discover: discoverAlts,
-          gather: gatherMythicLogs,
-          confirm: confirmDiscord,
-          getZoneCatalogue,
-          getRaidTierEnds,
-          getMythicKillCount,
-          getRaidReports,
-          getMythicKillDates,
-          paceMs: RAIDERIO_INTERNAL_PACE_MS,
-          tierOrdinals: TIER_ORDINALS,
-        });
-      }
+      await runner(job.id);
       ran++;
     } catch (error) {
       // One bad job must not stop the rest of the queue.
